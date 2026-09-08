@@ -1,0 +1,6 @@
+PowerPoint 16.0 inProcess=1 PID=16520
+UserPicture geometry identity preserved=1
+PickUp/Apply geometry identity preserved=1 fillType=6
+Freeform Nodes.SetPosition succeeded
+Apply target line weight after donor weight 7=7
+Reopened original type=5 fill=6

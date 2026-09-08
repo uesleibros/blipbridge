@@ -29,3 +29,40 @@ Enumerated the complete live containing typelib, including restricted/hidden fla
 This rules out a direct setter in this typelib, not undocumented interfaces or internal native functions. Office.js setImage is a modern architectural lead, not evidence this LTSC build exposes the same entry point.
 
 Sources: [PickUp documentation](https://learn.microsoft.com/en-us/office/vba/api/powerpoint.shape.pickup), [PowerPoint API 1.8](https://learn.microsoft.com/en-us/javascript/api/requirement-sets/powerpoint/powerpoint-api-1-8-requirement-set).
+
+## 2026-09-08 14:15–14:20 local — File/buffer boundary and RAM fill
+
+Hypothesis: once the ordinary file read is satisfied from a supplied buffer, Office can own/materialize that image without needing a persistent source file.
+
+Method: validated temporary IAT hooks, uniquely named texture, live CaptureStackBackTrace, focused objdump disassembly. Observed OART +0x321750 opening a COM-like object through +0x321970 and reading through its vtable +0x40. Real file path: MSO20 +0x11A638 CreateFileW, +0x7AEDE ReadFile, +0x11AF8D CloseHandle. Full read length 11,644 bytes. See userpicture_pipeline.md for the full chain.
+
+Experiment replaced only the exact nonexistent sentinel name on the initiating thread with a memory buffer behind a Win32 API adapter. An event handle is used as a token; no source file is opened for that name. Returned bytes flow through the ordinary Office loader. PNG/JPEG are not decoded by BlipBridge.
+
+Results: 32/64/128/256 PNGs and JPEG accepted. Final PNG freeform export is pixel-identical to UserPicture and to save/reopen export (zero differing pixels). Saved media SHA256 equals original PNG. Name/ID/type/extents/rotation/Z order/node count verified; node editing succeeds. RAM source file remains nonexistent. This establishes an experimental byte-to-existing-fill path; it does not establish a direct internal-stream API or cached decoded-resource ownership.
+
+An exact-name hardening change initially failed because std::filesystem retained forward slashes while Office normalized them. No match meant ordinary UserPicture rejected the nonexistent path; hooks were restored. Normalizing the sentinel to preferred Windows separators fixed the regression and the full memory functional test passed again.
+
+## 2026-09-08 14:20–14:25 local — Symbols and narrowed candidates
+
+Configured DbgHelp with the Microsoft public symbol server. Local symbol-server helper loading produced error 126. Independently parsed each PE's RSDS identity and requested the exact public PDB URL. Both returned HTTP 404:
+
+- Mso20Win32Client.pdb / 2BEAFC7A15824BE193F1ACEB60A9893B2.
+- oart.pdb / 4A62D913850B42DBA52D8F70A8FBF8472.
+
+No private symbol names are inferred. OART +0x89C860 constructs fill/property-update state, calls the filename loader +0x950070, then invokes a document-related vtable method. Stack-backed structures, exception cleanup and custom reference wrappers make a guessed direct call unsafe. No call was attempted. Next: dynamic buffer-consumption trace to find a narrower boundary with understood ownership.
+
+Hidden-document comparison used live typelib IID and function offsets to bind public dual COM calls. UserPicture ~1.09 ms, pre-picked Apply ~0.87 ms, PickUp+Apply ~1.25 ms. DispID resolution is not the dominant cost in these measurements. Donor transfer is not automatically faster than filename loading.
+
+## 2026-09-08, continuation through 19:25 local - correction and standard stream
+
+Office build remains 16.0.14334.20848 x64. Earlier source-only tracing was insufficient: adding WriteFile and Content.MSO handle tracking proved Office writes a real temporary PNG and subsequently reads it through MSO20/GFX/WIC, including during MemoryFillExperiment. The earlier RAM-fill result is source delivery only, not the strict milestone 4. Documentation and capabilities now explicitly retain that limitation. Current validation decodes PNG/JPEG with WIC before invoking Office because malformed image bytes could otherwise return apparent success; the old no-BlipBridge-decode statement applies only to the earlier experiment.
+
+Hypothesis: GFX's decoder wrapper contains a standard IStream despite the earlier private file-copy interface. Method: new read-only GDB object probe with signature validation at GFX +0x7880, live vtable capture, followed by static QueryInterface inspection. Result: underlying MSO20 vtable +0x45F630, QI thunk +0x185820 -> +0x70510, which explicitly recognizes IID_IStream and returns this subobject. UserPicture completed after debugger detach. No inferior function calls or retained pointers. Full RVAs and stack are in userpicture_pipeline.md and evidence/decoder_stream.txt.
+
+Export inspection found actual GEL::ICachedImage::Create(IStream*, ...) at GFX +0x7680 on the observed path and GEL::IImage::Create(IStream*, bool) at +0x194090. These private C++ APIs return Ofc::TCntPtr objects; ABI/lifetime and fill binding are still unresolved. Next experiment should observe caller arguments, returned resource and matching release on the existing Office call path before implementing a stream-factory call. Direct decoder substitution by itself would not remove the earlier cache-file write.
+
+Separately, 100 cached PickUp/Apply calls had zero monitored open/read/write calls on the initiating STA. 100,000 alternating donor applications completed; memory accumulated substantially with document history. Closing the document returned private bytes to about 225 MB. Reopened stress.pptx contains 133 normal image-filled shapes and two shared media resources. This proves serialization/reopen for this workload, not independent internal resource ownership or universal absence of decoding.
+
+Release and Debug builds passed with GCC/UCRT64. Memory functional and COM smoke tests passed again, including malformed-image rejection, stale handles and deleted donors. No native crash observed. A first buffer watch that continued beyond RtlFreeHeap was discarded because later allocator reuse was unrelated. String-anchor unwind-region starts are now labeled accurately; cold fragments are not assumed callable entries.
+
+19:29 local: extended the debugger probe to observe existing ICachedImage::Create entry and return. It returned distinct cached-image and image objects, with vtables GFX +0x409DC0 and +0x4055C8. Static AddRef/Release inspection reveals intrusive count at +8, increment slot 0, decrement slot +8; these must not be cast to IUnknown. Observed caller returns to OART +0x8F554, then consumes the cached result through +0x8F94C and releases a local reference. Evidence: cached_factory.txt. No Office pointers were retained or modified. The first fresh-process attempt had no GFX in its lazy module snapshot; adding an ordinary warmup fill fixed the harness and the subsequent trace completed. Next: determine whether this object is only a rendering cache or can participate in document resource/fill binding without Content.MSO storage.

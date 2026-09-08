@@ -1,0 +1,6 @@
+operation,count,total_ms,average_us,median_us,min_us,max_us,ops_per_sec,private_before,private_after
+MemoryAdapter_including_hooks_logging,100,243.711,2437.11,2303.3,1885.5,4563.5,410.322,170475520,170692608
+CachedDonor_100000_alternating,100000,244203,2442.03,2394,710.1,20387.6,409.495,171499520,1007706112
+CachedDonor_130_individual_fills,20,10191.4,509568,506170,486853,534349,1.96245,1007706112,1029713920
+CachedDonor_130_ShapeRange_fills,100,174809,1.74809e+06,1.73993e+06,1.56089e+06,2.10983e+06,0.572054,1029713920,3039932416
+# private bytes after document close=224604160

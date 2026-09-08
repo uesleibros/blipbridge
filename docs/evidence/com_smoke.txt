@@ -1,0 +1,7 @@
+Registered RAM-materialized donor and applied via Automation handle.
+Stale handle rejected after ReleaseTexture.
+Handles are not recycled; ClearTextures releases registered entries.
+Normal LoadTexture explicitly rejects unsupported backend.
+Deleted donor returns COM error; PowerPoint remains usable.
+Invalid image rejected; subsequent ordinary UserPicture succeeds after hook cleanup.
+Host PID=18788
