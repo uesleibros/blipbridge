@@ -5,6 +5,10 @@
 using namespace bb;
 extern int runExperiment(int,wchar_t**);
 extern HRESULT traceUserPicture(IDispatch*,const std::wstring&);
+extern HRESULT focusedBenchmarks(IDispatch*,const std::wstring&);
+extern HRESULT memoryFillExperiment(IDispatch*,SAFEARRAY*,const std::wstring&);
+extern HRESULT stressExperiment(IDispatch*,const std::wstring&);
+extern HRESULT traceCachedApply(IDispatch*,IDispatch*,const std::wstring&);
 static HMODULE module;
 static std::atomic<long> objects{0},locks{0};
 // BlipBridge.Engine: {2E2E2731-C523-486B-89CB-2A89484F1E32}
@@ -29,8 +33,8 @@ public:
  HRESULT STDMETHODCALLTYPE GetTypeInfo(UINT,LCID,ITypeInfo**)override{return E_NOTIMPL;}
  HRESULT STDMETHODCALLTYPE GetIDsOfNames(REFIID iid,LPOLESTR* ns,UINT n,LCID,DISPID* ids)override{
   if(iid!=IID_NULL)return DISP_E_UNKNOWNINTERFACE;
-  static const wchar_t* names[]={L"GetVersion",L"GetBackendName",L"GetCapabilities",L"RegisterTextureShape",L"ApplyTexture",L"ReleaseTexture",L"ClearTextures",L"GetTextureCount",L"GetLastError",L"LoadTexture",L"SetImageBytes",L"RunBenchmarks",L"GetHostProcessId",L"TraceUserPicture"};
-  for(UINT j=0;j<n;j++){ids[j]=DISPID_UNKNOWN;for(int k=0;k<14;k++)if(!_wcsicmp(ns[j],names[k]))ids[j]=k+1;if(ids[j]==DISPID_UNKNOWN)return DISP_E_UNKNOWNNAME;}return S_OK;
+  static const wchar_t* names[]={L"GetVersion",L"GetBackendName",L"GetCapabilities",L"RegisterTextureShape",L"ApplyTexture",L"ReleaseTexture",L"ClearTextures",L"GetTextureCount",L"GetLastError",L"LoadTexture",L"SetImageBytes",L"RunBenchmarks",L"GetHostProcessId",L"TraceUserPicture",L"RunFocusedBenchmarks",L"MemoryFillExperiment",L"RunStress",L"TraceCachedApply"};
+  for(UINT j=0;j<n;j++){ids[j]=DISPID_UNKNOWN;for(int k=0;k<18;k++)if(!_wcsicmp(ns[j],names[k]))ids[j]=k+1;if(ids[j]==DISPID_UNKNOWN)return DISP_E_UNKNOWNNAME;}return S_OK;
  }
  HRESULT STDMETHODCALLTYPE Invoke(DISPID id,REFIID iid,LCID,WORD flags,DISPPARAMS* p,VARIANT* out,EXCEPINFO* ex,UINT*)override{
   if(iid!=IID_NULL)return DISP_E_UNKNOWNINTERFACE;
@@ -53,6 +57,10 @@ public:
     case 12:{count(1);if(!GetModuleHandleW(L"POWERPNT.EXE"))throw Error(E_ACCESSDENIED,"RunBenchmarks must run inside PowerPoint via research add-in");auto root=arg(0).str();wchar_t name[]=L"bb";wchar_t* a[]={name,root.data()};r=Value((long)runExperiment(2,a));break;}
     case 13:count(0);r=Value((long)GetCurrentProcessId());break;
     case 14:count(2);if(!GetModuleHandleW(L"POWERPNT.EXE"))throw Error(E_ACCESSDENIED,"Trace requires PowerPoint host");check(traceUserPicture(arg(0).obj(),arg(1).str()),"TraceUserPicture");break;
+    case 15:count(2);if(!GetModuleHandleW(L"POWERPNT.EXE"))throw Error(E_ACCESSDENIED,"Requires PowerPoint host");check(focusedBenchmarks(arg(0).obj(),arg(1).str()),"Focused benchmarks");break;
+    case 16:{count(3);if(!GetModuleHandleW(L"POWERPNT.EXE"))throw Error(E_ACCESSDENIED,"Requires PowerPoint host");auto bytes=arg(1);if(bytes.v.vt!=(VT_ARRAY|VT_UI1))throw Error(E_INVALIDARG,"Expected Byte array");check(memoryFillExperiment(arg(0).obj(),bytes.v.parray,arg(2).str()),"Memory fill experiment");break;}
+    case 17:count(2);if(!GetModuleHandleW(L"POWERPNT.EXE"))throw Error(E_ACCESSDENIED,"Requires PowerPoint host");check(stressExperiment(arg(0).obj(),arg(1).str()),"Stress experiment");break;
+    case 18:count(3);if(!GetModuleHandleW(L"POWERPNT.EXE"))throw Error(E_ACCESSDENIED,"Requires PowerPoint host");check(traceCachedApply(arg(0).obj(),arg(1).obj(),arg(2).str()),"Cached trace");break;
     default:return DISP_E_MEMBERNOTFOUND;
    }
    if(id!=9)lastError.clear();
@@ -76,6 +84,6 @@ public:
  HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* outer,REFIID i,void** p)override{if(!p)return E_POINTER;*p=nullptr;if(outer)return CLASS_E_NOAGGREGATION;try{auto e=new Engine;auto h=e->QueryInterface(i,p);e->Release();return h;}catch(...){return E_OUTOFMEMORY;}}
  HRESULT STDMETHODCALLTYPE LockServer(BOOL b)override{b?++locks:--locks;return S_OK;}
 };
-extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(REFCLSID c,REFIID i,void** p){if(c!=clsid)return CLASS_E_CLASSNOTAVAILABLE;try{auto f=new Factory;auto h=f->QueryInterface(i,p);f->Release();return h;}catch(...){return E_OUTOFMEMORY;}}
+extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(REFCLSID c,REFIID i,void** p){if(!p)return E_POINTER;*p=nullptr;if(c!=clsid)return CLASS_E_CLASSNOTAVAILABLE;try{auto f=new Factory;auto h=f->QueryInterface(i,p);f->Release();return h;}catch(...){return E_OUTOFMEMORY;}}
 extern "C" __declspec(dllexport) HRESULT __stdcall DllCanUnloadNow(){return objects==0&&locks==0?S_OK:S_FALSE;}
 BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID){if(reason==DLL_PROCESS_ATTACH){module=h;DisableThreadLibraryCalls(h);}return TRUE;}

@@ -1,4 +1,4 @@
-param([string]$Path="$PSScriptRoot/../artifacts/baseline.pptx")
+param([string]$Path="$PSScriptRoot/../artifacts/baseline.pptx",[string]$Report='package_inspection.md')
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip=[IO.Compression.ZipFile]::OpenRead((Resolve-Path $Path).Path)
@@ -14,6 +14,6 @@ try {
   $groups=$fills | ForEach-Object {$_.SelectSingleNode('a:blip',$n).GetAttribute('embed','http://schemas.openxmlformats.org/officeDocument/2006/relationships')} | Group-Object
   foreach($g in $groups){$lines+="- $($g.Name): $($g.Count) normal shape fills"}
  }
- $lines | Set-Content "$PSScriptRoot/../docs/package_inspection.md"
+ $lines | Set-Content "$PSScriptRoot/../docs/$Report"
  $lines
 }finally{$zip.Dispose()}

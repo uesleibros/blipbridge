@@ -19,6 +19,7 @@ $cmake = Join-Path $bin cmake.exe
 if(!(Test-Path $cmake)){$cmake=(Get-Command cmake.exe).Source}
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $vs = if(Test-Path $vswhere){ & $vswhere -all -format json | Out-String }else{'Not found'}
+$msvc = if(Test-Path $vswhere){ & $vswhere -all -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\cl.exe' | Out-String }else{'Not found'}
 $sdk = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots' -ErrorAction SilentlyContinue
 if($StartPowerPoint -and !(Get-Process POWERPNT -ErrorAction SilentlyContinue)) {
     $app = New-Object -ComObject PowerPoint.Application
@@ -52,7 +53,7 @@ $report = @(
     "Target: $(& $gxx -dumpmachine)", "Linker: $(& $gxx -print-prog-name=ld)", (& "$bin/ld.exe" --version | Out-String),
     "CMake: $cmake", (& $cmake --version | Out-String), "MinGW Windows headers: $(Test-Path "$bin/../include/windows.h")", "SDK root: $($sdk.KitsRoot10)",
     "SDK include versions: $((Get-ChildItem "$($sdk.KitsRoot10)/Include" -ErrorAction SilentlyContinue).Name -join ', ')",
-    '', 'Visual Studio / Build Tools discovery:', '```json', $vs.Trim(), '```', '',
+    '', "MSVC x64 compiler paths: $($msvc.Trim())", 'Visual Studio / Build Tools discovery:', '```json', $vs.Trim(), '```', '',
     'Loaded modules (all modules enumerated dynamically; addresses are process-specific):', '',
     '| PID | Filename | Version | Architecture | Base | Loaded path | Physical path |', '|---|---|---|---|---|---|---|'
 )

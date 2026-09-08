@@ -1,0 +1,20 @@
+$ErrorActionPreference='Stop'
+$root=Split-Path $PSScriptRoot -Parent
+New-Item -ItemType Directory -Force "$root/docs/evidence","$root/benchmarks/results" | Out-Null
+foreach($name in 'functional_inproc.txt','memory_functional.txt','com_smoke.txt','userpicture_trace.txt','memory_trace.txt','pdb_probe_mso20.txt','pdb_probe_oart.txt','decoder_watch.txt','decoder_stream.txt','cached_factory.txt','cached_apply_trace.txt','gfx_stream_exports.txt','stress_reopen.txt'){
+ $source=Join-Path "$root/artifacts" $name
+ if(Test-Path -LiteralPath $source){Copy-Item -LiteralPath $source -Destination "$root/docs/evidence/$name" -Force}
+}
+foreach($name in 'baseline.csv','baseline_inproc.csv','focused.csv','stress.csv'){
+ $source=Join-Path "$root/artifacts" $name
+ if(Test-Path -LiteralPath $source){Copy-Item -LiteralPath $source -Destination "$root/benchmarks/results/$name" -Force}
+}
+foreach($name in 'powerpoint_typelib','mso_typelib'){
+ $source="$root/artifacts/$name.txt"
+ if(Test-Path -LiteralPath $source){
+  $lines=Get-Content $source
+  $active=$false
+  $selected=foreach($line in $lines){if($line -match '^TYPE '){$active=$line -match '^TYPE (FillFormat|Shape|ShapeRange|Shapes|PictureFormat) '};if($active){$line}}
+  $selected | Set-Content "$root/docs/evidence/${name}_shapes.txt"
+ }
+}

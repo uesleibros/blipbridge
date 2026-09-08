@@ -34,7 +34,7 @@ static std::string typeName(ITypeInfo* info,const TYPEDESC& d){
  if(d.vt==VT_USERDEFINED){ITypeInfo* t=nullptr;if(SUCCEEDED(info->GetRefTypeInfo(d.hreftype,&t))){BSTR b=nullptr;t->GetDocumentation(MEMBERID_NIL,&b,nullptr,nullptr,nullptr);auto s=narrow(b?b:L"?");SysFreeString(b);t->Release();return s;}}
  switch(d.vt){case VT_BSTR:return "BSTR";case VT_VARIANT:return "VARIANT";case VT_DISPATCH:return "IDispatch";case VT_UNKNOWN:return "IUnknown";case VT_HRESULT:return "HRESULT";case VT_VOID:return "void";case VT_I4:return "I4";case VT_R4:return "R4";case VT_UI1:return "UI1";default:return "VT_"+std::to_string(d.vt);}
 }
-static void dumpLibrary(ITypeLib* lib,std::ofstream& out){
+void dumpLibrary(ITypeLib* lib,std::ofstream& out){
  TLIBATTR* la=nullptr;lib->GetLibAttr(&la);out<<"Library version "<<la->wMajorVerNum<<'.'<<la->wMinorVerNum<<" syskind="<<la->syskind<<'\n';lib->ReleaseTLibAttr(la);
  for(UINT i=0;i<lib->GetTypeInfoCount();i++){
   ITypeInfo* t=nullptr;check(lib->GetTypeInfo(i,&t),"type");TYPEATTR* a=nullptr;t->GetTypeAttr(&a);BSTR b=nullptr;t->GetDocumentation(MEMBERID_NIL,&b,nullptr,nullptr,nullptr);auto name=narrow(b?b:L"");SysFreeString(b);
