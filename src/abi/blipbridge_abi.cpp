@@ -33,9 +33,11 @@
 
 namespace {
 
-constexpr uint32_t kVersionMajor = 0;
-constexpr uint32_t kVersionMinor = 2;
-constexpr uint32_t kVersionPatch = 0;
+// The header is the single source of the release number; repeating it here is
+// how the two drifted apart before.
+constexpr uint32_t kVersionMajor = BB_VERSION_MAJOR;
+constexpr uint32_t kVersionMinor = BB_VERSION_MINOR;
+constexpr uint32_t kVersionPatch = BB_VERSION_PATCH;
 
 #if defined(_WIN32) && defined(_M_X64) || defined(_WIN32) && defined(__x86_64__)
 constexpr const char* kBuildTag = "windows-x64";

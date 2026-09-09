@@ -55,12 +55,26 @@
 #endif
 
 /*
- * Calling convention. On Windows x64 there is exactly one, so this is empty and
- * exported names are undecorated - which is what lets VBA's Declare bind to them
- * by plain name. It is spelled out so a future 32-bit or non-Windows target
- * cannot silently change the ABI.
+ * Calling convention.
+ *
+ * On Windows x64 there is exactly one, so this is empty.
+ *
+ * On Windows x86 there are several, and the choice is forced: VBA's `Declare`
+ * can only call **stdcall**, with no syntax to request anything else. A cdecl
+ * export would appear to bind and then leave the stack unbalanced on every
+ * call - the worst kind of failure, because it is silent until it is not. So
+ * x86 is stdcall.
+ *
+ * Exported names stay **undecorated** on both, which is what lets one VBA
+ * `Declare` name work on either architecture. The 32-bit link step passes
+ * `-Wl,--kill-at` to strip the `@N` suffix stdcall would otherwise add; without
+ * it the export would be `_BB_Init@0` and no `Declare` would find it.
  */
-#define BB_CALL
+#if defined(_WIN32) && !defined(_WIN64)
+#  define BB_CALL __stdcall
+#else
+#  define BB_CALL
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +92,18 @@ extern "C" {
  * to continue on a mismatch, so an old .bas paired with a new DLL fails with a
  * clear message instead of calling something whose shape it has wrong.
  */
+/*
+ * Library version - the release number, and the single place it is written.
+ *
+ * The ABI implementation and the build system both read these, so the three
+ * cannot drift apart the way they had. This is *not* the ABI version: see
+ * BB_ABI_VERSION just below, which moves only when the exported contract
+ * changes, and docs/c_abi.md for why the two are separate.
+ */
+#define BB_VERSION_MAJOR 0
+#define BB_VERSION_MINOR 4
+#define BB_VERSION_PATCH 0
+
 #define BB_ABI_VERSION 2u
 
 /**

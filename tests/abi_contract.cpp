@@ -195,6 +195,38 @@ int wmain(int argc, wchar_t** argv) {
           "handle 0 is never valid");
     Check(api.ReleaseTexture(0) == BB_E_INVALID_HANDLE,
           "ReleaseTexture rejects handle 0");
+
+    /*
+     * The 64-bit handle must survive the ABI on a 32-bit build too.
+     *
+     * BB_Handle is uint64_t on every architecture, and the ABI does not shrink
+     * it to suit a 32-bit host. On x86 that means it crosses the boundary as two
+     * stack slots, and the VBA wrapper hands it over as two Longs. If the
+     * calling convention or the handle width were wrong, a value with bits set
+     * in *both* halves would be misread, and the stack would be left unbalanced
+     * - so the next call would misbehave rather than this one.
+     *
+     * Hence the shape of this check: pass such a value, and then confirm the
+     * library still answers correctly afterwards.
+     */
+    {
+        Check(sizeof(BB_Handle) == 8, "BB_Handle is 64 bits on this architecture");
+
+        const BB_Handle wide = 0x1234abcd5678ef01ull;
+        Check(api.ReleaseTexture(wide) == BB_E_INVALID_HANDLE,
+              "a handle with both halves set is rejected, not misread");
+        // A null Shape, deliberately: it is refused by argument validation before
+        // anything dereferences it. A non-null fake would be dereferenced once the
+        // handle check no longer short-circuits, and that is a crash, not a test.
+        Check(api.ApplyTexture(nullptr, wide) == BB_E_INVALID_ARG,
+              "the same handle reaches ApplyTexture's argument checks intact");
+
+        // The real assertion: the stack survived. A convention mismatch shows up
+        // here rather than above.
+        Check(api.GetVersion() != 0, "the library still answers after a 64-bit handle call");
+        Check(api.GetTextureCount() == 0, "and still reports a consistent texture count");
+        Check(api.GetAbiVersion() == BB_ABI_VERSION, "and still reports its ABI version");
+    }
     {
         const uint16_t path[] = {L'x', 0};
         const uint16_t empty[] = {0};

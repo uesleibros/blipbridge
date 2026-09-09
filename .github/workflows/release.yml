@@ -1,0 +1,188 @@
+name: release
+
+# Triggered by a SemVer tag: v0.4.0, v1.0.0, and so on.
+#
+# Nothing is published unless every build and test job passes first. The release
+# job depends on the build job, so a red build cannot become a green release.
+#
+# Only architectures with a validated native backend are presented as supported.
+# x86 is packaged so the ABI, the wrapper and the packaging can be exercised on
+# 32-bit Office, and is labelled in the notes and in its own README.txt as having
+# no accelerated backend yet. See docs/windows_x86.md.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, e.g. v0.4.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: package ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: true      # a broken architecture must stop the release
+      matrix:
+        include:
+          - arch: x64
+            msystem: UCRT64
+            packages: >-
+              mingw-w64-ucrt-x86_64-gcc
+              mingw-w64-ucrt-x86_64-cmake
+              mingw-w64-ucrt-x86_64-make
+          - arch: x86
+            msystem: MINGW32
+            packages: >-
+              mingw-w64-i686-gcc
+              mingw-w64-i686-cmake
+              mingw-w64-i686-make
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the MinGW-w64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: ${{ matrix.packages }}
+
+      - name: Build Release
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build/Release -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/Release --parallel
+
+      - name: Build Debug
+        shell: msys2 {0}
+        # Debug is built and tested but not shipped: a configuration that only
+        # ever builds on tag day is a configuration that breaks on tag day.
+        run: |
+          cmake -S . -B build/Debug -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/Debug --parallel
+
+      - name: Test
+        shell: msys2 {0}
+        run: |
+          ctest --test-dir build/Release --output-on-failure
+          ctest --test-dir build/Debug --output-on-failure
+
+      - name: Confirm the binary is the architecture it claims
+        shell: msys2 {0}
+        run: |
+          set -e
+          machine=$(objdump -f build/Release/BlipBridge.dll | grep -o 'pei-i386\|pei-x86-64')
+          case "${{ matrix.arch }}:$machine" in
+            x64:pei-x86-64) ;;
+            x86:pei-i386) ;;
+            *) echo "architecture mismatch: wanted ${{ matrix.arch }}, got $machine"; exit 1 ;;
+          esac
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          if (-not $version) { $version = "${{ github.event.inputs.tag }}" -replace '^v', '' }
+          ./tools/make_dist.ps1 -Architecture ${{ matrix.arch }} -Configuration Release -Version $version
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+
+  publish:
+    name: publish the release
+    needs: build          # no green build, no release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the packages
+        uses: actions/download-artifact@v4
+        with:
+          path: staged
+          merge-multiple: true
+
+      - name: Combine the checksums
+        run: |
+          set -e
+          ls -la staged
+          cat staged/*.sha256 > staged/SHA256SUMS.txt
+          cat staged/SHA256SUMS.txt
+
+      - name: Write the release notes
+        shell: bash
+        # The notes are user-facing: what changed for someone using the library.
+        # GitHub appends the commit list itself via generate_notes, so the
+        # reverse-engineering history stays available without being the headline.
+        run: |
+          cat > notes.md <<'NOTES'
+## Which package do I want?
+
+Check **PowerPoint > File > Account > About PowerPoint** - the first line ends
+with `64-bit` or `32-bit`, and that is the one to download. The wrapper detects a
+mismatch and says so in words rather than letting you meet a loader error.
+
+| Package | Native backend |
+|---|---|
+| `windows-x64` | **Validated** against Office 16.0.14334.20848 |
+| `windows-x86` | **Not yet** - the library loads and refuses every texture call with a specific reason |
+
+The x86 package is published so the ABI, the VBA wrapper and the packaging can be
+exercised on 32-bit Office. It does not accelerate anything yet, and it is built
+without the 64-bit backend compiled in, so it cannot. Progress:
+[docs/windows_x86.md](https://github.com/uesleibros/blipbridge/blob/main/docs/windows_x86.md).
+
+## Install
+
+1. Copy `BlipBridge.dll` next to your `.pptm`.
+2. Import `BlipBridge.bas` into the VBA project.
+
+No `regsvr32`, no ProgID, no add-in.
+
+```vb
+BlipBridge.UserPicture2 shp, "C:\textures\brick.png"
+```
+
+## Verify a download
+
+```
+sha256sum -c SHA256SUMS.txt
+```
+
+## What is validated
+
+The accelerated backend depends on internal Office layouts checked per build. It
+runs against **one** validated build and refuses every other one rather than
+guessing. See
+[docs/safety_model.md](https://github.com/uesleibros/blipbridge/blob/main/docs/safety_model.md)
+and
+[docs/shape_compatibility.md](https://github.com/uesleibros/blipbridge/blob/main/docs/shape_compatibility.md).
+
+CI proves the library builds on both architectures. It does **not** prove the
+PowerPoint backend works - hosted runners have no Office. Those suites run on a
+machine with the validated build and their transcripts are in `docs/evidence/`.
+NOTES
+          echo "notes written"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.ref_name }}"
+          if [ -z "$tag" ] || [ "$tag" = "main" ]; then tag="${{ github.event.inputs.tag }}"; fi
+          gh release create "$tag" \
+             --repo "${{ github.repository }}" \
+             --title "BlipBridge $tag" \
+             --notes-file notes.md \
+             --generate-notes \
+             staged/*.zip staged/*.sha256 staged/SHA256SUMS.txt

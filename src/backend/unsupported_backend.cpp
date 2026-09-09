@@ -2,16 +2,22 @@
  * @file unsupported_backend.cpp
  * The backend used where no accelerated implementation exists yet.
  *
- * Compiled instead of the Windows backend on any other platform - macOS being
- * the case that matters. It deliberately does nothing except answer honestly:
- * no capabilities, and a specific reason on every texture call. The library
- * still loads, still reports its version, and still explains itself, which is
- * far more useful to a caller than a missing export or a silent no-op.
+ * Compiled instead of an accelerated backend wherever one has not been validated.
+ * Two cases reach it today, and each gets its own reason rather than a shared
+ * vague one:
  *
- * What a macOS backend would need is genuinely unknown territory, not a port.
- * The Windows implementation is built on PPCORE/OART/GFX internals, the
- * Windows x64 ABI, and per-build module RVAs and signature bytes; none of that
- * transfers. See docs/macos.md for what would have to be researched first.
+ *  - **Windows 32-bit.** The library builds, but the 32-bit PowerPoint backend
+ *    has not been reverse-engineered or validated. The x64 implementation is not
+ *    portable to it by recompilation: it depends on the x64 calling convention,
+ *    on per-build module RVAs, and on object layouts that 32-bit Office does not
+ *    share. Its sources are excluded from an x86 build entirely, so there is no
+ *    possibility of a half-working backend reaching a document.
+ *  - **Every other platform**, macOS being the case that matters.
+ *
+ * It deliberately does nothing except answer honestly: no capabilities, and a
+ * specific reason on every texture call. The library still loads, still reports
+ * its version, and still explains itself, which is far more useful to a caller
+ * than a missing export or a silent no-op.
  */
 
 #include "backend.hpp"
@@ -21,7 +27,13 @@ namespace {
 
 class UnsupportedBackend final : public Backend {
 public:
-    const char* Name() const noexcept override { return "unsupported-platform"; }
+    const char* Name() const noexcept override {
+#if defined(_WIN32) && !defined(_WIN64)
+        return "windows-x86-unvalidated";
+#else
+        return "unsupported-platform";
+#endif
+    }
 
     BackendResult Probe() noexcept override { return Refuse(); }
 
@@ -70,12 +82,22 @@ public:
 
 private:
     static BackendResult Refuse() {
-        return BackendResult::Failure(
-            BackendStatus::UnsupportedHost,
-            "BlipBridge has no accelerated backend on this platform. The Windows "
-            "implementation depends on PowerPoint internals that do not transfer; "
-            "see docs/macos.md");
+        return BackendResult::Failure(BackendStatus::UnsupportedHost, kReason);
     }
+
+#if defined(_WIN32) && !defined(_WIN64)
+    static constexpr const char* kReason =
+        "BlipBridge's accelerated backend is not available on 32-bit Windows yet. "
+        "The 32-bit PowerPoint internals have not been validated, and the 64-bit "
+        "implementation is not portable to them by recompilation, so it is not "
+        "built here at all. Use 64-bit PowerPoint with the x64 package, or track "
+        "docs/windows_x86.md";
+#else
+    static constexpr const char* kReason =
+        "BlipBridge has no accelerated backend on this platform. The Windows "
+        "implementation depends on PowerPoint internals that do not transfer; "
+        "see docs/macos.md";
+#endif
 };
 
 } // namespace

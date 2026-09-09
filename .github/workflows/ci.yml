@@ -1,0 +1,123 @@
+name: ci
+
+# What this workflow does and does not prove.
+#
+#   It proves    the library configures, compiles and links on Windows x64 and
+#                x86, that every public entry point is exported undecorated, and
+#                that the ABI fails closed with a readable reason where no
+#                accelerated backend exists.
+#
+#   It does NOT  prove the native PowerPoint backend works. Hosted runners have
+#                no Office. The Office integration suites under tools/ run on a
+#                machine with the validated build, and their transcripts are
+#                committed under docs/evidence/.
+#
+# A green tick here is a build signal. Backend validation is tracked separately
+# in the README, and the two must never be conflated.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.arch }} ${{ matrix.configuration }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+        configuration: [Release, Debug]
+        include:
+          # UCRT64 is the 64-bit toolchain the validated backend is built with.
+          # MINGW32 is its 32-bit counterpart; the architecture comes from the
+          # toolchain rather than from a flag, so CMake sees it directly.
+          - arch: x64
+            msystem: UCRT64
+            packages: >-
+              mingw-w64-ucrt-x86_64-gcc
+              mingw-w64-ucrt-x86_64-cmake
+              mingw-w64-ucrt-x86_64-make
+          - arch: x86
+            msystem: MINGW32
+            packages: >-
+              mingw-w64-i686-gcc
+              mingw-w64-i686-cmake
+              mingw-w64-i686-make
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the MinGW-w64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: ${{ matrix.packages }}
+
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build/${{ matrix.configuration }} -G "MinGW Makefiles" \
+                -DCMAKE_BUILD_TYPE=${{ matrix.configuration }}
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build/${{ matrix.configuration }} --parallel
+
+      - name: Confirm the binary is the architecture it claims
+        shell: msys2 {0}
+        # A toolchain misconfiguration that silently produced the other
+        # architecture would make every check below meaningless.
+        run: |
+          set -e
+          machine=$(objdump -f build/${{ matrix.configuration }}/BlipBridge.dll \
+                    | grep -o 'pei-i386\|pei-x86-64')
+          echo "PE machine: $machine"
+          case "${{ matrix.arch }}:$machine" in
+            x64:pei-x86-64) ;;
+            x86:pei-i386) ;;
+            *) echo "architecture mismatch: wanted ${{ matrix.arch }}, got $machine"; exit 1 ;;
+          esac
+
+      - name: Test
+        shell: msys2 {0}
+        # abi_contract runs on both architectures and needs no Office; it is the
+        # suite that asserts fail-closed behaviour, which is exactly what a
+        # runner with no PowerPoint exercises. com_contract is x64-only, because
+        # the Automation surface is compiled only where the backend exists.
+        run: ctest --test-dir build/${{ matrix.configuration }} --output-on-failure
+
+      - name: Check the exported ABI surface
+        shell: msys2 {0}
+        # A missing or renamed export would break the VBA wrapper without failing
+        # any test, because the wrapper binds by name at run time. On x86 this
+        # also catches a lost -Wl,--kill-at: stdcall would decorate the names as
+        # `BB_Init@0` and no Declare would find them.
+        run: |
+          set -e
+          for symbol in BB_Init BB_Shutdown BB_LoadTexture BB_LoadTexturePixels \
+                        BB_ApplyTexture BB_ApplyTextureBatch BB_ReleaseTexture \
+                        BB_ClearTextures BB_GetTextureCount BB_GetCapabilities \
+                        BB_GetLastError BB_GetVersion BB_GetVersionString \
+                        BB_GetAbiVersion BB_ApplyPicture BB_InvalidateShape \
+                        BB_ClearPictureCache BB_GetPictureCacheStats; do
+            if ! objdump -p build/${{ matrix.configuration }}/BlipBridge.dll \
+                 | grep -qE "\\[[ 0-9]+\\] $symbol\$"; then
+              echo "missing or decorated export: $symbol"
+              exit 1
+            fi
+          done
+          echo "all expected exports present and undecorated"
+
+      - name: Upload the build
+        if: matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlipBridge-windows-${{ matrix.arch }}
+          path: |
+            build/Release/BlipBridge.dll
+            vba/BlipBridge.bas
+            include/blipbridge/blipbridge.h
