@@ -1,0 +1,19 @@
+# BlipBridge Shape compatibility matrix
+# build=16.0.14334.20848
+# category|class|shapeType|step|detail
+AutoShape|NativeSupported|1/msoAutoShape|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Freeform|NativeSupported|5/msoFreeform|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+TextBox|NativeSupported|17/msoTextBox|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Placeholder|NativeSupported|14/msoPlaceholder|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 1,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Callout|NativeSupported|2/msoCallout|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Connector|Unsupported|1/msoAutoShape|ApplyRefused|detail=Target must be AutoShape or Freeform: Connectors and lines have no fillable interior  Office's own Fill.UserPicture refuses them and a native apply crashes PowerPoint; unrestricted=notTried; fallback=no; connector=-1; inner=oart.dll+0xaf60b8
+Line|Unsupported|9/msoLine|ApplyRefused|detail=Target must be AutoShape or Freeform: Shape type 9 has no validated picture-fill path  see docs/shape_compatibility.md for the classes that do; unrestricted=refused: Connectors and lines are known to terminate the host  refused even in the unrestricted path; fallback=no; connector=-1; inner=oart.dll+0xaf60b8
+Group|NativeSupported|6/msoGroup|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 6,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Group child|NativeSupported|1/msoAutoShape|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Picture|NativeSupported|13/msoPicture|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 2; connector=0; inner=oart.dll+0xaf60b8
+WordArt|NativeSupported|1/msoAutoShape|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8
+Table|FallbackSupported|19/msoTable|NoReceiver|detail=no validated receiver chain; fallback=yes; connector=0; inner=oart.dll+0xaf60b8
+Chart|Unsupported|3/msoChart|NoReceiver|detail=no validated receiver chain; fallback=no; connector=0; inner=oart.dll+0xaf60b8
+SmartArt|FallbackSupported|24/msoIgraphic|NoReceiver|detail=no validated receiver chain; fallback=yes; connector=0; inner=oart.dll+0xaf60b8
+OLE|FallbackSupported|7/msoEmbeddedOLEObject|NoReceiver|detail=no validated receiver chain; fallback=yes; connector=0; inner=oart.dll+0xaf60b8
+Media|NativeSupported|16/msoMedia|Complete|detail=identity, geometry and type intact; fallback=yes; undo=yes; reopen=filled 2,pictureShapes 0; connector=0; inner=oart.dll+0xaf60b8

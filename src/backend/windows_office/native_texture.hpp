@@ -31,6 +31,19 @@
  */
 bool nativeTextureBackendAvailable() noexcept;
 
+/**
+ * Throws bb::Error unless @p shape belongs to a class the compatibility matrix
+ * proved safe for a native apply.
+ *
+ * This is the single home of that policy. It used to be written out in both the
+ * C ABI backend and the COM engine, which is exactly the kind of duplication
+ * that lets two entry points to the same texture store disagree about what they
+ * will accept.
+ *
+ * @p shape is a PowerPoint Shape, borrowed for the call.
+ */
+void requireFillableShapeClass(IDispatch* shape);
+
 long nativeTextureLoad(SAFEARRAY* bytes);
 
 /**

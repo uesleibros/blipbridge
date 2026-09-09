@@ -96,6 +96,28 @@ as such.
 
 Adding a build means re-validating its layouts, not editing a version number.
 
+## Which Shapes work
+
+Measured by creating a real instance of each class and applying to it, not by
+reasoning about which ones expose a `Fill`:
+
+| | Classes |
+|---|---|
+| **Native** | AutoShape, Freeform, TextBox, Placeholder, Callout, Group, group children, Picture, WordArt, Media |
+| **Falls back to `UserPicture`** | Table, SmartArt, embedded OLE |
+| **Refused** | Chart, Connector, Line |
+
+Connectors and lines are refused *by name*, and that is the most important row.
+A Connector reports `Shape.Type = 1` (msoAutoShape) and presents byte-identical
+internals to a rectangle - same wrapper, same FillFormat, same receiver - so no
+structural check can tell them apart. Office's own `Fill.UserPicture` refuses one
+with "value out of range", and a native apply **terminates PowerPoint**. The
+guard is `Shape.Connector`, which is Office's own answer.
+
+The full matrix, the evidence, and how a class earns native support are in
+[docs/shape_compatibility.md](docs/shape_compatibility.md). It is a property of
+one Office build and has to be re-run on any other.
+
 ## Safety
 
 The backend calls undocumented Office internals, so every call is gated:
@@ -150,7 +172,9 @@ More in [examples/](examples/).
 ## Limitations
 
 * Windows x64 and one Office build.
-* AutoShapes and Freeforms only; other Shape types are refused.
+* Ten Shape classes are natively supported; Table, SmartArt and OLE fall back to
+  `Fill.UserPicture`; Chart, Connector and Line are refused. See
+  [the matrix](#which-shapes-work).
 * Single-threaded: call from the thread that called `Initialize`.
 * A texture handle must be released before PowerPoint exits. `Shutdown` and the
   add-in's teardown both do this; do not leak handles across a session.
@@ -168,6 +192,7 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [record_construction.md](docs/record_construction.md) | what the fill property record actually needs |
 | [oart_abi.md](docs/oart_abi.md) | every private entry point, its ABI and its evidence |
 | [native_texture.md](docs/native_texture.md) | reuse, lifetime, Undo, reference ownership |
+| [shape_compatibility.md](docs/shape_compatibility.md) | which Shape classes work, and the connector that crashes |
 | [capabilities.md](docs/capabilities.md) | what each capability flag claims and why |
 | [c_abi.md](docs/c_abi.md) | the public interface, handle and lifecycle contracts |
 | [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |

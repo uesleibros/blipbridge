@@ -38,6 +38,7 @@ add_library(BlipBridge SHARED
     experiments/exp_internal_blip/batch_benchmark.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
+    experiments/exp_internal_blip/shape_compatibility.cpp
 )
 target_compile_definitions(BlipBridge PRIVATE BB_DLL BLIPBRIDGE_BUILD)
 target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)

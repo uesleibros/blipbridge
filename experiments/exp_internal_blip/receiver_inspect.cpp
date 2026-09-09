@@ -42,8 +42,9 @@ std::wstring inspectFillReceiver(IDispatch* fill) {
                 << L";oartVersion=" << bb::oart::ModuleVersionText(L"oart.dll")
                 << L";ppcoreVersion=" << bb::oart::ModuleVersionText(L"ppcore.dll")
                 << L";gfxVersion=" << bb::oart::ModuleVersionText(L"gfx.dll")
-                << L";expectedOartFillFormatVtable=oart.dll+0xAF60B8"
-                << L";expectedOartReceiverVtable=oart.dll+0x9F6658"
+                << L";expectedOartFillFormatVtable=oart.dll+0x" << std::hex
+                << bb::oart::kFillFormatVtableRva << L";expectedOartReceiverVtable=oart.dll+0x"
+                << bb::oart::kReceiverVtableRva << std::dec
                 << L";observedPpcoreFillFormatVtable=ppcore.dll+0x1464478"
                 << L";ppcoreVtableIsStructural=1;";
 

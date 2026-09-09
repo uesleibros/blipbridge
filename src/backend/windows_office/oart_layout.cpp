@@ -50,7 +50,6 @@ constexpr unsigned kMinimumIdentityThunks = 6;
 /// How far into a vtable to look. The observed tables delegate within this range.
 constexpr unsigned kWrapperSlotsExamined = 48;
 
-constexpr std::uintptr_t kFillFormatVtableRva = 0xAF60B8;          // oart.dll
 constexpr std::size_t kFillFormatSize = 0x68;
 constexpr std::size_t kFillFormatTokenOffset = 0x58;
 constexpr std::size_t kFillFormatFlagOffset = 0x60;
@@ -59,7 +58,6 @@ constexpr std::size_t kControlBlockSize = 0x18;
 constexpr std::size_t kControlBlockStrongOffset = 0x00;
 constexpr std::size_t kControlBlockPointeeOffset = 0x10;
 
-constexpr std::uintptr_t kReceiverVtableRva = 0x9F6658;            // oart.dll
 constexpr std::size_t kReceiverInspectedSize = 0x28;
 
 } // namespace

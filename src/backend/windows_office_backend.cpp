@@ -33,8 +33,6 @@ namespace bb {
 namespace {
 
 /// Public Office enumeration values, not private ABI offsets.
-constexpr long kAutoShape = 1;
-constexpr long kFreeform = 5;
 
 /**
  * Maps an internal HRESULT onto the backend vocabulary.
@@ -113,10 +111,9 @@ IDispatch* RequireFillableShape(void* shape) {
         ~Release() { value->Release(); }
     } release{dispatch};
 
-    const long type = get(dispatch, L"Type").integer();
-    if (type != kAutoShape && type != kFreeform) {
-        throw Error(E_INVALIDARG, "Only AutoShape and Freeform targets are supported");
-    }
+    // Which Shape classes are safe is one policy, and it lives with the texture
+    // store so the C ABI and the COM surface cannot disagree about it.
+    requireFillableShapeClass(dispatch);
     return dispatch;
 }
 

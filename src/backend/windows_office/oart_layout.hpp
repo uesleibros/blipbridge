@@ -34,6 +34,16 @@ inline constexpr DWORD kSupportedVersionLow = (14334u << 16) | 20848u;
 inline constexpr wchar_t kSupportedVersionText[] = L"16.0.14334.20848";
 
 /**
+ * The two OART vtables the receiver walk insists on, as RVAs into `oart.dll`.
+ *
+ * They are public so that a diagnostic can report what was expected without
+ * repeating the numbers in a string literal, which is how they drifted out of
+ * step with the code before.
+ */
+inline constexpr std::uintptr_t kFillFormatVtableRva = 0xAF60B8;
+inline constexpr std::uintptr_t kReceiverVtableRva = 0x9F6658;
+
+/**
  * A private entry point that must be byte-verified before it is called.
  * `signature` holds the exact bytes found at `rva` when the ABI was derived, so
  * a shifted or patched build fails before the call rather than during it.

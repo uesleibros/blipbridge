@@ -1,0 +1,22 @@
+connector isolation 2026-09-09T19:18:02.5666355-03:00
+A control autoshape native : host pid 21048
+A control autoshape native : created, Shape.Type=1 Name=Rectangle 1
+A control autoshape native : probe build=16.0.14334.20848;shapeType=1;hasFill=1;wrapperVtable=ppcore.dll+0x1464478;wrapperInnerOffset=0x8;wrapperThunks=31;innerVtable=0x7ff8446960b8;innerVtableRva=oart.dll+0xaf60b8;receiver=0x1dad771ee10;handler=0x1dad83caa90;tokenStrong=2;step=Complete;resolved=1;agrees=1;
+A control autoshape native : about to apply (native=True)
+A control autoshape native : apply returned
+A control autoshape native : host alive after apply = True
+A control autoshape native : Fill.Type=6 Shape.Type=1
+B connector userpicture : host pid 18456
+B connector userpicture : created, Shape.Type=1 Name=Straight Arrow Connector 1
+B connector userpicture : probe build=16.0.14334.20848;shapeType=1;hasFill=1;wrapperVtable=ppcore.dll+0x1464478;wrapperInnerOffset=0x8;wrapperThunks=31;innerVtable=0x7ff8446960b8;innerVtableRva=oart.dll+0xaf60b8;receiver=0x1a206492dc0;handler=0x1a206ad7fd0;tokenStrong=2;step=Complete;resolved=1;agrees=1;
+B connector userpicture : about to apply (native=False)
+B connector userpicture : apply threw - O valor especificado está fora dos limites.
+B connector userpicture : host alive after apply = True
+B connector userpicture : Fill.Type=-2 Shape.Type=1
+C connector native : host pid 29408
+C connector native : created, Shape.Type=1 Name=Straight Arrow Connector 1
+C connector native : probe build=16.0.14334.20848;shapeType=1;hasFill=1;wrapperVtable=ppcore.dll+0x1464478;wrapperInnerOffset=0x8;wrapperThunks=31;innerVtable=0x7ff86e7260b8;innerVtableRva=oart.dll+0xaf60b8;receiver=0x17654a49270;handler=0x176557172c0;tokenStrong=2;step=Complete;resolved=1;agrees=1;
+C connector native : about to apply (native=True)
+C connector native : apply threw - Connectors and lines have no fillable interior; a native apply crashes PowerPoint
+C connector native : host alive after apply = True
+C connector native : Fill.Type=-2 Shape.Type=1

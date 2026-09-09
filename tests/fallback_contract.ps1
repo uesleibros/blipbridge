@@ -27,14 +27,22 @@ try {
     $slide = $presentation.Slides.Add(1, 12)
     $donor = $slide.Shapes.AddShape(1, 10, 10, 100, 100)
     $destination = $slide.Shapes.AddShape(1, 130, 10, 100, 100)
-    $textBox = $slide.Shapes.AddTextbox(1, 10, 140, 100, 100)
+    <#
+     A connector is the canonical unsupported class. A TextBox used to be, and is
+     no longer: the compatibility matrix proved the native path safe on it, so it
+     is now accepted. A connector reports msoAutoShape and presents the identical
+     internal chain, yet applying to one terminates PowerPoint - so it is refused
+     by name, and that refusal is what this asserts. See
+     docs/shape_compatibility.md.
+    #>
+    $connector = $slide.Shapes.AddConnector(1, 300, 10, 400, 100)
 
     Assert-Rejected { $engine.RegisterTextureShape($donor) } 'donor without picture fill'
-    Assert-Rejected { $engine.RegisterTextureShape($textBox) } 'unsupported donor type'
+    Assert-Rejected { $engine.RegisterTextureShape($connector) } 'unsupported donor type'
 
     $donor.Fill.UserPicture((Join-Path $root 'artifacts/textures/texture_64_0.png'))
     $handle = $engine.RegisterTextureShape($donor)
-    Assert-Rejected { $engine.ApplyTexture($textBox, $handle) } 'unsupported destination type'
+    Assert-Rejected { $engine.ApplyTexture($connector, $handle) } 'unsupported destination type'
     Assert-Rejected { $engine.ApplyTexture($destination, -1) } 'unknown handle'
     Assert-Rejected { $engine.ApplyTexture($destination) } 'missing handle argument'
 

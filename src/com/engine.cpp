@@ -42,7 +42,9 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"BenchmarkTextureBatch", DispatchId::BenchmarkTextureBatch},
     {L"PixelTextureExperiment", DispatchId::PixelTextureExperiment},
     {L"BenchmarkPixelLoad", DispatchId::BenchmarkPixelLoad},
-    {L"ProfileFillStages", DispatchId::ProfileFillStages}
+    {L"ProfileFillStages", DispatchId::ProfileFillStages},
+    {L"ProbeShapeCompatibility", DispatchId::ProbeShapeCompatibility},
+    {L"ApplyTextureUnrestricted", DispatchId::ApplyTextureUnrestricted}
 };
 
 /**

@@ -72,6 +72,21 @@ std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long wid
                                     long height, long stride, long surfaceFormat);
 
 /**
+ * Research: reports how far a Shape gets along the validated fill chain, naming
+ * the step it stops at rather than throwing at the first failure. Read-only.
+ * Feeds tools/test_shape_compatibility.ps1; see shape_compatibility.cpp.
+ */
+std::wstring probeShapeCompatibility(IDispatch* shape);
+
+/**
+ * Research: applies a texture with the Shape-type allowlist bypassed, so the
+ * matrix can find out which classes are genuinely safe rather than merely
+ * structurally identical. Connectors stay refused - that case is settled.
+ * Never reachable through the C ABI. See shape_compatibility.cpp.
+ */
+std::wstring applyTextureUnrestricted(IDispatch* shape, long handle);
+
+/**
  * Research: stage-by-stage attribution of the picture-fill path, across four
  * legs (reuse, new-same-bytes, new-distinct-content, and a pre-created pool).
  * Answers where the difference between applying an existing texture and

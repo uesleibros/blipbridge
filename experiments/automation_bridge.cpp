@@ -7,6 +7,7 @@ namespace {
 UINT ExpectedResearchArgumentCount(DispatchId id) {
     switch (id) {
     case DispatchId::RunBenchmarks:
+    case DispatchId::ProbeShapeCompatibility:
     case DispatchId::InspectFillReceiver:
     case DispatchId::LoadCachedImageExperiment:
     case DispatchId::InspectTexture:
@@ -97,6 +98,14 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
                                             arguments.At(5).integer())
                          .c_str());
     }
+    case DispatchId::ProbeShapeCompatibility:
+        // Read-only classifier: never throws for an unsupported Shape class, so
+        // the harness can put a row in the matrix instead of an exception.
+        return Value(probeShapeCompatibility(target.obj()).c_str());
+    case DispatchId::ApplyTextureUnrestricted:
+        return Value(applyTextureUnrestricted(target.obj(),
+                                              arguments.At(1).integer())
+                         .c_str());
     case DispatchId::InspectFillReceiver:
         // Throws bb::Error naming the failed guard; Invoke reports it verbatim.
         return Value(inspectFillReceiver(target.obj()).c_str());

@@ -2,21 +2,29 @@
 #include "../../experiments/experiment_api.hpp"
 #include <blipbridge/errors.hpp>
 #include <climits>
+#include <string>
 
 namespace bb {
 namespace {
 // Public Office enumeration values, not private ABI offsets.
-constexpr long kAutoShape = 1;
-constexpr long kFreeform = 5;
 constexpr long kPictureFill = 6;
 
-/** Rejects unsupported shape types without changing the document. */
+/**
+ * Rejects Shape classes with no validated picture-fill path.
+ *
+ * The policy itself is requireFillableShapeClass, which lives with the texture
+ * store: both this surface and the C ABI reach the same store, so both must
+ * accept exactly the same Shapes. @p message survives only as the caller's own
+ * wording for the donor case.
+ */
 void RequireNormalShape(IDispatch* shape, const char* message) {
-    const long type = get(shape, L"Type").integer();
-    if (type != kAutoShape && type != kFreeform) {
-        throw Error(E_INVALIDARG, message);
+    try {
+        requireFillableShapeClass(shape);
+    } catch (const Error& error) {
+        throw Error(error.hr, std::string(message) + ": " + error.what());
     }
 }
+
 } // namespace
 
 long Engine::RegisterTextureShape(Value donor) {
