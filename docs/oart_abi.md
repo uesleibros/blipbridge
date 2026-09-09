@@ -71,25 +71,34 @@ The receiver is borrowed too, and must never be cached: a Shape deleted through
 public COM still passes every check in the resolution chain. It is re-resolved
 before each apply, which costs four loads.
 
-## Open: the apply takes one more reference than UserPicture
+## The apply's reference delta
 
-At the same point in the sequence, an ordinary `UserPicture` moved the count
-3 -> 5 across the receiver call, while the native apply moves 4 -> 7. The base
-differs by one for a known reason - the experiment deliberately keeps its own
-`Create` reference alive for the whole call so it can sample counts, whereas the
-file loader releases its local as soon as `+0x8F94C` has taken one. That
-accounts for the different starting point but **not** for the different delta:
-+2 against +3.
+Across the receiver call the cached image gains **two or three** references,
+depending on document state rather than on anything the caller controls. Three
+consecutive identical applies to one Shape measured +3, +2, +3; an ordinary
+`UserPicture` measured +2 in its own trace. Each of those calls created its own
+cached image, so the counts are independent objects, not a running total.
 
-The two runs are not otherwise comparable: the traced `UserPicture` replaced an
-existing picture fill, while the native apply replaced a solid fill. Replacing
-versus establishing a fill plausibly differs by one reference, but that has not
-been measured.
+The starting count differs from `UserPicture` for a known and harmless reason:
+this experiment deliberately keeps its own `Create` reference alive for the whole
+call so it can sample, whereas the file loader releases its local as soon as
+`+0x8F94C` has taken one.
 
-Per the project's own rule, this counts as an unexplained delta and blocks
-productionization until it is either explained or removed. It does not block the
-research experiment, which releases everything it created and leaves the document
-holding Office's own references.
+What the measurements do establish:
+
+* The delta is **bounded and does not grow** with repeated applies to the same
+  Shape. It is not a per-call leak in our code.
+* Every reference this code creates is released. Applying one cached image to
+  five Shapes left the document holding exactly three per Shape, and after our
+  own release nothing else was outstanding on our side.
+* The variability tracks whether the apply replaced a solid fill or an existing
+  picture fill, and probably undo state, but the individual references have not
+  been attributed.
+
+So this is no longer evidence of a defect in the record we build. It is still an
+unattributed count, and attributing it - in particular confirming that Office
+releases all of it on presentation close - remains a prerequisite for
+productionization, not for the research experiments.
 
 ## Guarding
 

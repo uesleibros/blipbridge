@@ -23,6 +23,38 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - one cached image applied to many Shapes
+
+Hypothesis: because `+0x8F94C` AddRefs rather than taking ownership, one cached
+image should serve any number of Shapes, with only record construction and the
+receiver call repeated per Shape.
+
+Method: decode once, then loop over five FillFormats, re-resolving each Shape's
+receiver immediately before its own apply and never caching one between them.
+Coverage was two plain AutoShapes and a different AutoShape type on slide 1, a
+Shape on slide 2, and a Freeform, plus repeated applies to a sixth Shape.
+
+Result: it works. creations=1, one cached-image address, five distinct
+receivers, every Shape keeping identity and gaining a picture fill, the Freeform
+keeping three editable nodes, and the reopened deck showing six picture fills and
+zero Picture shapes.
+
+The repeated-apply case also settled the reference question left open by the
+first apply. Three consecutive identical applies to one Shape measured +3, +2,
++3 across the receiver call, so the delta varies with document state rather than
+being a fixed extra reference caused by our record. It is bounded and does not
+accumulate; applying one image to five Shapes left the document holding exactly
+three per Shape. The individual references remain unattributed, and confirming
+they are all released on presentation close is still a productionization
+prerequisite.
+
+Not claimed: any performance result. Reuse is shown to work; nothing has been
+timed against Fill.UserPicture, and no texture handle exists because nothing is
+retained between calls.
+
+Validation: Release and Debug builds, CTest both, COM smoke, fallback contract,
+native apply and the memory experiment all pass. Capabilities unchanged.
+
 ## 2026-09-09 - first native picture-fill apply, without UserPicture
 
 Hypothesis: with the receiver reachable, the record recipe mapped and every

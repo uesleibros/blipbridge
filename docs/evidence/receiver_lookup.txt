@@ -1,8 +1,8 @@
-A1 before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x1ce848a0e60;handler=0x1ce848a12c0;handlerRefs=1;token=0x1ce80bbb670;tokenStrong=2;receiver=0x1ce95d0db60;container=0x1ce80ae3eb0;sequence=2;
-A2 before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x1ce848a0e60;handler=0x1ce848a12c0;handlerRefs=1;token=0x1ce80bbb670;tokenStrong=2;receiver=0x1ce95d0db60;container=0x1ce80ae3eb0;sequence=2;
-B before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x1ce848a0ed0;handler=0x1ce848a1020;handlerRefs=1;token=0x1ce80bbbd30;tokenStrong=2;receiver=0x1ce95d0cba0;container=0x1ce80ae3eb0;sequence=4;
-C before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x1ce848a1170;handler=0x1ce848a0fb0;handlerRefs=1;token=0x1ce80bbc7b0;tokenStrong=2;receiver=0x1ce95d0e340;container=0x1ce8489f500;sequence=7;
+A1 before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x272efd4fc70;handler=0x272efd4f9d0;handlerRefs=1;token=0x272e207f760;tokenStrong=2;receiver=0x272ef930bb0;container=0x272efd14120;sequence=2;
+A2 before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x272efd4fc70;handler=0x272efd4f9d0;handlerRefs=1;token=0x272e207f760;tokenStrong=2;receiver=0x272ef930bb0;container=0x272efd14120;sequence=2;
+B before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x272efd4f730;handler=0x272efd4f960;handlerRefs=1;token=0x272e207fb80;tokenStrong=2;receiver=0x272ef932b30;container=0x272efd14120;sequence=4;
+C before fill: build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x272efb41610;handler=0x272efd4fce0;handlerRefs=1;token=0x272efac83a0;tokenStrong=2;receiver=0x272ef9342d0;container=0x272eca5a3c0;sequence=7;
 Receiver is stable per Shape; container is stable per slide.
-A after fill:    build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x1ce848a0e60;handler=0x1ce848a12c0;handlerRefs=1;token=0x1ce80bbb670;tokenStrong=2;receiver=0x1ce95d0db60;container=0x1ce80ae3eb0;sequence=2;
+A after fill:    build=16.0.14334.20848;oart=0x7ff884910000;publicFill=0x272efd4fc70;handler=0x272efd4f9d0;handlerRefs=1;token=0x272e207f760;tokenStrong=2;receiver=0x272ef930bb0;container=0x272efd14120;sequence=2;
 Receiver survives an ordinary UserPicture unchanged.
 Deleted Shape still reported a receiver; treat lookups as unsafe after Delete.

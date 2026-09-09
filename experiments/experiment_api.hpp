@@ -37,3 +37,9 @@ std::wstring loadCachedImageExperiment(SAFEARRAY* bytes);
  * No UserPicture, no donor Shape and no source file. Retains nothing.
  */
 std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes);
+/**
+ * Decodes the bytes once and applies that single cached image to every supplied
+ * FillFormat, re-resolving each Shape's receiver immediately before its apply.
+ * Reports the one cached-image address and the per-Shape reference timeline.
+ */
+std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes);

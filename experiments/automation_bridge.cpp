@@ -74,6 +74,17 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         }
         return Value(nativeApplyExperiment(target.obj(), imageBytes.v.parray).c_str());
     }
+    case DispatchId::NativeApplyReuseExperiment: {
+        auto imageBytes = arguments.At(1);
+        if (!(target.v.vt & VT_ARRAY) || !target.v.parray) {
+            throw Error(E_INVALIDARG, "Expected an array of FillFormats");
+        }
+        if (imageBytes.v.vt != (VT_ARRAY | VT_UI1)) {
+            throw Error(E_INVALIDARG, "Expected Byte array");
+        }
+        return Value(
+            nativeApplyReuseExperiment(target.v.parray, imageBytes.v.parray).c_str());
+    }
     case DispatchId::TraceCachedApply: {
         auto destination = arguments.At(1);
         check(traceCachedApply(target.obj(), destination.obj(), arguments.At(2).str()),

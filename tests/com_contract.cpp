@@ -106,7 +106,7 @@ int wmain(int argc, wchar_t** argv) {
                      L"GetHostProcessId", L"TraceUserPicture", L"RunFocusedBenchmarks",
                      L"MemoryFillExperiment", L"RunStress", L"TraceCachedApply",
                      L"InspectFillReceiver", L"LoadCachedImageExperiment",
-                     L"NativeApplyExperiment"}) {
+                     L"NativeApplyExperiment", L"NativeApplyReuseExperiment"}) {
                 ExpectNameReachableThroughInvoke(engine.value, name);
             }
 

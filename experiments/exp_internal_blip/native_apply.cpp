@@ -52,6 +52,7 @@
 
 #include <cstring>
 #include <sstream>
+#include <string>
 #include <vector>
 
 namespace {
@@ -331,8 +332,16 @@ class CountTimeline {
 public:
     explicit CountTimeline(const void* object) : object_(object) {}
 
+    /// Distinguishes one Shape's samples from the next when reusing an image.
+    void SetGroup(long group) { group_ = group; }
+
     void Sample(const wchar_t* label) {
-        samples_.emplace_back(label, bb::oart::IntrusiveCount(object_));
+        std::wstring name;
+        if (group_ >= 0) {
+            name = L"s" + std::to_wstring(group_) + L'.';
+        }
+        name += label;
+        samples_.emplace_back(std::move(name), bb::oart::IntrusiveCount(object_));
     }
 
     void Append(std::wostringstream& out) const {
@@ -343,8 +352,175 @@ public:
 
 private:
     const void* object_ = nullptr;
-    std::vector<std::pair<const wchar_t*, std::uint32_t>> samples_;
+    long group_ = -1;
+    std::vector<std::pair<std::wstring, std::uint32_t>> samples_;
 };
+
+/**
+ * Every private entry point this file needs, resolved and byte-verified once.
+ * Resolving through GuardedAddress means a signature mismatch aborts here,
+ * before any Office object has been constructed.
+ */
+struct ApplyFunctions {
+    RecordConstructor constructRecord = nullptr;
+    ClearSlots clearSlots = nullptr;
+    ImageRecordConstructor constructImageRecord = nullptr;
+    InstallCachedImage installCachedImage = nullptr;
+    TransferImageSlot transferImageSlot = nullptr;
+    BuildStretchHolder buildStretchHolder = nullptr;
+    SetCountedSlot setCountedSlot = nullptr;
+    TransactionConstructor constructTransaction = nullptr;
+    Destructor destroyRecord = nullptr;
+    Destructor destroyImageRecord = nullptr;
+    Destructor destroyTransaction = nullptr;
+    Destructor destroyHolder = nullptr;
+};
+
+ApplyFunctions ResolveApplyFunctions(std::uintptr_t oart) {
+    ApplyFunctions functions;
+    functions.constructRecord =
+        reinterpret_cast<RecordConstructor>(bb::oart::GuardedAddress(oart, kRecordConstructor));
+    functions.clearSlots =
+        reinterpret_cast<ClearSlots>(bb::oart::GuardedAddress(oart, kClearSlots));
+    functions.constructImageRecord = reinterpret_cast<ImageRecordConstructor>(
+        bb::oart::GuardedAddress(oart, kImageRecordConstructor));
+    functions.installCachedImage = reinterpret_cast<InstallCachedImage>(
+        bb::oart::GuardedAddress(oart, kInstallCachedImage));
+    functions.transferImageSlot = reinterpret_cast<TransferImageSlot>(
+        bb::oart::GuardedAddress(oart, kTransferImageSlot));
+    functions.buildStretchHolder = reinterpret_cast<BuildStretchHolder>(
+        bb::oart::GuardedAddress(oart, kStretchHolderBuilder));
+    functions.setCountedSlot =
+        reinterpret_cast<SetCountedSlot>(bb::oart::GuardedAddress(oart, kSetCountedSlot));
+    functions.constructTransaction = reinterpret_cast<TransactionConstructor>(
+        bb::oart::GuardedAddress(oart, kTransactionConstructor));
+    functions.destroyRecord =
+        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kRecordDestructor));
+    functions.destroyImageRecord =
+        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kImageRecordDestructor));
+    functions.destroyTransaction =
+        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kTransactionDestructor));
+    functions.destroyHolder =
+        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kHolderDestructor));
+    return functions;
+}
+
+/**
+ * Builds the record, commits it through the receiver and destroys everything it
+ * built, for one Shape and one already-created cached image.
+ *
+ * @p cached is borrowed. `+0x8F94C` AddRefs it, so the caller keeps its own
+ * reference and may pass the same cached image to any number of Shapes.
+ * All temporary Office objects are destroyed before returning, in the reverse
+ * order the real handler uses.
+ */
+void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
+                      CountedPointer* cached, CountTimeline& timeline) {
+    alignas(16) std::uint8_t recordBuffer[kRecordBufferSize]{};
+    alignas(16) std::uint8_t imageRecordBuffer[kImageRecordBufferSize]{};
+    alignas(16) std::uint8_t transactionBuffer[kTransactionBufferSize]{};
+    static_assert(sizeof(recordBuffer) >= kRecordSize, "record buffer too small");
+    static_assert(sizeof(imageRecordBuffer) >= kImageRecordSize, "sub-record buffer too small");
+    static_assert(sizeof(transactionBuffer) >= kTransactionSize, "transaction buffer too small");
+
+    void* record = recordBuffer;
+    functions.constructRecord(record);
+    ConstructedObject recordGuard(record, functions.destroyRecord);
+    functions.clearSlots(record);
+
+    // Slot at +0x00: the handler writes the payload then stamps the tag.
+    const std::uint32_t picture = kPictureFillKind;
+    std::memcpy(recordBuffer + kFillKindPayloadOffset, &picture, sizeof(picture));
+    std::uint32_t fillKindTag = MarkSlotSet(bb::oart::LoadDword(record, kFillKindSlotOffset));
+    std::memcpy(recordBuffer + kFillKindSlotOffset, &fillKindTag, sizeof(fillKindTag));
+
+    void* imageRecord = imageRecordBuffer;
+    functions.constructImageRecord(imageRecord);
+    ConstructedObject imageRecordGuard(imageRecord, functions.destroyImageRecord);
+
+    // +0x8F94C AddRefs the cached image, so our own reference stays ours.
+    functions.installCachedImage(imageRecord, cached);
+    timeline.Sample(L"install");
+    if (bb::oart::LoadPointer(imageRecord, kCachedImageInSubRecordOffset) !=
+        reinterpret_cast<std::uintptr_t>(cached->value)) {
+        throw bb::Error(E_FAIL, "Cached image did not reach the image sub-record");
+    }
+
+    // Copies the sub-record into the record's image slot and AddRefs again.
+    functions.transferImageSlot(recordBuffer + kImageSlotOffset, imageRecord);
+    timeline.Sample(L"transfer");
+    if (bb::oart::LoadPointer(record,
+                              kImageSubRecordOffset + kCachedImageInSubRecordOffset) !=
+        reinterpret_cast<std::uintptr_t>(cached->value)) {
+        throw bb::Error(E_FAIL, "Cached image did not reach the property record");
+    }
+
+    // Stretch rather than tile. The handler builds this from sixteen zero bytes;
+    // UserTextured differs only by building it another way.
+    const std::uint8_t stretchValue[kStretchValueSize]{};
+    CountedHolder stretchHolder;
+    functions.buildStretchHolder(&stretchHolder, stretchValue);
+    HolderGuard stretchGuard(&stretchHolder, functions.destroyHolder);
+    functions.setCountedSlot(recordBuffer + kStretchSlotOffset, &stretchHolder);
+
+    // Trailing tagged flag, written exactly as the handler writes it.
+    const std::uint8_t trailingPayload = 1;
+    std::memcpy(recordBuffer + kTrailingFlagPayloadOffset, &trailingPayload,
+                sizeof(trailingPayload));
+    std::uint32_t trailingTag =
+        MarkSlotSet(bb::oart::LoadDword(record, kTrailingFlagSlotOffset));
+    std::memcpy(recordBuffer + kTrailingFlagSlotOffset, &trailingTag, sizeof(trailingTag));
+
+    void* transaction = transactionBuffer;
+    functions.constructTransaction(transaction, record, kTransactionFlags,
+                                   target.handlerFlag != 0, kPictureFillIdentifier);
+    ConstructedObject transactionGuard(transaction, functions.destroyTransaction);
+    timeline.Sample(L"transaction");
+
+    // The apply itself: the same receiver vtable slot the handler calls.
+    auto vtable = reinterpret_cast<void* const*>(bb::oart::LoadPointer(target.receiver, 0));
+    auto applyTransaction = reinterpret_cast<ApplyTransaction>(
+        *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(vtable) +
+                                        kApplyTransactionSlot));
+    applyTransaction(target.receiver, transaction);
+    timeline.Sample(L"apply");
+
+    // Destroy in the handler's own reverse order, sampling after each step so an
+    // unexplained delta is visible rather than averaged away. Each guard is
+    // disarmed by Destroy(), so an exception before this point still unwinds.
+    transactionGuard.Destroy();
+    imageRecordGuard.Destroy();
+    recordGuard.Destroy();
+    stretchGuard.Destroy();
+    timeline.Sample(L"released");
+}
+
+/**
+ * Creates one cached image from @p bytes, checking it against the recorded GFX
+ * layout. The returned reference is owned by the caller.
+ */
+void CreateCachedImage(SAFEARRAY* bytes, CountedReference& cached, CountedReference& image) {
+    const HMODULE gfx = bb::oart::RequireSupportedModule(L"gfx.dll", "GFX");
+    const auto gfxBase = reinterpret_cast<std::uintptr_t>(gfx);
+    auto createCachedImage = reinterpret_cast<CreateCachedImageFromStream>(
+        reinterpret_cast<void*>(GetProcAddress(gfx, kCreateFromStreamSymbol)));
+    if (!createCachedImage) {
+        throw bb::Error(E_NOTIMPL, "GFX does not export the stream cached-image creator");
+    }
+
+    OwnedStream stream = CreateStreamOverBytes(bytes);
+    const std::uint8_t uid[kUidSize]{};
+    createCachedImage(&cached.storage, &image.storage, stream.value, kStreamCopyInstruction,
+                      uid, kCreateFlag);
+    if (!cached.storage.value) {
+        throw bb::Error(E_FAIL, "Creator returned no cached image for these bytes");
+    }
+    if (bb::oart::LoadPointer(cached.storage.value, 0) != gfxBase + kCachedImageVtableRva) {
+        cached.storage.value = nullptr;   // unknown layout: leak rather than corrupt
+        image.storage.value = nullptr;
+        throw bb::Error(E_NOTIMPL, "Cached image vtable does not match the validated layout");
+    }
+}
 
 } // namespace
 
@@ -360,146 +536,15 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes) {
     // Resolved immediately before use and never stored: a deleted Shape still
     // passes every check in this chain.
     const FillTarget target = bb::oart::ResolveFillTarget(fill);
-    const std::uintptr_t oart = target.oartBase;
+    const ApplyFunctions functions = ResolveApplyFunctions(target.oartBase);
 
-    // Verify every entry point before constructing anything at all.
-    auto constructRecord =
-        reinterpret_cast<RecordConstructor>(bb::oart::GuardedAddress(oart, kRecordConstructor));
-    auto clearSlots =
-        reinterpret_cast<ClearSlots>(bb::oart::GuardedAddress(oart, kClearSlots));
-    auto constructImageRecord = reinterpret_cast<ImageRecordConstructor>(
-        bb::oart::GuardedAddress(oart, kImageRecordConstructor));
-    auto installCachedImage = reinterpret_cast<InstallCachedImage>(
-        bb::oart::GuardedAddress(oart, kInstallCachedImage));
-    auto transferImageSlot = reinterpret_cast<TransferImageSlot>(
-        bb::oart::GuardedAddress(oart, kTransferImageSlot));
-    auto constructTransaction = reinterpret_cast<TransactionConstructor>(
-        bb::oart::GuardedAddress(oart, kTransactionConstructor));
-    auto destroyRecord =
-        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kRecordDestructor));
-    auto destroyImageRecord =
-        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kImageRecordDestructor));
-    auto destroyTransaction =
-        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kTransactionDestructor));
-    auto buildStretchHolder = reinterpret_cast<BuildStretchHolder>(
-        bb::oart::GuardedAddress(oart, kStretchHolderBuilder));
-    auto setCountedSlot =
-        reinterpret_cast<SetCountedSlot>(bb::oart::GuardedAddress(oart, kSetCountedSlot));
-    auto destroyHolder =
-        reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kHolderDestructor));
-
-    const HMODULE gfx = bb::oart::RequireSupportedModule(L"gfx.dll", "GFX");
-    const auto gfxBase = reinterpret_cast<std::uintptr_t>(gfx);
-    auto createCachedImage = reinterpret_cast<CreateCachedImageFromStream>(
-        reinterpret_cast<void*>(GetProcAddress(gfx, kCreateFromStreamSymbol)));
-    if (!createCachedImage) {
-        throw bb::Error(E_NOTIMPL, "GFX does not export the stream cached-image creator");
-    }
-
-    // Decode from memory. No file is opened anywhere in this function.
-    OwnedStream stream = CreateStreamOverBytes(bytes);
-    const std::uint8_t uid[kUidSize]{};
     CountedReference cached;
     CountedReference image;
-    createCachedImage(&cached.storage, &image.storage, stream.value, kStreamCopyInstruction,
-                      uid, kCreateFlag);
-    if (!cached.storage.value) {
-        throw bb::Error(E_FAIL, "Creator returned no cached image for these bytes");
-    }
-    if (bb::oart::LoadPointer(cached.storage.value, 0) != gfxBase + kCachedImageVtableRva) {
-        cached.storage.value = nullptr;   // unknown layout: leak rather than corrupt
-        image.storage.value = nullptr;
-        throw bb::Error(E_NOTIMPL, "Cached image vtable does not match the validated layout");
-    }
+    CreateCachedImage(bytes, cached, image);
 
     CountTimeline timeline(cached.storage.value);
-    timeline.Sample(L"afterCreate");
-
-    alignas(16) std::uint8_t recordBuffer[kRecordBufferSize]{};
-    alignas(16) std::uint8_t imageRecordBuffer[kImageRecordBufferSize]{};
-    alignas(16) std::uint8_t transactionBuffer[kTransactionBufferSize]{};
-    static_assert(sizeof(recordBuffer) >= kRecordSize, "record buffer too small");
-    static_assert(sizeof(imageRecordBuffer) >= kImageRecordSize, "sub-record buffer too small");
-    static_assert(sizeof(transactionBuffer) >= kTransactionSize, "transaction buffer too small");
-
-    void* record = recordBuffer;
-    constructRecord(record);
-    ConstructedObject recordGuard(record, destroyRecord);
-    clearSlots(record);
-
-    // Slot at +0x00: the handler writes the payload then stamps the tag.
-    std::uint32_t fillKindTag = bb::oart::LoadDword(record, kFillKindSlotOffset);
-    const std::uint32_t picture = kPictureFillKind;
-    std::memcpy(recordBuffer + kFillKindPayloadOffset, &picture, sizeof(picture));
-    fillKindTag = MarkSlotSet(fillKindTag);
-    std::memcpy(recordBuffer + kFillKindSlotOffset, &fillKindTag, sizeof(fillKindTag));
-
-    void* imageRecord = imageRecordBuffer;
-    constructImageRecord(imageRecord);
-    ConstructedObject imageRecordGuard(imageRecord, destroyImageRecord);
-
-    // +0x8F94C AddRefs the cached image, so our own reference stays ours.
-    installCachedImage(imageRecord, &cached.storage);
-    timeline.Sample(L"afterInstall");
-    if (bb::oart::LoadPointer(imageRecord, kCachedImageInSubRecordOffset) !=
-        reinterpret_cast<std::uintptr_t>(cached.storage.value)) {
-        throw bb::Error(E_FAIL, "Cached image did not reach the image sub-record");
-    }
-
-    // Copies the sub-record into the record's image slot and AddRefs again.
-    transferImageSlot(recordBuffer + kImageSlotOffset, imageRecord);
-    timeline.Sample(L"afterTransfer");
-    if (bb::oart::LoadPointer(record,
-                              kImageSubRecordOffset + kCachedImageInSubRecordOffset) !=
-        reinterpret_cast<std::uintptr_t>(cached.storage.value)) {
-        throw bb::Error(E_FAIL, "Cached image did not reach the property record");
-    }
-
-    // Stretch rather than tile. The handler builds this from sixteen zero bytes;
-    // UserTextured differs only by building it another way.
-    const std::uint8_t stretchValue[kStretchValueSize]{};
-    CountedHolder stretchHolder;
-    buildStretchHolder(&stretchHolder, stretchValue);
-    HolderGuard stretchGuard(&stretchHolder, destroyHolder);
-    setCountedSlot(recordBuffer + kStretchSlotOffset, &stretchHolder);
-
-    // Trailing tagged flag, written exactly as the handler writes it.
-    const std::uint8_t trailingPayload = 1;
-    std::memcpy(recordBuffer + kTrailingFlagPayloadOffset, &trailingPayload,
-                sizeof(trailingPayload));
-    std::uint32_t trailingTag =
-        MarkSlotSet(bb::oart::LoadDword(record, kTrailingFlagSlotOffset));
-    std::memcpy(recordBuffer + kTrailingFlagSlotOffset, &trailingTag, sizeof(trailingTag));
-
-    void* transaction = transactionBuffer;
-    constructTransaction(transaction, record, kTransactionFlags,
-                         target.handlerFlag != 0, kPictureFillIdentifier);
-    ConstructedObject transactionGuard(transaction, destroyTransaction);
-    timeline.Sample(L"afterTransaction");
-
-    // The apply itself: the same receiver vtable slot the handler calls.
-    auto vtable = reinterpret_cast<void* const*>(bb::oart::LoadPointer(target.receiver, 0));
-    auto applyTransaction = reinterpret_cast<ApplyTransaction>(
-        *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(vtable) +
-                                        kApplyTransactionSlot));
-    applyTransaction(target.receiver, transaction);
-    timeline.Sample(L"afterApply");
-
-    // Destroy in the handler's own reverse order, sampling after each step so an
-    // unexplained delta is visible rather than averaged away. Each guard is
-    // disarmed by Destroy(), so an exception before this point still unwinds.
-    transactionGuard.Destroy();
-    timeline.Sample(L"afterTransactionDestroyed");
-    imageRecordGuard.Destroy();
-    timeline.Sample(L"afterImageRecordDestroyed");
-    recordGuard.Destroy();
-    timeline.Sample(L"afterRecordDestroyed");
-    // The handler destroys its holder after the record, so this matches.
-    stretchGuard.Destroy();
-
-    // Sampled before ~CountedReference releases our own reference; reading the
-    // object after that would be a use-after-free if the count reached zero.
-    timeline.Sample(L"beforeLocalRelease");
+    timeline.Sample(L"create");
+    ApplyCachedImage(functions, target, &cached.storage, timeline);
 
     std::wostringstream out;
     out << L"build=" << bb::oart::kSupportedVersionText << L';';
@@ -507,6 +552,72 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes) {
         << L";cached=0x" << reinterpret_cast<std::uintptr_t>(cached.storage.value) << std::dec
         << L';';
     out << L"usedUserPicture=0;usedDonorShape=0;usedSourceFile=0;fromMemoryStream=1;";
+    timeline.Append(out);
+    return out.str();
+}
+
+/**
+ * Applies **one** cached image to every FillFormat in @p fills.
+ *
+ * This is the reuse question the whole project turns on: the image is decoded
+ * once, and each Shape then goes through record construction and the receiver
+ * call only. The report names the single cached-image address and repeats it per
+ * Shape, so reuse is visible rather than asserted.
+ *
+ * Each Shape's receiver is resolved immediately before its own apply and is
+ * never cached between them.
+ */
+std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes) {
+    if (!fills || SafeArrayGetDim(fills) != 1) {
+        throw bb::Error(E_INVALIDARG, "Expected a one-dimensional array of FillFormats");
+    }
+    LONG lower = 0;
+    LONG upper = 0;
+    bb::check(SafeArrayGetLBound(fills, 1, &lower), "SafeArrayGetLBound");
+    bb::check(SafeArrayGetUBound(fills, 1, &upper), "SafeArrayGetUBound");
+    if (upper < lower) {
+        throw bb::Error(E_INVALIDARG, "No FillFormats supplied");
+    }
+
+    CountedReference cached;
+    CountedReference image;
+    CreateCachedImage(bytes, cached, image);
+
+    CountTimeline timeline(cached.storage.value);
+    timeline.Sample(L"create");
+
+    std::wostringstream out;
+    out << L"build=" << bb::oart::kSupportedVersionText << L";cached=0x" << std::hex
+        << reinterpret_cast<std::uintptr_t>(cached.storage.value) << std::dec
+        << L";creations=1;shapes=" << (upper - lower + 1) << L';';
+
+    VARTYPE elementType = VT_EMPTY;
+    bb::check(SafeArrayGetVartype(fills, &elementType), "SafeArrayGetVartype");
+    if (elementType != VT_VARIANT && elementType != VT_DISPATCH) {
+        throw bb::Error(E_INVALIDARG, "FillFormat array must hold objects");
+    }
+
+    for (LONG index = lower; index <= upper; ++index) {
+        timeline.SetGroup(index - lower);
+        bb::Value element;
+        if (elementType == VT_DISPATCH) {
+            IDispatch* raw = nullptr;
+            bb::check(SafeArrayGetElement(fills, &index, &raw), "SafeArrayGetElement");
+            element = bb::Value(raw);
+            if (raw) {
+                raw->Release();   // SafeArrayGetElement already AddRef'd for us
+            }
+        } else {
+            bb::check(SafeArrayGetElement(fills, &index, &element.v), "SafeArrayGetElement");
+        }
+        // Re-resolved per Shape; never cached across applies.
+        const FillTarget target = bb::oart::ResolveFillTarget(element.obj());
+        const ApplyFunctions functions = ResolveApplyFunctions(target.oartBase);
+        ApplyCachedImage(functions, target, &cached.storage, timeline);
+        out << L"shape" << (index - lower) << L"Receiver=0x" << std::hex
+            << reinterpret_cast<std::uintptr_t>(target.receiver) << std::dec << L';';
+    }
+
     timeline.Append(out);
     return out.str();
 }

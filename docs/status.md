@@ -148,14 +148,26 @@ before use, with sizes, ownership and destructor pairing recorded in oart_abi.md
 Record 0x4E8, image sub-record 0x200, transaction 0x510. The receiver is
 re-resolved before every apply and never cached.
 
-Open and blocking productionization: the apply takes one more reference than
-UserPicture does at the same point (+3 against +2). The differing starting count
-is explained - the experiment holds its own Create reference for the whole call
-to sample counts - but the differing delta is not, and the two runs are not
-comparable because one replaced a picture fill and the other a solid fill.
+Cached-image reuse works. NativeApplyReuseExperiment decodes once and applies
+that single cached image to five Shapes: two plain AutoShapes and a different
+AutoShape type on slide 1, one on slide 2, and a Freeform. The report shows
+creations=1 with one cached-image address and five distinct receivers. Every
+Shape kept its identity and got a picture fill, the Freeform kept three editable
+nodes, and reopening the saved deck found six Shapes with picture fills and zero
+Picture shapes. Applying repeatedly to one Shape also preserved identity and the
+fill. So the same GFX cached image can serve many Shapes without Office building
+a new one, which is the reuse the whole design depends on.
 
-Capabilities stay false. The experiment retains nothing, so there is still no
-texture handle and no performance claim; reuse of one cached image across
-several Shapes is the next milestone. Internal cache-file elimination and donor-free
+The reference delta is now characterised rather than open. Across the receiver
+call the count gains two or three references depending on document state - three
+consecutive identical applies measured +3, +2, +3 - and it does not grow with
+repeated applies. Every reference this code creates is released; applying one
+image to five Shapes left exactly three per Shape held by the document. The
+individual references are still unattributed, and confirming Office releases all
+of them on presentation close remains a productionization prerequisite.
+
+Capabilities stay false. The experiments retain nothing across calls, so there is
+still no texture handle and no performance claim: reuse has been shown to work,
+but nothing has been timed against Fill.UserPicture yet. Internal cache-file elimination and donor-free
 fill binding remain unresolved; no private call is enabled, and no capability
 flipped.

@@ -34,7 +34,8 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"TraceCachedApply", DispatchId::TraceCachedApply},
     {L"InspectFillReceiver", DispatchId::InspectFillReceiver},
     {L"LoadCachedImageExperiment", DispatchId::LoadCachedImageExperiment},
-    {L"NativeApplyExperiment", DispatchId::NativeApplyExperiment}
+    {L"NativeApplyExperiment", DispatchId::NativeApplyExperiment},
+    {L"NativeApplyReuseExperiment", DispatchId::NativeApplyReuseExperiment}
 };
 
 /**
