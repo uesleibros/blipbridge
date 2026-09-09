@@ -1,5 +1,28 @@
 # Research journal
 
+## 2026-09-09 - record, transaction and receiver lookup are all small
+
+Follow-up static pass on OART +0x89C860, with no new live run.
+
+The receiver lookup is trivial: OART +0x63EA0 is 0x16 bytes and reduces to
+`receiver = *(void**)(*(void**)(handler + 0x58) + 0x10)`. The transaction is a
+0x510-byte stack value built by OART +0x48870 from (property record, flags,
+bool, identifier); the identifier 0xA042008E that reaches the operation
+constructor is a literal at the call site, not derived from the image.
+
+The pieces observed separately turn out to be one record built in the handler's
+own frame at rbp-0x80: the transfer destination at rbp+8 is record+0x88, the
+image sub-record is record+0x90 and the cached image record+0x180. The live
+prefix dump agrees - record+0x88 reads 1 after the transfer, matching the
+discriminator write. The handler's first act is `receiver->vtable[0x130]`, which
+reads as querying the Shape's current fill state.
+
+So the outline of a native apply would be query, mutate the image slot, build a
+transaction, commit - but that is an outline, not a plan. The record is roughly
+0x4E0 bytes produced by 0x2BF bytes of handler code and only four of its offsets
+are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
+Recorded so the next session does not re-derive it. No code changed.
+
 ## 2026-09-09 - the fill receiver is per Shape
 
 Hypothesis: since neither the operation nor its property record carries a Shape

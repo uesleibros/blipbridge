@@ -81,8 +81,19 @@ Shape. The open problem is obtaining the per-Shape OART receiver from a
 PowerPoint Shape without going through the UserPicture handler; nothing observed
 so far shows that is reachable.
 
-Next experiment: determine how OART +0x89C860 obtains its handler state from
-PPCORE, and whether any reachable OART or PPCORE entry point yields the same
-receiver for an arbitrary Shape. Internal cache-file elimination and donor-free
+Static follow-up on the same day: the receiver is two dereferences from the fill
+handler (OART +0x63EA0 is `receiver = *(token + 0x10)`, token = handler+0x58),
+and the transaction is a thin 0x510-byte stack value built by OART +0x48870 from
+(property record, flags 0, handler byte +0x60, identifier 0xA042008E). The
+property record is the ~0x4E0-byte object the whole handler builds in its own
+frame; the image-slot discriminator at record+0x88 and the image sub-record at
+record+0x90 are inside it, which the live prefix dump corroborates. The handler
+starts by calling receiver vtable+0x130 to query current state. Neither the
+transaction nor the receiver lookup is the hard part; the unmapped property
+record and reaching the handler from a Shape are.
+
+Next experiment: determine how OART +0x8A13E0 / +0x89C860 obtains its handler
+state from PPCORE, and whether any reachable OART or PPCORE entry point yields
+the same receiver for an arbitrary Shape. Internal cache-file elimination and donor-free
 fill binding remain unresolved; no private call is enabled, and no capability
 flipped.

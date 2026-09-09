@@ -185,6 +185,63 @@ handler at `OART +0x89C860` from state the handler itself owns. Reaching that
 receiver from a PowerPoint `Shape` without going through `UserPicture` is the
 open problem, and nothing here shows it is reachable.
 
+## The property record and the transaction
+
+The record and the transaction are both plainer than the dispatch around them.
+All of this is static disassembly of `OART +0x89C860`, corroborated by the live
+dumps.
+
+The whole handler builds one property record in its own frame at `rbp-0x80`, and
+the pieces observed separately are all inside it:
+
+```text
+record + 0x40   unidentified non-polymorphic pointer
+record + 0x88   image-slot discriminator: 2 = empty, 1 = set
+record + 0x90   image sub-record
+record + 0x180  cached GFX image (sub-record + 0xF0)
+record + 0x4D8  flag byte set to 1 just before the commit
+record + 0x4D8..+0x4DC  read-modify-write of `(value & ~6) | 1`
+```
+
+The transfer at `OART +0x22BCF4` is called with `rbp+8`, which is `record+0x88`:
+the discriminator, followed by the image sub-record at `record+0x90`. The live
+record prefix dump shows exactly that, `record +0x88 = 0x1` after transfer.
+
+The transaction constructor is small:
+
+```c
+// OART +0x48870, called at +0x89CA48
+Transaction(Transaction* self,          // stack storage, 0x510 bytes
+            const PropertyRecord* src,  // rbp-0x80
+            uint32_t flags,             // 0
+            bool flag,                  // handler->byte_at_0x60
+            uint32_t identifier);       // 0xA042008E
+// self+0x00 vtable OART +0x9ED7E0, self+0x08 null singleton, self+0x10 = 0,
+// self+0x14 = 1, record initialised in place at self+0x18,
+// self+0x500 flags, self+0x504 identifier, self+0x508 flag
+```
+
+So the transaction is a thin stack value around the record, and the identifier
+0xA042008E that later reaches the operation constructor is a literal in the
+handler, not derived from the image.
+
+Resolving the receiver is two dereferences. `OART +0x63EA0` is 0x16 bytes:
+
+```c
+receiver = *(void**)(token + 0x10);   // token = *(void**)(handler + 0x58)
+```
+
+The handler itself is the OART object behind PowerPoint's `FillFormat`; its
+automation-facing wrapper is `OART +0x8A13E0`, which returns `0x800A01A8` on
+rejection and otherwise calls `+0x89C860`. Before doing anything else, the
+handler calls `receiver->vtable[0x130](receiver, &out)` and builds from the
+result, which reads as a query of the Shape's current fill state.
+
+That shape - query current state, mutate the image slot, construct a transaction,
+commit - is the plausible outline of a native apply. It is an outline, not a
+plan: the record is roughly 0x4E0 bytes built by 0x2BF bytes of handler code, and
+only the four offsets above are mapped.
+
 ## Ownership and lifetime
 
 The cached GFX image uses a 32-bit intrusive count at object+8, incremented
