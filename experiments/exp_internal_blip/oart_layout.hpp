@@ -99,6 +99,13 @@ std::uint32_t LoadDword(const void* base, std::size_t offset);
 /// Describes an address as `module+0xRVA`, so a failed check is diagnosable.
 std::string DescribeAddress(std::uintptr_t address);
 
+/**
+ * Returns the named Office module, resolving it from OART's directory if it is
+ * not loaded yet. GFX is delay-loaded, so it is absent until Office's first
+ * picture operation; this makes the backend usable without a warm-up fill.
+ */
+HMODULE EnsureOfficeModule(const wchar_t* moduleName);
+
 /// Throws bb::Error unless the named module is loaded and is the supported build.
 HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* description);
 

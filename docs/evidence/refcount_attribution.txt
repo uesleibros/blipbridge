@@ -1,0 +1,22 @@
+LoadTexture (handle owns one reference)        count=1    delta=+1
+three empty Shapes created                     count=1    delta=+0
+apply to Shape A (first fill on that Shape)    count=5    delta=+4
+apply to Shape B (same slide)                  count=9    delta=+4
+apply to Shape C (other slide)                 count=12   delta=+3
+re-apply to Shape A (replacing the same image) count=13   delta=+1
+Undo the re-apply                              count=14   delta=+1
+Redo it                                        count=15   delta=+1
+flush undo history with 40 unrelated entries   count=12   delta=-3
+  undo-owned references released by flushing: 0
+delete Shape C                                 count=12   delta=+0
+delete Shape B                                 count=11   delta=-1
+flush undo again (drops the deleted Shapes from history) count=5    delta=-6
+delete slide 2 and flush undo                  count=5    delta=+0
+SaveAs                                         count=5    delta=+0
+Presentation.Close                             count=1    delta=-4
+
+ATTRIBUTED: closing the document returned the count to 1, the handle's own
+reference. Everything above 1 was document-owned and is fully released.
+apply in a brand new presentation              count=5    delta=+4
+close that presentation too                    count=1    delta=-4
+ReleaseTexture done; store now holds 0 textures.

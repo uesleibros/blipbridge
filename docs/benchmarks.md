@@ -3,6 +3,34 @@
 ## Native texture against Fill.UserPicture
 
 Office 16.0.14334.20848 x64, measured in process by
+`experiments/exp_internal_blip/texture_benchmark.cpp`, 1000 iterations on one
+Shape with one image. Driving the loop from PowerShell adds a cross-process COM
+round trip several times larger than the operation, so PowerShell timings
+elsewhere in this repository are stability checks, not benchmarks.
+
+| | mean | median | p95 | p99 | max |
+|---|---:|---:|---:|---:|---:|
+| `Fill.UserPicture(path)` | 0.6588 ms | 0.6189 ms | 0.8348 ms | 1.6002 ms | 2.6318 ms |
+| `ApplyTexture`, same texture | 0.1860 ms | 0.1756 ms | 0.2260 ms | 0.3361 ms | 1.5537 ms |
+| `ApplyTexture`, alternating two | 0.1857 ms | 0.1774 ms | 0.2309 ms | 0.2907 ms | 0.4037 ms |
+| `LoadTexture` (50 samples) | 0.0231 ms | 0.0226 ms | 0.0235 ms | 0.0393 ms | 0.0393 ms |
+| `ReleaseTexture` (50 samples) | 0.0001 ms | 0.0001 ms | 0.0001 ms | 0.0007 ms | 0.0007 ms |
+
+Mean speed-up 3.54x, median 3.52x. Alternating between two textures costs the
+same as repeating one, so switching carries no penalty. The tail is the larger
+difference: p99 0.336 ms against 1.600 ms.
+
+`LoadTexture` is paid once per texture and recovered after 0.05 of one apply.
+
+The gap is real work, not a trick: Office re-decodes and writes a temporary image
+per `UserPicture` call - 24 Content.MSO file events for 12 calls, against zero
+for the native path. Full context in `native_texture.md`.
+
+## Earlier fallback measurements
+
+## Native texture against Fill.UserPicture
+
+Office 16.0.14334.20848 x64, measured in process by
 `experiments/exp_internal_blip/texture_benchmark.cpp`, 500 iterations on one
 Shape with one image. Driving the loop from PowerShell adds a cross-process COM
 round trip several times larger than the operation, so those numbers elsewhere in

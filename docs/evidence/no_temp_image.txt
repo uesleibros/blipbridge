@@ -1,0 +1,11 @@
+watching: C:\Users\UeKei\AppData\Local\Microsoft\Windows\INetCache\Content.MSO | C:\Users\UeKei\AppData\Local\Microsoft\Windows\Temporary Internet Files\Content.MSO | C:\Users\UeKei\AppData\Local\Temp\
+control (12x Fill.UserPicture): 24 Content.MSO events, 0 elsewhere
+    C:\Users\UeKei\AppData\Local\Microsoft\Windows\Temporary Internet Files\Content.MSO\1ACB952F.png
+    C:\Users\UeKei\AppData\Local\Microsoft\Windows\INetCache\Content.MSO\1ACB952F.png
+    C:\Users\UeKei\AppData\Local\Microsoft\Windows\Temporary Internet Files\Content.MSO\B5E4D64.png
+    C:\Users\UeKei\AppData\Local\Microsoft\Windows\INetCache\Content.MSO\B5E4D64.png
+native (12x ApplyTexture): 0 Content.MSO events, 1 elsewhere (unrelated processes)
+
+PROVEN: Fill.UserPicture writes a temporary image per call under
+Content.MSO; the native apply writes none. Bytes reach the fill with no
+temporary image file.

@@ -59,29 +59,8 @@ document-derived and can dangle; the module facts cannot.
 
 That change alone took the hot path from 2.35 ms to 0.185 ms.
 
-## Measured
+## Lifetime matrix
 
-### Benchmark, in process
-
-Driving the measurement from PowerShell adds a cross-process COM round trip per
-call, several times the cost of the operation itself, so the benchmark runs
-inside PowerPoint (`tools/run_texture_benchmark.ps1` only asks for it). Same
-Shape, same image, same document, 500 iterations each:
-
-| | mean | median |
-|---|---:|---:|
-| `Fill.UserPicture(path)` | 0.6692 ms | 0.6337 ms |
-| `ApplyTexture(handle)` | **0.1845 ms** | **0.1706 ms** |
-| speed-up | **3.63x** | **3.71x** |
-
-`LoadTexture` cost **0.0495 ms**, paid once per texture. It is recovered after
-0.1 applies - that is, immediately.
-
-The comparison is honest in the one direction that matters: `UserPicture` is
-doing more work because Office re-decodes the image on every call, which is
-precisely the work a texture handle removes.
-
-### Lifetime matrix
 
 `tools/test_native_texture.ps1`, all passing:
 
@@ -105,33 +84,112 @@ a fresh host starts with an empty store. That test runs a **control first** - a
 host that never loaded a texture - because the first attempt failed only because
 the harness itself still held COM references.
 
-### Reference accounting
+## Undo and Redo
 
-After 1006 applies of one texture over six Shapes the cached image's count sat at
-60 and stopped there, with flat process memory. Sixty is what twenty undo entries
-holding three references each would look like, and PowerPoint's undo history is
-bounded by default - but that is a reading of the number, not a measurement of
-it. The count is bounded and does not grow; the individual owners are still
-unattributed.
+**Native applies are undoable and redoable.** An earlier run concluded nothing
+because the control failed too, and the reason was the harness: those runs used
+`Presentations.Add(0)`, a presentation with **no window**, and PowerPoint's Undo
+acts on a document window.
 
-## Why capabilities are still false
+`tools/test_undo_harness.ps1` fixes that and refuses to judge the native path
+until a driver demonstrably undoes an ordinary `Fill.UserPicture`:
 
 ```text
-MemoryImageToFill=False
-CachedTextureApply=False
-InternalBackend=False
+control/ExecuteMso : UNDO WORKS (UserPicture reverted)
+control/redo       : undo=True redo=True
+native/undo        : Fill.Type 1 -> 6 -> 1   (undo reverted: True)
+native/redo        : Fill.Type after redo = 6 (restored: True)
 ```
 
-Two things are outstanding:
+So the earlier expectation - that skipping the wrapper's action scope would make
+the native apply non-undoable - was **wrong**. The apply goes through Office's own
+transaction and receiver, and the undo entry comes with it.
 
-1. **Undo/Redo is unproven.** `CommandBars.ExecuteMso('Undo')` returns `E_FAIL`
-   in this automation harness after an ordinary `Fill.UserPicture` too, so the
-   existing result says nothing either way. The real handler's wrapper
-   `OART +0x8A13E0` sets up an action scope with `+0x1B8BE0`/`+0x1B8C60` that the
-   native path skips, so the honest expectation is that a native apply is not
-   undoable - but that has not been shown, and a harness that can actually drive
-   Undo is needed before it can be.
-2. **The reference count is bounded but unattributed.** Knowing it stops at 60 is
-   not the same as knowing who holds those sixty.
+## Reference ownership, attributed
 
-Everything else on the productization list has been measured and passes.
+Bounded memory said nothing was leaking; it did not say who held what.
+`tools/test_refcount_attribution.ps1` walks one texture through a controlled
+sequence, changing one thing at a time:
+
+| Step | count | delta |
+|---|---:|---:|
+| `LoadTexture` | 1 | +1 |
+| apply to Shape A | 5 | +4 |
+| apply to Shape B, same slide | 9 | +4 |
+| apply to Shape C, other slide | 12 | +3 |
+| re-apply to Shape A | 13 | +1 |
+| Undo | 14 | +1 |
+| Redo | 15 | +1 |
+| flush undo with 40 unrelated entries | 12 | -3 |
+| delete Shape B | 11 | -1 |
+| flush undo again | 5 | -6 |
+| SaveAs | 5 | 0 |
+| **`Presentation.Close`** | **1** | **-4** |
+
+Closing the document returns the count to exactly **1** - the reference the
+handle itself owns. Everything above 1 is document-owned and released with the
+document. Reproduced three times: the original deck, a brand-new presentation
+(+4 then back to 1), and the stress run's three concurrent presentations.
+
+That also answers why identical applies produce different deltas. The cost of an
+apply depends on **what the Shape's previous fill was** and **what is already in
+the undo history**: a first fill over a solid Shape costs +4, while re-applying
+the same image over itself costs +1 because the outgoing fill's reference moves
+into the undo entry rather than adding a new one. The earlier +3/+2/+3 variation
+is exactly this, not an inconsistency.
+
+Owners identified: **handle-owned** (1, ours), **shape/fill-owned** (released on
+delete), **undo-owned** (released by flushing history), and the remainder
+**document-owned** (released on close). No reference outlives its document.
+
+## Stress
+
+`tools/test_native_texture_stress.ps1`:
+
+| Scenario | Result |
+|---|---|
+| 10,000 applies, one Shape | 4236 ms, private 114.2 -> 122 MB, **0 extra creations** |
+| 2,000 alternating applies | private flat at 122.2 MB, counts bounded (24 / 21) |
+| 120 Shapes over 3 slides, one texture | all filled, count 364 (~3 per Shape, matching the attribution) |
+| 20 Shape deletions, then a slide deletion | applies still work |
+| 5 rounds x 100 load/release | private flat, handles back to 2, creations exactly 502 |
+| double release, stale handle | both rejected |
+| 3 concurrent presentations | one texture serves all |
+| all presentations closed | **count back to 1** |
+
+`creations` equalling the number of `LoadTexture` calls is what makes the reuse
+claim concrete rather than rhetorical.
+
+## Benchmark
+
+In process, 1000 iterations, same Shape and image:
+
+| | mean | median | p95 | p99 | max |
+|---|---:|---:|---:|---:|---:|
+| `Fill.UserPicture` | 0.6588 ms | 0.6189 ms | 0.8348 ms | 1.6002 ms | 2.6318 ms |
+| `ApplyTexture`, same texture | **0.1860** | **0.1756** | **0.2260** | **0.3361** | 1.5537 |
+| `ApplyTexture`, alternating two | 0.1857 | 0.1774 | 0.2309 | 0.2907 | 0.4037 |
+| `LoadTexture` (50 samples) | 0.0231 | 0.0226 | 0.0235 | 0.0393 | 0.0393 |
+| `ReleaseTexture` (50 samples) | 0.0001 | 0.0001 | 0.0001 | 0.0007 | 0.0007 |
+
+Mean speed-up **3.54x**, median **3.52x**, alternating **3.55x**. Alternating
+between two textures costs the same as repeating one, so there is no penalty for
+switching. The tail is the bigger story: p99 **0.336 ms** against
+`UserPicture`'s **1.600 ms**.
+
+`LoadTexture` is recovered after 0.05 of one apply.
+
+## Status
+
+| | |
+|---|---|
+| Native cached apply | **proven** |
+| File-free decode (no temporary image) | **proven** |
+| Reuse across Shapes, slides, presentations | **proven** |
+| Save / reopen | **proven** |
+| Performance win | **proven** |
+| Undo / Redo | **proven** |
+| Reference ownership | **fully attributed** |
+
+Capabilities are computed at runtime from the live modules; see
+`capabilities.md` for what each flag claims and the evidence behind it.

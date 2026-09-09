@@ -52,6 +52,13 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes);
  * STA only. Handles never recycle, and live in a range disjoint from the donor
  * fallback's so one ApplyTexture can serve both.
  */
+/**
+ * True when the native backend can actually run in this process: PowerPoint
+ * host, all three Office modules at the validated build, the exported GFX
+ * creator present, and every private entry point's signature bytes intact.
+ * False on any other host, which is what the capability string must report.
+ */
+bool nativeTextureBackendAvailable() noexcept;
 long nativeTextureLoad(SAFEARRAY* bytes);
 void nativeTextureApply(IDispatch* fill, long handle);
 void nativeTextureRelease(long handle);

@@ -53,13 +53,29 @@ long long Now() {
     return counter.QuadPart;
 }
 
-/// Mean and median of per-call milliseconds, which is what the report quotes.
+/**
+ * Per-call milliseconds. Percentiles matter more than the mean here: a fill that
+ * is usually fast but occasionally stalls would look fine on the mean alone.
+ */
 struct Timing {
     double meanMs = 0.0;
     double medianMs = 0.0;
+    double p95Ms = 0.0;
+    double p99Ms = 0.0;
+    double maxMs = 0.0;
     double totalMs = 0.0;
     int calls = 0;
 };
+
+/// Nearest-rank percentile on an already sorted sample.
+double Percentile(const std::vector<double>& sorted, double fraction) {
+    if (sorted.empty()) {
+        return 0.0;
+    }
+    const std::size_t rank =
+        static_cast<std::size_t>(fraction * static_cast<double>(sorted.size()));
+    return sorted[std::min(rank, sorted.size() - 1)];
+}
 
 Timing Summarise(std::vector<double>& samples) {
     Timing timing;
@@ -72,20 +88,31 @@ Timing Summarise(std::vector<double>& samples) {
     }
     timing.meanMs = timing.totalMs / samples.size();
     std::sort(samples.begin(), samples.end());
-    timing.medianMs = samples[samples.size() / 2];
+    timing.medianMs = Percentile(samples, 0.50);
+    timing.p95Ms = Percentile(samples, 0.95);
+    timing.p99Ms = Percentile(samples, 0.99);
+    timing.maxMs = samples.back();
     return timing;
 }
 
 void Append(std::wostringstream& out, const wchar_t* label, const Timing& timing) {
     out << label << L"Calls=" << timing.calls << L';' << label << L"MeanMs="
         << timing.meanMs << L';' << label << L"MedianMs=" << timing.medianMs << L';'
-        << label << L"TotalMs=" << timing.totalMs << L';';
+        << label << L"P95Ms=" << timing.p95Ms << L';' << label << L"P99Ms="
+        << timing.p99Ms << L';' << label << L"MaxMs=" << timing.maxMs << L';' << label
+        << L"TotalMs=" << timing.totalMs << L';';
 }
+
+/// Frees a SAFEARRAY built for one benchmark leg.
+struct ArrayGuard {
+    SAFEARRAY* value;
+    ~ArrayGuard() { SafeArrayDestroy(value); }
+};
 
 } // namespace
 
 /**
- * Benchmarks @p iterations fills three ways on the Shapes of @p slide.
+ * Benchmarks @p iterations fills several ways on the Shapes of @p slide.
  *
  * @p slide is a live PowerPoint Slide; the Shapes are created and removed here so
  * the caller's document is left as it was found. @p imagePath is used only by the
@@ -116,10 +143,7 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
     if (!bytes) {
         throw std::bad_alloc();
     }
-    struct ArrayGuard {
-        SAFEARRAY* value;
-        ~ArrayGuard() { SafeArrayDestroy(value); }
-    } arrayGuard{bytes};
+    ArrayGuard arrayGuard{bytes};
     void* raw = nullptr;
     bb::check(SafeArrayAccessData(bytes, &raw), "SafeArrayAccessData");
     std::memcpy(raw, contents.data(), contents.size());
@@ -137,7 +161,26 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
     userPicture.reserve(iterations);
     applyTexture.reserve(iterations);
 
+    std::vector<double> alternating;
+    std::vector<double> loadSamples;
+    std::vector<double> releaseSamples;
+    alternating.reserve(iterations);
+
+    // A second texture, so the alternating leg exercises a genuinely different
+    // cached image rather than the same one twice.
+    SAFEARRAYBOUND secondBound{static_cast<ULONG>(contents.size()), 0};
+    SAFEARRAY* secondBytes = SafeArrayCreate(VT_UI1, 1, &secondBound);
+    if (!secondBytes) {
+        throw std::bad_alloc();
+    }
+    ArrayGuard secondGuard{secondBytes};
+    void* secondRaw = nullptr;
+    bb::check(SafeArrayAccessData(secondBytes, &secondRaw), "SafeArrayAccessData");
+    std::memcpy(secondRaw, contents.data(), contents.size());
+    SafeArrayUnaccessData(secondBytes);
+
     long handle = 0;
+    long other = 0;
     double loadMs = 0.0;
     try {
         bb::Value fill = bb::get(shape.obj(), L"Fill");
@@ -163,7 +206,31 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
             nativeTextureApply(fill.obj(), handle);
             applyTexture.push_back((Now() - start) * tick * 1000.0);
         }
+
+        // Alternating two textures on one Shape: every apply genuinely changes
+        // the fill, which is the pessimistic case for Office's own bookkeeping.
+        other = nativeTextureLoad(secondBytes);
+        for (long index = 0; index < iterations; ++index) {
+            const long chosen = (index % 2 == 0) ? handle : other;
+            const long long start = Now();
+            nativeTextureApply(fill.obj(), chosen);
+            alternating.push_back((Now() - start) * tick * 1000.0);
+        }
+
+        // Load and release cost, sampled over their own runs rather than once.
+        constexpr long kLifecycleSamples = 50;
+        for (long index = 0; index < kLifecycleSamples; ++index) {
+            const long long loadedStart = Now();
+            const long sample = nativeTextureLoad(bytes);
+            loadSamples.push_back((Now() - loadedStart) * tick * 1000.0);
+            const long long releaseStart = Now();
+            nativeTextureRelease(sample);
+            releaseSamples.push_back((Now() - releaseStart) * tick * 1000.0);
+        }
     } catch (...) {
+        if (other) {
+            nativeTextureRelease(other);
+        }
         if (handle) {
             nativeTextureRelease(handle);
         }
@@ -172,28 +239,38 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
     }
 
     const std::wstring cachedReport = nativeTextureReport(handle);
+    nativeTextureRelease(other);
     nativeTextureRelease(handle);
     bb::call(shape.obj(), L"Delete");
 
     const Timing picture = Summarise(userPicture);
     const Timing apply = Summarise(applyTexture);
+    const Timing alternate = Summarise(alternating);
+    const Timing load = Summarise(loadSamples);
+    const Timing release = Summarise(releaseSamples);
 
     std::wostringstream out;
     out.setf(std::ios::fixed);
     out.precision(4);
     out << L"iterations=" << iterations << L';';
     Append(out, L"userPicture", picture);
-    out << L"loadTextureMs=" << loadMs << L';';
     Append(out, L"applyTexture", apply);
+    Append(out, L"applyAlternating", alternate);
+    Append(out, L"loadTexture", load);
+    Append(out, L"releaseTexture", release);
+    out << L"firstLoadMs=" << loadMs << L';';
     if (apply.meanMs > 0.0) {
         out << L"meanSpeedup=" << (picture.meanMs / apply.meanMs) << L';';
     }
     if (apply.medianMs > 0.0) {
         out << L"medianSpeedup=" << (picture.medianMs / apply.medianMs) << L';';
     }
+    if (alternate.meanMs > 0.0) {
+        out << L"alternatingMeanSpeedup=" << (picture.meanMs / alternate.meanMs) << L';';
+    }
     out << L"loadAmortisedOverCalls="
         << (apply.meanMs < picture.meanMs
-                ? loadMs / (picture.meanMs - apply.meanMs)
+                ? load.meanMs / (picture.meanMs - apply.meanMs)
                 : 0.0)
         << L';';
     out << cachedReport;

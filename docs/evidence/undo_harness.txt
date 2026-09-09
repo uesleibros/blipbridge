@@ -1,0 +1,6 @@
+control/ExecuteMso : UNDO WORKS (UserPicture reverted)
+Adopted undo driver: ExecuteMso
+control/redo : undo=True redo=True
+native/undo : Fill.Type 1 -> 6 -> 1 (undo reverted: True)
+native/redo : Fill.Type after redo = 6 (restored: True)
+Host and ordinary UserPicture still healthy after the native undo sequence.

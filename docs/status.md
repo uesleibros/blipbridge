@@ -2,12 +2,32 @@
 
 Current backend: **PickupApplyFallback**, experimental, whole-style transfer from an existing normal donor shape with a preloaded picture fill.
 
-A reusable native texture API now exists alongside it - LoadTexture, ApplyTexture,
-ReleaseTexture, ClearTextures - decoding bytes once into a GFX cached image and
-applying it with no file, no donor Shape and no UserPicture. Measured in process
-at 0.185 ms per apply against 0.669 ms for Fill.UserPicture, a 3.63x speed-up,
-with a one-off load cost of 0.0495 ms. Capabilities stay false: Undo/Redo is
-unproven and the bounded reference count is unattributed. See native_texture.md.
+A reusable native texture API now exists alongside it - LoadTexture,
+ApplyTexture, ReleaseTexture, ClearTextures - decoding bytes once into a GFX
+cached image and applying it with no file, no donor Shape and no UserPicture.
+
+Current position, each item measured:
+
+  native cached apply                        proven
+  file-free decode, no temporary image       proven
+  reuse across Shapes, slides, presentations proven
+  save / reopen                              proven
+  performance win                            proven
+  Undo / Redo                                proven
+  reference ownership                        fully attributed
+
+Benchmark, in process over 1000 iterations: ApplyTexture 0.1860 ms mean /
+0.1756 median / 0.2260 p95 / 0.3361 p99, against Fill.UserPicture's 0.6588 /
+0.6189 / 0.8348 / 1.6002. Mean speed-up 3.54x, and the p99 gap is larger still.
+Alternating two textures costs the same as repeating one. LoadTexture 0.0231 ms,
+ReleaseTexture 0.0001 ms.
+
+Capabilities are now computed at runtime rather than hard-coded, because the
+backend is pinned to one Office build and must fail closed elsewhere. Inside
+PowerPoint on the validated build they read MemoryImageToFill=True,
+CachedTextureApply=True, InternalBackend=True; outside, all three read False.
+FillOnly stays False deliberately - see capabilities.md. See native_texture.md
+for the evidence behind each claim.
 
 2026-09-09 code-quality checkpoint: COM activation, dispatch, donor operations,
 and research routing are separated and documented. Named DISPIDs/HRESULTs and

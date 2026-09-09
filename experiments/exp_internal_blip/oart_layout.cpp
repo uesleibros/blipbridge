@@ -324,12 +324,40 @@ std::string DescribeAddress(std::uintptr_t address) {
 }
 
 
+HMODULE EnsureOfficeModule(const wchar_t* moduleName) {
+    if (HMODULE loaded = GetModuleHandleW(moduleName)) {
+        return loaded;
+    }
+    // GFX is a delay-load dependency of the Office image pipeline, so it is
+    // absent until Office does its first picture operation. Resolving it early
+    // is exactly what Office's own delay-load thunk would do on first use, and
+    // loading it by full path from OART's directory guarantees the same file
+    // rather than something else on the search path.
+    //
+    // The reference is deliberately never released: the module stays for the
+    // life of the process, which is also what Office's delay load does.
+    HMODULE anchor = GetModuleHandleW(L"oart.dll");
+    if (!anchor) {
+        return nullptr;
+    }
+    wchar_t anchorPath[MAX_PATH * 4]{};
+    if (!GetModuleFileNameW(anchor, anchorPath, static_cast<DWORD>(std::size(anchorPath)))) {
+        return nullptr;
+    }
+    std::wstring path(anchorPath);
+    const std::size_t separator = path.find_last_of(L'\\');
+    if (separator == std::wstring::npos) {
+        return nullptr;
+    }
+    path.replace(separator + 1, std::wstring::npos, moduleName);
+    return LoadLibraryExW(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+}
+
 HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* description) {
-    HMODULE module = GetModuleHandleW(moduleName);
+    HMODULE module = EnsureOfficeModule(moduleName);
     if (!module) {
         throw bb::Error(E_NOTIMPL,
-                        std::string(description) +
-                            " is not loaded; warm it with an ordinary picture fill first");
+                        std::string(description) + " is not loaded and could not be resolved");
     }
     ValidationCache& cache = ValidationCache::Instance();
     cache.SynchroniseWith(GetModuleHandleW(L"oart.dll"), GetModuleHandleW(L"ppcore.dll"),

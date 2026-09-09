@@ -23,6 +23,58 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - hardening: undo works, ownership attributed, capabilities enabled
+
+Three things were blocking production, and all three came down to instruments
+rather than to the backend.
+
+Undo. The earlier conclusion was that native applies were probably not undoable,
+because the path skips the action scope OART +0x8A13E0 sets up. That was wrong,
+and the reason the earlier run said nothing is that its control failed too: those
+presentations were created with Presentations.Add(0), which has **no window**,
+and PowerPoint's Undo acts on a document window. With a windowed presentation the
+control undoes an ordinary UserPicture, and the native apply then undoes and
+redoes cleanly: Fill.Type 1 -> 6 -> 1 -> 6. The harness now refuses to judge the
+native path at all until a driver has demonstrably undone a normal fill.
+
+Ownership. Walking one texture through a controlled sequence, changing one thing
+at a time, attributed every reference: handle-owned (1, ours), shape-owned
+(released on delete), undo-owned (released by flushing history), and the rest
+document-owned. Presentation.Close returns the count to exactly 1, reproduced
+three times. That also explains the variable deltas that had looked inconsistent:
+a first fill over a solid Shape costs +4, re-applying the same image over itself
+costs +1, because the outgoing fill's reference moves into the undo entry instead
+of adding a new one.
+
+No temporary image. This one took three attempts and each failure was
+instructive. A before/after directory listing saw nothing even for the control -
+Office creates and deletes the cache file between snapshots. Re-using one source
+path saw nothing either, because Office caches by path and the warm-up had
+already cached it. With a FileSystemWatcher and a fresh source path per control
+call: 12 UserPicture calls produce 24 Content.MSO events, 12 native applies
+produce zero. That is the claim MemoryImageToFill was always making and never
+had evidence for.
+
+Capabilities are now computed at runtime instead of hard-coded, because a fixed
+string would be wrong on any machine that is not this exact Office build. The
+probe also removed a wart: GFX is delay-loaded, so the backend used to require a
+warm-up picture fill before it would work. EnsureOfficeModule now resolves it
+from OART's directory, which is what Office's own delay-load thunk would do.
+
+Stress: 10,000 applies on one Shape and 2,000 alternating applies added zero
+cached-image creations; 5 rounds of 100 load/release left memory flat and handles
+at their baseline; creations tracked LoadTexture calls exactly.
+
+Benchmark with percentiles: ApplyTexture 0.1860 mean / 0.1756 median / 0.2260 p95
+/ 0.3361 p99 against UserPicture's 0.6588 / 0.6189 / 0.8348 / 1.6002. Alternating
+two textures costs the same as repeating one.
+
+Validation: Release and Debug builds, CTest both, COM smoke, fallback contract,
+receiver lookup, native apply, texture matrix, shutdown, undo harness and the
+memory experiment all pass. The fallback contract now asserts that the capability
+string agrees with whether LoadTexture actually works, rather than asserting a
+fixed answer.
+
 ## 2026-09-09 - reusable texture handles, and a benchmark that found a defect
 
 Productization of the native apply: LoadTexture, ApplyTexture, ReleaseTexture and

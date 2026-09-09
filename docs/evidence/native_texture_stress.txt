@@ -1,0 +1,14 @@
+start: private=110 MB creations=0 handles=0
+10000 applies on one Shape: 4236 ms, private 114.2 -> 122 MB, cachedCount=44
+  creations unchanged by applies: reuse confirmed.
+2000 alternating applies: private 122.2 -> 122.2 MB, counts A=24 B=21
+120 Shapes over 3 slides from one texture: 120 filled, private 122.5 -> 122.9 MB, cachedCount=364
+after deleting 20 filled Shapes: cachedCount=364
+after deleting a whole slide: cachedCount=364
+  applies still work after Shape and slide deletion.
+5 rounds of 100 load/release: private 123.8 -> 123.8 MB, handles=2, creations=502
+Double release and stale-handle apply both rejected.
+One texture applied in 3 concurrent presentations; cachedCount=10
+after closing every presentation: cachedCount=1 (1 means only the handle holds it)
+end: private=123.8 MB (start 110 MB), creations=503, handles=0
+Ordinary UserPicture still works after the whole run.

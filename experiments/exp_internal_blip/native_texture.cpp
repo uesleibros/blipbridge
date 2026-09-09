@@ -56,6 +56,12 @@ namespace {
  */
 constexpr long kNativeHandleBase = 0x1000000;
 
+/// Same exported symbol the creator uses; see native_apply.cpp.
+constexpr char kCreateFromStreamSymbol[] =
+    "?Create@ICachedImage@GEL@@SA?AV?$TCntPtr@UICachedImage@GEL@@@Ofc@@"
+    "AEAV?$TCntPtr@UIImage@GEL@@@4@PEAUIStream@@W4IStreamCopyInstruction@12@"
+    "PEBVMD4UID@4@_N@Z";
+
 /**
  * One decoded image, owning one reference to each of the GFX objects the
  * creator returned.
@@ -104,6 +110,7 @@ public:
         RequireOwningThread(true);
         const long handle = nextHandle_++;
         textures_.emplace(handle, std::make_unique<NativeTexture>(cached, image, byteCount));
+        ++creations_;
         return handle;
     }
 
@@ -139,6 +146,11 @@ public:
     std::size_t Count() const { return textures_.size(); }
     long NextHandle() const { return nextHandle_; }
 
+    /// Total decodes since the process started. A reuse claim is only credible
+    /// if this stays far below the number of applies.
+    unsigned long Creations() const { return creations_; }
+    void CountCreation() { ++creations_; }
+
 private:
     TextureStore() = default;
 
@@ -158,11 +170,35 @@ private:
     }
 
     std::map<long, std::unique_ptr<NativeTexture>> textures_;
+    unsigned long creations_ = 0;
     long nextHandle_ = kNativeHandleBase;
     DWORD owningThread_ = 0;
 };
 
 } // namespace
+
+bool nativeTextureBackendAvailable() noexcept {
+    // Everything the backend needs, checked without touching a document: the
+    // host, all three modules at the validated version, the structural checks
+    // those imply, and every private entry point's signature bytes. Any failure
+    // means the backend is unavailable here, which is the honest answer for a
+    // machine running a different Office build.
+    try {
+        if (!GetModuleHandleW(L"POWERPNT.EXE")) {
+            return false;
+        }
+        const HMODULE oart = bb::oart::RequireSupportedModule(L"oart.dll", "OART");
+        bb::oart::RequireSupportedModule(L"ppcore.dll", "PPCORE");
+        const HMODULE gfx = bb::oart::RequireSupportedModule(L"gfx.dll", "GFX");
+        if (!GetProcAddress(gfx, kCreateFromStreamSymbol)) {
+            return false;
+        }
+        bb::oart::ResolveApplyFunctions(reinterpret_cast<std::uintptr_t>(oart));
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
 
 long nativeTextureLoad(SAFEARRAY* bytes) {
     LONG lower = 0;
@@ -215,7 +251,8 @@ long nativeTextureCount() {
 std::wstring nativeTextureReport(long handle) {
     const TextureStore& store = TextureStore::Instance();
     std::wostringstream out;
-    out << L"textures=" << store.Count() << L";nextHandle=" << store.NextHandle() << L';';
+    out << L"textures=" << store.Count() << L";nextHandle=" << store.NextHandle()
+        << L";creations=" << store.Creations() << L';';
     if (handle > 0) {
         const NativeTexture& texture = TextureStore::Instance().Get(handle);
         out << L"handle=" << handle << L";cached=0x" << std::hex

@@ -101,6 +101,8 @@ private:
     /** Releases donor references and native textures alike. */
     void ClearTextures() noexcept;
     long TextureCount() const;
+    /** Runtime capability string; every flag reflects this host, not a promise. */
+    std::wstring Capabilities() const;
     HRESULT ReportError(const Error& error, EXCEPINFO* exception) noexcept;
 
     std::atomic<ULONG> references_{1};

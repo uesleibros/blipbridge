@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "server.hpp"
+#include "../../experiments/experiment_api.hpp"
 #include <blipbridge/errors.hpp>
 #include <cstring>
 
@@ -187,6 +188,32 @@ HRESULT Engine::Invoke(
     }
 }
 
+/**
+ * Reports what this process can actually do, rather than a compile-time promise.
+ *
+ * The native backend is guarded to one exact Office build and fails closed
+ * everywhere else, so a fixed string would be wrong on most machines. Each flag
+ * below is a claim that has been measured; see docs/native_texture.md for the
+ * evidence behind each one, and docs/capabilities.md for what they mean.
+ */
+std::wstring Engine::Capabilities() const {
+    const bool nativeBackend = nativeTextureBackendAvailable();
+    const wchar_t* native = nativeBackend ? L"True" : L"False";
+    std::wstring capabilities;
+    // Bytes reach a Shape fill with no temporary image file. Verified against a
+    // working control: Fill.UserPicture writes a PNG per call under Content.MSO,
+    // the native apply writes none.
+    capabilities += L"MemoryImageToFill=";
+    capabilities += native;
+    // One decoded image applied to many Shapes without re-decoding, proven by
+    // creation counts staying equal to the number of LoadTexture calls.
+    capabilities += L";CachedTextureApply=";
+    capabilities += native;
+    capabilities += L";PickUpFallback=True;FillOnly=False;InternalBackend=";
+    capabilities += native;
+    return capabilities;
+}
+
 Value Engine::Dispatch(DispatchId id, const AutomationArguments& arguments) {
     switch (id) {
     case DispatchId::GetVersion:
@@ -197,8 +224,7 @@ Value Engine::Dispatch(DispatchId id, const AutomationArguments& arguments) {
         return Value(L"PickupApplyFallback");
     case DispatchId::GetCapabilities:
         arguments.RequireCount(0);
-        return Value(L"MemoryImageToFill=False;CachedTextureApply=False;"
-                     L"PickUpFallback=True;FillOnly=False;InternalBackend=False");
+        return Value(Capabilities().c_str());
     case DispatchId::RegisterTextureShape:
         arguments.RequireCount(1);
         return Value(RegisterTextureShape(arguments.At(0)));
