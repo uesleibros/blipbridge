@@ -92,8 +92,33 @@ starts by calling receiver vtable+0x130 to query current state. Neither the
 transaction nor the receiver lookup is the hard part; the unmapped property
 record and reaching the handler from a Shape are.
 
-Next experiment: determine how OART +0x8A13E0 / +0x89C860 obtains its handler
-state from PPCORE, and whether any reachable OART or PPCORE entry point yields
-the same receiver for an arbitrary Shape. Internal cache-file elimination and donor-free
+Receiver resolution solved. Shape.Fill is a PPCORE object whose vtable slot 17
+(PPCORE +0x8249C0) forwards through this+0x08 to the OART FillFormat, so the
+chain is Shape.Fill -> +0x08 -> OART FillFormat -> +0x58 -> control block ->
++0x10 -> receiver, with vtables ppcore+0x1464478, oart+0xAF60B8 and
+oart+0x9F6658 as guards. The read-only InspectFillReceiver research method walks
+it from inside the add-in and reproduces the debugger classification, including
+the same allocation sequence numbers. Hazard recorded: a Shape deleted through
+public COM still resolves through the whole chain, so a cached receiver would be
+a use-after-free; re-resolving costs four loads. Correction: receiver+0x20 is a
+process-global allocation counter, not a Shape index. See receiver_lookup.md.
+
+Record construction mapped. The handler builds the whole ~0x4E0-byte record with
+Office's own constructors (+0x14110, +0x14F7B0, +0x14580) and then sets only four
+things: the slot at +0x00 with payload 3, the image slot at +0x88/+0x90 via the
+transfer, the counted 16-byte slot at +0x2A0, and the tagged flag at
++0x4D8/+0x4DC. +0x14F7B0 enumerates the record's slot table. So a synthetic
+record need not be fabricated byte by byte. The stream-based cached-image creator
+is a real GFX export (ordinal 236, RVA 0x7680) whose mangled name and prologue
+give the full ABI, including that RCX is the hidden sret pointer and the returned
+pointer carries one reference. See record_construction.md.
+
+Measured for the performance goal: the cached GFX image differed on all four
+observed UserPicture calls, including two on the same Shape with the same file.
+Office builds a new cached image per call and reuses nothing.
+
+Next experiment: establish the property record and image sub-record sizes and
+destructor requirements, then validate each private function's ABI dynamically
+before any of them is called. Internal cache-file elimination and donor-free
 fill binding remain unresolved; no private call is enabled, and no capability
 flipped.

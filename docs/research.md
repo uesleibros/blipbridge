@@ -23,6 +23,58 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - receiver reachable from public COM; record recipe mapped
+
+Two results, one dynamic and one static.
+
+Receiver resolution. Tracing backward from the receiver's use found its factory
+(OART +0x1BE5C0), its constructor (OART +0x223950, one argument: the slide
+container) and its owner: the OART FillFormat object, whose factory OART
++0x23B220 allocates 0x68 bytes and AddRefs a control block into +0x58. That
+object's vtable OART +0xAF60B8 turned out to be an IDispatch layout - slot 0
+compares IIDs, slot 1 increments a uint32 at this+0x30 - which raised the
+question of whether it is simply what Shape.Fill hands out. It is not: Shape.Fill
+is a PPCORE object, and its slot 17 (PPCORE +0x8249C0) forwards through this+0x08
+to the OART object. So the receiver is four guarded loads from public COM.
+
+InspectFillReceiver implements that walk read-only, verifying both module
+versions and three vtables and refusing to continue at the first mismatch. It
+reproduces the debugger classification independently, down to the same allocation
+sequence numbers 2, 4 and 7, and shows the receiver survives a UserPicture
+unchanged. Two corrections fell out: receiver+0x20 is a global allocation counter
+rather than a Shape index, and the earlier "per Shape" classification was
+under-determined until the preparation script began filling one Shape twice.
+
+Hazard: a Shape deleted through public COM still resolves through the entire
+chain with every check passing. The test records that rather than asserting
+otherwise.
+
+Record construction. Reading OART +0x89C860 end to end showed the handler builds
+the record with Office's own constructors and then sets only four things. OART
++0x14F7B0 is a 60-byte leaf that clears a fixed list of dwords, which is the
+record's slot table; the discriminator idioms are AND 0xFFFFFFFA for unset and
+(value AND NOT 6) OR 1 for set. The 16-byte value in slot +0x2A0 comes from the
+handler's third argument, which OART +0x8A13E0 builds from sixteen zero bytes.
+
+The stream-based cached-image creator is an actual GFX export, ordinal 236 at RVA
+0x7680, and its mangled name plus its prologue give the complete ABI: RCX is the
+hidden sret pointer, the IStream is the third argument, and the returned pointer
+is moved rather than AddRef'd, so it carries one reference.
+
+Also measured, because it is the project's whole point: the cached GFX image
+differed on all four observed calls, including two on the same Shape with the
+same file. Office reuses nothing between UserPicture calls.
+
+Limits: no private function was called. Record and sub-record sizes, destructor
+requirements and dynamic ABI validation all remain open, so the gate for a first
+native apply is not met. One real defect was found and fixed on the way -
+Engine::Invoke bounded DISPIDs with a hard-coded member, so any appended method
+resolved by name and was then refused; the bound is now derived from the dispatch
+table and a contract test covers the round trip.
+
+Validation: Release and Debug builds, CTest for both, COM smoke, fallback
+contract and the memory experiment all pass. No capability changed.
+
 ## 2026-09-09 - the fill receiver is per Shape
 
 Hypothesis: since neither the operation nor its property record carries a Shape
