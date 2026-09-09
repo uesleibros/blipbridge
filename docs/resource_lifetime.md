@@ -71,10 +71,30 @@ the existing Office path while observed. It does not validate a synthesized GFX
 resource, file-free loading, direct fill binding, or resource sharing between
 multiple Shapes. Office still uses its Content.MSO temporary image in this path.
 
-Next: observe the loaded-record transfer at OART +0x22BCF4 and the subsequent
-transaction call that changes Shape state. Determine which non-image members are
-needed for document ownership/serialization before attempting to supply our own
-stream-created resource. A cached GFX pointer alone is not established as sufficient.
+## Correction and follow-up (2026-09-09)
+
+The earlier note left the releasing function at `OART +0x3DBB1` unidentified and
+described it only as "the final observed Release during Presentation.Close".
+That was incomplete rather than wrong. `+0x3DBB1` is the return address of the
+cached-image Release at `OART +0x3DBAB`, inside `OART +0x3D870`, which is the
+destructor of the **image sub-record embedded at property-record +0x90**. The
+same function runs whenever any copy of that record dies, not only at close.
+
+The matching increment is `OART +0xA0870`, called from the property-record copy
+constructor `OART +0x13360` with source+0x90; it AddRefs at `OART +0x9848C`.
+So the property record has value semantics over an intrusively counted image:
+copy adds one reference, destruction removes one.
+
+This resolves the ownership question the section above left open. Measured
+counts across a full `UserPicture` call, reproduced in two runs, are in
+`fill_transaction.md`. The transient OART operation object owns exactly one
+reference (+1 on construction, -1 on destruction); the references that survive
+the call, and reach `Presentation.Close`, are taken during the apply step.
+
+Next: identify which field of the receiver (`OART +0x9F6658`) denotes the target
+Shape, and map the property record below +0x90. Both are required before a
+stream-created resource could be supplied. A cached GFX pointer alone is still
+not established as sufficient.
 
 Evidence: `docs/evidence/oart_consumer.txt`, `oart_lifetime_phases.txt`,
 `oart_retention.txt`, `decoder_lifetime_reopen.txt`, and

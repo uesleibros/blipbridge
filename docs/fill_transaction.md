@@ -1,9 +1,13 @@
-# Loaded image to OART transaction
+# Loaded image to OART transaction and the fill operation
 
-Observed on OART 16.0.14334.20848 x64, 2026-09-09. The experiment is
-`experiments/exp_internal_blip/probe_fill_transaction.py`. It sets validated
-breakpoints during the existing UserPicture call; it does not invoke internal
-methods or retain pointers after detach.
+Observed on OART 16.0.14334.20848 x64 and GFX 16.0.14334.20848 x64, 2026-09-09.
+The experiment is `experiments/exp_internal_blip/probe_fill_transaction.py`,
+driven by `tools/run_fill_transaction.ps1`. It sets validated breakpoints during
+an ordinary `Fill.UserPicture` call; it does not invoke internal methods, write
+inferior memory, or retain pointers after detach.
+
+Every RVA below is verified against recorded instruction bytes before the probe
+attaches. Ignore nearest-export names in raw GDB stacks; use these RVAs.
 
 ## Resource propagation
 
@@ -13,68 +17,206 @@ The same cached-image address was observed in each of these live records:
 |---|---:|---|
 | Loaded image record | +0xF0 | Input RDX at OART +0x22BCF4 |
 | Destination wrapper | +0xF8 | Wrapper embeds copied record at +8 |
-| Subsequent transaction | +0x198 | Input RDX at OART +0x89CA6B |
+| Transaction | +0x198 | Input RDX at OART +0x89CA6B |
+| Operation | +0x1E8 | Input RDX at OART +0x21BC06 |
 
 Before transfer, the wrapper discriminator at +0 was 2. OART +0x22BCF4 calls
 +0xA0870 with destination+8 and the loaded source, then changes discriminator
-bits with `(value & ~6) | 1`. This is an observed property-record transfer, not a
-standalone image-to-Shape API. Adjacent fields include other state and references
-whose ownership/semantics have not been recovered.
+bits with `(value & ~6) | 1`. This is an observed property-record transfer, not
+a standalone image-to-Shape API.
 
-The transaction constructor at OART +0x48870 writes through +0x508. The probe
-therefore inspects only its known 0x510-byte stack region; it does not scan arbitrary
-heap objects. An earlier 0x100-byte observation did not reach the cached pointer.
-Absence in that smaller observation was not evidence that the transaction lacked it.
+The four offsets are one layout, not four unrelated ones. The property record
+embeds an **image sub-record at record+0x90**, and that sub-record holds the
+cached GFX pointer at its own **+0xF0**. So:
+
+```text
+property record + 0x90 (image sub-record) + 0xF0 (cached image)
+transaction + 0x18 (property record)  -> cached image at transaction + 0x198
+operation   + 0x68 (property record)  -> cached image at operation   + 0x1E8
+```
+
+The standalone "loaded record" observed at OART +0x22BCF4 is an instance of the
+image sub-record type, which is why its cached pointer sits at +0xF0 directly.
 
 ## Resolved dispatch path
 
 ```text
 UserPicture loader returns                   OART +0x89C9F6
-loaded-record transfer                      OART +0x22BCF4
-transaction construction                    OART +0x48870
+loaded-record transfer                       OART +0x22BCF4
+transaction construction                     OART +0x48870
+receiver resolved from handler state +0x58   OART +0x63EA0
 receiver vtable +0x78 call                   OART +0x89CA6B
-    receiver vtable                         OART +0x9F6658
-    resolved forwarding method              OART +0x21DEC0
+    receiver vtable                          OART +0x9F6658
+    resolved forwarding method               OART +0x21DEC0
     forwards unchanged to receiver slot +0x50
-        resolved method                     OART +0x21BB20
-        slot +0x60 call                     OART +0x21BBE8
-            resolved preparation candidate  OART +0x2290F0
-        slot +0x58 call                     OART +0x21BC06
-            resolved application candidate  OART +0x1B88B0
-returns to UserPicture                      OART +0x89CA71
+        driver                               OART +0x21BB20
+        slot +0x60 call: build operation     OART +0x21BBE8 -> +0x2290F0
+        slot +0x58 call: apply operation     OART +0x21BC06 -> +0x1B88B0
+        operation vtable +0xA8, EDX=1        OART +0x21BC26 -> +0x66C80
+returns to UserPicture                       OART +0x89CA71
 ```
 
-This sequence was dynamically repeated. At the slot +0x58 call, RDX points to a
-different operation object whose first qword is vtable OART +0x9E4BD0. It is not
-the cached GFX image pointer. The later RAX value equals this operation address
-in the observed run, but the public meaning and lifetime of that return are not
-established; do not treat it as an HRESULT or retained result.
+`OART +0x21BB20` is a plain build / apply / delete driver:
 
-Static inspection of +0x2290F0 shows type-dependent branches, output storage in
-R8, and possible construction using transaction+0x18. The exact branch taken
-and operation constructor must be proved dynamically before assigning an ABI.
-+0x1B88B0 changes operation flags, consults receiver methods and calls +0x1B8F50.
-These descriptive aliases are hypotheses about roles, not recovered symbol names.
+```c
+Operation* operation = nullptr;
+if (receiver->vtable_0x60(receiver, transaction, &operation) && operation) {
+    receiver->vtable_0x58(receiver, operation);   // apply
+    operation->vtable_0xA8(operation, 1);         // destroy and free
+}
+```
+
+## Operation construction
+
+`OART +0x2290F0` performs RTTI-style type checks on the transaction. In the
+observed run none of its own inline construction branches matched, so it fell
+through to `OART +0x21BC50`, which reached the generic factory:
+
+```text
+OART +0x2290F0  +0x2291FE  ->  OART +0x21BC50
+OART +0x21BC50  +0x21BCA4  ->  OART +0x2F1E00   (cold continuation)
+OART +0x2F1E00  +0x2F1E1C  ->  OART +0xF740     (transaction type dispatch)
+OART +0xF740    +0xF7F1    ->  OART +0xE7F0     (operation factory)
+OART +0xE7F0    +0xEF3B    ->  OART +0x10244    (operation constructor)
+```
+
+The live backtrace at the constructor call matched this chain exactly in both
+runs (+0xEF3B, +0xF7F6, +0x2F1E21, +0x229203, +0x21BBEE, +0x89CA71).
+
+`OART +0xE7F0` allocates the operation from the Office allocator singleton at
+`[OART +0xD40050]` through its vtable slot 0, then calls the constructor:
+
+```c
+// OART +0xEEFC .. +0xEF40
+void* storage = allocator->vtable_0(allocator, 0x570);
+OperationCtor(storage,
+              transaction + 0x18,                     // RCX/RDX
+              *(uint32_t*)(transaction + 0x500),      // R8D  flags
+              *(uint8_t*) (transaction + 0x508),      // R9B  bool
+              *(uint32_t*)(transaction + 0x504));     // stack, identifier
+```
+
+Observed values, identical in two independent runs:
+
+| Input | Value |
+|---|---|
+| Allocation size | 0x570 |
+| Source | transaction + 0x18 (verified equal at run time) |
+| Flags (transaction +0x500) | 0 |
+| Bool (transaction +0x508) | 0 |
+| Identifier (transaction +0x504) | 0xA042008E |
+| Resulting vtable | OART +0x9E4BD0 |
+
+`OART +0x10244` sets the two vptrs (+0x9E4BD0 at +0, +0x9E47C0 at +8), takes a
+process-wide sequence number from `[OART +0xD40040]` into +0x10, initialises a
+sub-object at +0x38, and **copies the source property record into +0x68** via
++0x13360 / +0x10CD0 / +0x11E60. It stores the identifier at +0x568 and the bool
+at +0x56C. It receives no Shape pointer, no document pointer, and no context.
+
+## Where Shape and document identity enter
+
+Identity does **not** enter through the operation. The operation is built purely
+from the transaction's property record plus three scalars. Identity is carried
+by the receiver, which `OART +0x63EA0` resolves from handler state +0x58:
+
+```text
+receiver +0x00  vtable OART +0x9F6658
+receiver +0x08  heap object (not yet identified)
+receiver +0x10  smart pointer holding the shared null singleton OART +0x9E5690
+receiver +0x18  vtable OART +0x9F64D0   -- the context sub-object
+```
+
+`OART +0x1B88B0` applies the operation against that receiver:
+
+```c
+operation->word_at_0x28 = 0x100;
+if (!receiver->vtable_0x48(receiver)) return;
+context = receiver->vtable_0xF0(receiver);        // returns receiver + 0x18
+extra   = receiver->vtable_0xF8(receiver, &tmp);
+OperationApply(operation, context, receiver + 0x10, &nullHolder, extra);
+                                                  // OART +0x1B8F50
+```
+
+Live registers matched: RCX = operation, RDX = receiver+0x18, R8 = receiver+0x10.
+
+Which Shape the receiver denotes is **not established**. The receiver dump shows
+no obvious per-Shape pointer, and the remaining candidates are receiver+0x8 and
+fields of the property record itself. Do not assume the receiver is document-wide
+or Shape-scoped until that is measured.
+
+## Ownership and lifetime
+
+The cached GFX image uses a 32-bit intrusive count at object+8, incremented
+through vtable slot 0 and decremented through vtable slot +8 (GFX +0xA1A0 runs
+`lock xadd` on +8 and destroys through slot +0x30 at 1).
+
+Static chain, both directions:
+
+* Property-record copy `OART +0x13360` copies the image sub-record at
+  source+0x90 through `OART +0xA0870`, which AddRefs at `OART +0x9848C`.
+* Property-record destructor `OART +0xAF80` destroys the image sub-record via
+  `OART +0x3D870`, which Releases the cached pointer at `OART +0x3DBAB`,
+  returning to **`OART +0x3DBB1`**. That is the exact return address recorded
+  for the final Release during `Presentation.Close` in `resource_lifetime.md`,
+  so the Close-time release and the operation-time release are the same code.
+* Scalar deleting destructor `OART +0x66C80` destroys the embedded record at
+  this+0x68 first, then releases this+0x50 and this+0x18, then frees the object
+  through allocator slot +8 (observed target `ppcore.dll+0x2E1B70`).
+
+Measured counts, identical in two independent runs:
+
+| Sample point | Count |
+|---|---:|
+| Loaded image record | 1 |
+| Transaction entry | 3 |
+| Before construction (OART +0xEF3B) | 3 |
+| After construction (OART +0x21BC06) | 4 |
+| Before destruction (OART +0x21BC26) | 6 |
+| After destruction (OART +0x66CDE) | 5 |
+| UserPicture returns (OART +0x89CA71) | 5 |
+
+**The operation owns a counted reference, it does not borrow one.** Construction
+delta is exactly +1 and destruction delta is exactly -1. The apply step adds a
+further +2 that outlives the operation; those are the document/undo references
+that survive to `Presentation.Close`.
 
 ## Validation and remaining work
 
-The harness now compares Shape ID, name, type, bounds, rotation and Z order before
-and after tracing. The repeated run preserved those values and produced a picture
-fill. The saved package contains one normal Shape, no Picture shapes and one PNG
-matching the trace source's recorded SHA256. This validates ordinary UserPicture
-under observation, not a synthesized transaction or optimized backend.
+The harness compares Shape ID, name, type, bounds, rotation and Z order before
+and after tracing. Both runs preserved those values and produced a picture fill.
+This validates ordinary `UserPicture` under observation, not a synthesized
+transaction or an optimized backend.
 
-Next experiment: observe which preparation branch constructs the operation with
-vtable +0x9E4BD0, determine which Shape/document identity it captures, and follow
-its execution/cleanup through +0x1B8F50. Establish lifetime of its non-image state
-before attempting reuse. The known GFX pointer at transaction+0x198 alone is not
-a safe fill-binding interface.
+Answered by this experiment:
 
-No performance claim, production capability, or compatibility profile enabling
-private calls changed. File-free loading, donor-free assignment, independent
-resource lifetime and repeated decode avoidance are still unimplemented.
+1. Which function constructs the operation — `OART +0x10244`, reached from the
+   factory `OART +0xE7F0` at call site `+0xEF3B`.
+2. What it receives — a property record plus flags/bool/identifier, all read out
+   of the transaction; nothing else.
+4. Whether the operation owns or borrows the cached image — it owns one counted
+   reference for its own lifetime.
+5. Part of lifetime — creation, apply and destruction are all inside the single
+   `UserPicture` call; two further references survive it. Undo and Redo have not
+   been sampled yet.
 
-Raw evidence: `docs/evidence/fill_transaction_validated.txt` and
+Still open:
+
+3. Where Shape identity lives. The receiver carries it, but the field is not
+   identified, and the property record has not been mapped below +0x90.
+6. Whether a cached image built from our own `IStream` can enter this flow. That
+   needs both a constructible property record and a way to obtain a receiver for
+   a chosen Shape without going through `UserPicture`.
+7. Save/reopen of a synthesized fill — untested; only the ordinary path is
+   validated.
+8. Guarding. All anchors here are byte-validated per build, but no private call
+   is enabled, so no compatibility profile has been widened.
+
+No performance claim, production capability or compatibility profile changed.
+File-free loading, donor-free assignment, independent resource lifetime and
+repeated-decode avoidance remain unimplemented.
+
+Raw evidence: `docs/evidence/fill_transaction_lifecycle.txt`,
+`docs/evidence/fill_transaction_lifecycle_repeat.txt`,
+`docs/evidence/fill_transaction_validated.txt` and
 `docs/evidence/decoder_shape_validation.txt`. Saved package details:
-`docs/fill_transaction_package.md`. Ignore nearest-export names in GDB stacks;
-use verified module RVAs.
+`docs/fill_transaction_package.md`.

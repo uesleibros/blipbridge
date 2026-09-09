@@ -41,13 +41,32 @@ The ordinary traced deck saved/reopened with one normal image-filled AutoShape.
 See resource_lifetime.md for evidence and remaining ownership limits.
 
 Latest transaction trace: the cached pointer propagates from loaded record
-+0xF0 to wrapper +0xF8 and transaction +0x198. The subsequent receiver dispatch
-resolves through OART +0x21DEC0/+0x21BB20 to +0x2290F0 (preparation candidate)
-and +0x1B88B0 (application candidate). The latter receives a separate operation
-object with vtable +0x9E4BD0. Shape identity/geometry and saved-package checks
-passed during the repeated observation. See fill_transaction.md.
++0xF0 to wrapper +0xF8, transaction +0x198 and operation +0x1E8. These are one
+layout: the property record embeds an image sub-record at +0x90 whose cached
+pointer sits at +0xF0. The receiver dispatch resolves through OART
++0x21DEC0/+0x21BB20, which is a build/apply/delete driver. See fill_transaction.md.
 
-Next experiment: identify the actual operation-construction branch and its
-Shape/document references, then follow execution and cleanup through +0x1B8F50.
-Required state beyond the image pointer remains unknown. Internal cache-file
-elimination and donor-free fill binding remain unresolved; no private call enabled.
+2026-09-09 operation lifecycle resolved. The operation is built by factory OART
++0xE7F0: 0x570 bytes from the Office allocator, then constructor OART +0x10244
+with (property record at transaction+0x18, flags transaction+0x500, bool
+transaction+0x508, identifier transaction+0x504). Observed identifier 0xA042008E,
+flags and bool zero, resulting vtable +0x9E4BD0. The constructor receives no
+Shape and no document pointer; identity is carried by the receiver
+(vtable +0x9F6658, context sub-object at receiver+0x18), which OART +0x63EA0
+resolves from handler state +0x58. The operation is applied by OART +0x1B88B0 to
+that receiver and then destroyed by OART +0x66C80 within the same UserPicture
+call, freeing through ppcore.dll+0x2E1B70.
+
+Ownership resolved: the cached GFX image count (32-bit at object+8) measured
+1 -> 3 -> 3 -> 4 -> 6 -> 5 -> 5 across loaded record, transaction entry, before
+and after construction, before and after destruction, and UserPicture return.
+Construction is exactly +1 and destruction exactly -1, so the operation owns a
+counted reference rather than borrowing one; the two references that survive the
+call are taken during apply and live until Presentation.Close. Both runs of
+tools/run_fill_transaction.ps1 produced identical values and preserved Shape
+identity, geometry, Z order and picture fill.
+
+Next experiment: identify which receiver field denotes the target Shape, and map
+the property record below +0x90. Both are prerequisites for supplying a
+stream-created resource. Internal cache-file elimination and donor-free fill
+binding remain unresolved; no private call is enabled, and no capability flipped.

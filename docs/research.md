@@ -1,5 +1,51 @@
 # Research journal
 
+## 2026-09-09 - operation construction, inputs and cached-image ownership
+
+Hypothesis: the operation object handed to application slot +0x58 is built by a
+locatable factory whose inputs and resource ownership can be established without
+calling anything.
+
+Method: static PE work first. `.pdata` lookups resolved every observed return
+address to a real function entry, so the construction chain could be read from
+disassembly before any breakpoint was placed. The probe was then rewritten
+around those anchors, adding intrusive reference-count sampling at six points,
+and driven twice through the new `tools/run_fill_transaction.ps1`.
+
+Result. The construction chain is OART +0x2290F0 -> +0x21BC50 -> +0x2F1E00 ->
++0xF740 -> +0xE7F0 -> +0x10244, confirmed by the live backtrace in both runs.
+The factory allocates 0x570 bytes from the Office allocator and constructs with
+(property record at transaction+0x18, flags transaction+0x500, bool
+transaction+0x508, identifier transaction+0x504). Observed identifier 0xA042008E;
+flags and bool zero. The constructor copies the property record into
+operation+0x68, so the cached image reappears at operation+0x1E8, which the probe
+verified equal to the tracked GFX pointer.
+
+The constructor receives no Shape or document argument. Identity travels with the
+receiver (vtable +0x9F6658), whose context sub-object is at receiver+0x18 and
+which OART +0x1B88B0 passes to +0x1B8F50 together with receiver+0x10. The driver
+at +0x21BB20 is simply build, apply, destroy: the operation is freed inside the
+same UserPicture call through +0x66C80 and ppcore.dll+0x2E1B70.
+
+Ownership is now measured rather than inferred. Counts on the cached image were
+1, 3, 3, 4, 6, 5, 5 at loaded record, transaction entry, before and after
+construction, before and after destruction, and UserPicture return - identical in
+both runs. Construction is +1 and destruction -1, so the operation owns a counted
+reference. This also corrects an incomplete note in resource_lifetime.md: the
+Close-time release at OART +0x3DBB1 is not a close-specific path, it is the image
+sub-record destructor OART +0x3D870, whose matching AddRef is the record copy
+OART +0x13360 -> +0xA0870 -> +0x9848C.
+
+Limits: which receiver field denotes the Shape is still unknown, and the property
+record below +0x90 is unmapped. Both must be resolved before a stream-created
+resource could enter this flow. No internal function was called, no capability
+changed, no benchmark claim made.
+
+Validation: both traced runs preserved AutoShape ID, name, type, bounds, rotation
+and Z order and produced a valid picture fill; all breakpoints were removed and
+the debugger detached. Release and Debug builds, CTest, COM smoke and
+fallback-contract tests passed afterwards.
+
 ## 2026-09-09 - loaded record reaches the state transaction
 
 Hypothesis: the GFX cached reference is carried by the transaction used after

@@ -1,0 +1,254 @@
+﻿[New Thread 2172.0x571c]
+[New Thread 2172.0x1780]
+[New Thread 2172.0x5d34]
+[New Thread 2172.0x69a4]
+[New Thread 2172.0x218c]
+[New Thread 2172.0x6734]
+[New Thread 2172.0x72b4]
+[New Thread 2172.0x76c]
+[New Thread 2172.0x298c]
+[New Thread 2172.0x4060]
+[New Thread 2172.0x431c]
+[New Thread 2172.0x5f7c]
+[New Thread 2172.0x254]
+[New Thread 2172.0x443c]
+[New Thread 2172.0x15bc]
+[New Thread 2172.0x3c8c]
+[New Thread 2172.0x4b58]
+[New Thread 2172.0x5b8c]
+[New Thread 2172.0x3284]
+[New Thread 2172.0x7a9c]
+[New Thread 2172.0x6620]
+[New Thread 2172.0x74a8]
+[New Thread 2172.0x482c]
+[New Thread 2172.0x7264]
+[New Thread 2172.0x4e54]
+[New Thread 2172.0xda8]
+[New Thread 2172.0x379c]
+[New Thread 2172.0x65c4]
+[New Thread 2172.0x53b4]
+[New Thread 2172.0x763c]
+[New Thread 2172.0x6bb8]
+[New Thread 2172.0x150c]
+[New Thread 2172.0x4090]
+[New Thread 2172.0x32b4]
+[Thread 2172.0x32b4 exited with code 0]
+
+STAGE transfer
+loaded record address=0xeaf65dd3d0
+  +0x10 = 0x8000000000000000
+  +0x90 = oart.dll+0xa469cc
+  +0x98 = oart.dll+0xa469cc
+  +0xa0 = 0x5
+  +0xa8 = 0x253cfa666b0
+  +0xb0 = 0x400000002
+  +0xb8 = 0x1
+  +0xc8 = 0xffffffff00000000
+  +0xd0 = 0x1
+  +0xe0 = 0xffffffff00000000
+  +0xe8 = 0x1
+  +0xf0 = 0x253c51437c0 [cached resource]
+destination before transfer address=0xeaf65dcf68
+  +0x0 = 0x2
+  +0x18 = 0x8000000000000000
+  +0x98 = oart.dll+0xa469cc
+  +0xa0 = oart.dll+0xa469cc
+  +0xa8 = 0x5
+  +0xb8 = 0xffffffff00000000
+  +0xc0 = 0x1
+  +0xd0 = 0xffffffff00000000
+  +0xd8 = 0x1
+  +0xe8 = 0xffffffff00000000
+  +0xf0 = 0x1
+CACHED COUNT loaded-record          = 1
+
+STAGE transaction
+receiver=0x253d2b54780 vtable=oart.dll+0x9f6658 resolved-call=oart.dll+0x21dec0
+Forwarded slot +0x50 target=oart.dll+0x21bb20
+receiver address=0x253d2b54780
+  +0x0 = oart.dll+0x9f6658
+  +0x8 = 0x253d2d2e640
+  +0x10 = oart.dll+0x9e5690
+  +0x18 = oart.dll+0x9f64d0
+  +0x20 = 0x2
+  +0x28 = oart.dll+0x9e5690
+  +0x30 = 0x1
+  +0x38 = 0x253d2b547c8
+destination after transfer address=0xeaf65dcf68
+  +0x0 = 0x1
+  +0x18 = 0x8000000000000000
+  +0x98 = oart.dll+0xa469cc
+  +0xa0 = oart.dll+0xa469cc
+  +0xa8 = 0x5
+  +0xb0 = 0x253cfa666b0
+  +0xb8 = 0x2
+  +0xc0 = 0x1
+  +0xd8 = 0x1
+  +0xf0 = 0x1
+  +0xf8 = 0x253c51437c0 [cached resource]
+transaction address=0xeaf65dd5d0
+  +0x0 = oart.dll+0x9ed7e0
+  +0x8 = 0x253d2d89f30
+  +0x10 = 0x100000000
+  +0x18 = 0x300000001
+  +0x20 = 0x2
+  +0x40 = 0x2
+  +0x48 = 0x2
+  +0x58 = 0x253d2e04110
+  +0x60 = 0x8000000a00000002
+  +0x68 = 0x2
+  +0x80 = 0x2
+  +0x90 = 0x200000000
+  +0xa0 = 0x1
+  +0xb8 = 0x8000000000000000
+  +0x138 = oart.dll+0xa469cc
+  +0x140 = oart.dll+0xa469cc
+  +0x148 = 0x5
+  +0x150 = 0x253cfa666b0
+  +0x158 = 0x2
+  +0x160 = 0x1
+  +0x178 = 0x1
+  +0x190 = 0x253bbaa1c01
+  +0x198 = 0x253c51437c0 [cached resource]
+  +0x1d8 = 0x253d301ad70
+  +0x1e0 = oart.dll+0x9e5690
+  +0x1e8 = 0x253d301aa10
+  +0x1f0 = oart.dll+0xa469cc
+  +0x1f8 = 0x41280000
+  +0x200 = oart.dll+0x9e5690
+  +0x228 = 0x64
+  +0x230 = 0xffffffff00000005
+  +0x240 = 0x253d2d84fac
+  +0x248 = oart.dll+0xa469cc
+  +0x250 = 0x100fffffffe
+  +0x258 = 0x4000000004
+  +0x260 = 0x42bfec2200000040
+  +0x268 = 0x251765d42bfec22
+  +0x270 = 0x248f801
+  +0x278 = 0x200000000
+  +0x288 = 0x1000000000000
+  +0x2a0 = 0x2
+  +0x2b0 = 0x25300000000
+  +0x2b8 = 0x1
+  +0x2c0 = 0x253d2e05950
+  +0x2c8 = oart.dll+0xa45db0
+  +0x2d0 = 0x2
+  +0x2d8 = 0x2
+  +0x2e0 = 0x2
+  +0x2e8 = 0x25300000002
+  +0x2f0 = 0x2
+  +0x300 = 0x25300000002
+  +0x308 = 0x25300000000
+  +0x318 = 0x8000000000000000
+  +0x328 = oart.dll+0xa469cc
+  +0x338 = 0x253d2d89ea0
+  +0x348 = 0x186a000000002
+  +0x350 = 0x2
+  +0x358 = 0x2
+  +0x360 = 0x2
+  +0x370 = 0x1
+  +0x378 = 0x7ff900000002
+  +0x3b0 = 0xeaf65dda01
+  +0x3b8 = 0x7ff800000002
+  +0x3d8 = 0x7ff800000002
+  +0x3e8 = 0x253d2db3940
+  +0x3f0 = 0x8000000a00000002
+  +0x3f8 = 0x700000000
+  +0x400 = 0x2
+  +0x420 = 0x2
+  +0x428 = 0x2
+  +0x438 = 0x2
+  +0x440 = 0x200000000
+  +0x448 = 0x200000000
+  +0x450 = 0x200000000
+  +0x458 = 0x200000000
+  +0x460 = 0x25300000000
+  +0x468 = 0xea00000002
+  +0x488 = 0x2
+  +0x490 = 0x2
+  +0x4b0 = 0x2
+  +0x4b8 = 0x2
+  +0x4c0 = 0x20000000002
+  +0x4c8 = 0x20000000002
+  +0x4d0 = 0x20000000002
+  +0x4d8 = 0x20000000002
+  +0x4e0 = 0x2
+  +0x4e8 = 0x7f0000000002
+  +0x4f0 = 0x100000001
+  +0x4f8 = 0x7f0000000002
+  +0x500 = 0xa042008e00000000
+  +0x508 = 0x253cff8e200
+CACHED COUNT transaction-entry      = 3
+#0  0x00007ff886dfca6b in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#1  0x00007ff886e0148d in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#2  0x00007ff88b1f49d8 in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
+#3  0x00007ff954dbf77f in VarWeekdayName () from C:\WINDOWS\System32\oleaut32.dll
+#4  0x00007ff954d53125 in OLEAUT32!DispCallFunc () from C:\WINDOWS\System32\oleaut32.dll
+#5  0x00007ff954d316a3 in SysReAllocStringLen () from C:\WINDOWS\System32\oleaut32.dll
+#6  0x00007ff954d63f97 in OLEAUT32!DispInvoke () from C:\WINDOWS\System32\oleaut32.dll
+#7  0x00007ff88aee4898 in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
+#8  0x00007ff88b1cc25d in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
+#9  0x00007ff8a1aabc34 in bb::invoke(IDispatch*, wchar_t const*, unsigned short, std::vector<bb::Value, std::allocator<bb::Value> >) () from C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll
+#10 0x00007ff8a1a7bf5f in traceUserPicture(IDispatch*, std::__cxx11::basic_string<wchar_t, std::char_traits<wchar_t>, std::allocator<wchar_t> > const&) () from C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll
+#11 0x00007ff8a1a648b9 in bb::Engine::DispatchResearch(bb::DispatchId, bb::AutomationArguments const&) () from C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll
+
+STAGE build target=oart.dll+0x2290f0 receiver=0x253d2b54780 transaction=0xeaf65dd5d0
+
+OPERATION allocate size=0x570 expected=0x570 match=True
+
+OPERATION factory storage=0x253bd9393f0 source=0xeaf65dd5e8 flags=0x0 bool=0x0 identifier=0xa042008e
+Source equals transaction+0x18: True
+CACHED COUNT before-construction    = 3
+#0  0x00007ff88656ef3b in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#1  0x00007ff88656f7f6 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#2  0x00007ff886851e21 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#3  0x00007ff886789203 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#4  0x00007ff88677bbee in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#5  0x00007ff886dfca71 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#6  0x00007ff886e0148d in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#7  0x00007ff88b1f49d8 in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
+
+OPERATION constructor entered this=0x253bd9393f0
+
+STAGE apply target=oart.dll+0x1b88b0 receiver=0x253d2b54780 operation=0x253bd9393f0
+Operation is the constructed object: True
+Operation vtable=oart.dll+0x9e4bd0
+Operation cached image +0x1e8 = 0x253c51437c0 equals tracked GFX: True
+CACHED COUNT after-construction     = 4
+
+OPERATION execution operation=0x253bd9393f0 context=0x253d2b54798 receiver_field=0x253d2b54790 holder=0xeaf65dce08
+Execution RCX equals constructed operation: True
+#0  0x00007ff886718f50 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#1  0x00007ff886718939 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#2  0x00007ff88677bc0c in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#3  0x00007ff886dfca71 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#4  0x00007ff886e0148d in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+#5  0x00007ff88b1f49d8 in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
+#6  0x00007ff954dbf77f in VarWeekdayName () from C:\WINDOWS\System32\oleaut32.dll
+#7  0x00007ff954d53125 in OLEAUT32!DispCallFunc () from C:\WINDOWS\System32\oleaut32.dll
+
+STAGE delete target=oart.dll+0x66c80 operation=0x253bd9393f0 flags=0x1
+Delete target is the constructed operation: True
+CACHED COUNT before-destruction     = 6
+
+OPERATION allocator-release address=0x253bd9393f0 target=ppcore.dll+0x2e1b70
+CACHED COUNT after-destruction      = 5
+
+STAGE complete
+CACHED COUNT transaction-return     = 5
+Transaction returned; RAX=0x253bd9393f0 (return type not established)
+[Switching to Thread 2172.0x62b4]
+
+Thread 1 hit Breakpoint -13, 0x00007ff886dfca71 in ?? () from C:\Program Files\Microsoft Office\Root\Office16\OART.DLL
+
+CACHED REFERENCE COUNT TIMELINE
+  loaded-record            1
+  transaction-entry        3
+  before-construction      3
+  after-construction       4
+  before-destruction       6
+  after-destruction        5
+  transaction-return       5
+  construction delta = +1
+  destruction delta  = -1
+[Inferior 1 (process 2172) detached]

@@ -12,4 +12,13 @@ Only this Office build is tested. Public-COM fallback uses discovered methods an
 
 Office Click-to-Run virtualizes some shared-module paths. A reported loaded path can be absent from the ordinary filesystem; the physical files are under Office/root/vfs/ProgramFilesCommonX64. Environment reports distinguish missing virtual paths rather than inventing file versions or architectures.
 
+Debugger research anchors are validated the same way. `probe_fill_transaction.py`
+checks the reported OART version and compares recorded instruction bytes at every
+one of its eleven breakpoint addresses before attaching them; a single mismatch
+aborts the run and detaches. Those addresses are read-only observation points, not
+call targets, so they widen no compatibility profile. The GFX and OART offsets they
+depend on (image sub-record +0x90/+0xF0, operation size 0x570, constructor
++0x10244, intrusive count at object+8) are documented in fill_transaction.md and
+must be re-derived per build before any of them is used for anything but reading.
+
 Research build: GCC 16.2.0, MinGW-w64 UCRT, CMake 4.4.2. Microsoft SDK and Visual Studio are installed but not required for the main build. No MSVC ABI-dependent internal calls have been attempted.
