@@ -158,13 +158,23 @@ Picture shapes. Applying repeatedly to one Shape also preserved identity and the
 fill. So the same GFX cached image can serve many Shapes without Office building
 a new one, which is the reuse the whole design depends on.
 
-The reference delta is now characterised rather than open. Across the receiver
-call the count gains two or three references depending on document state - three
-consecutive identical applies measured +3, +2, +3 - and it does not grow with
-repeated applies. Every reference this code creates is released; applying one
-image to five Shapes left exactly three per Shape held by the document. The
-individual references are still unattributed, and confirming Office releases all
-of them on presentation close remains a productionization prerequisite.
+The reference delta is characterised, and retention is measured. Across the
+receiver call the count gains two or three references depending on document
+state - three consecutive identical applies measured +3, +2, +3 - and it does not
+grow with repeated applies. Two hundred repeated native applies to one Shape
+moved the host's private bytes from 98.0 MB to 98.0 MB, and 98.1 MB after closing
+the presentation, so nothing is being stranded. The individual references remain
+unattributed; that attribution is a productionization prerequisite rather than a
+blocker for research.
+
+Stability: 200 repeated applies preserved Shape identity, geometry and the
+picture fill; ordinary UserPicture worked before and after; a fresh presentation
+worked afterwards. Undo could not be exercised - CommandBars.ExecuteMso('Undo')
+returns E_FAIL in this automation harness after an ordinary UserPicture too, so
+the result is inconclusive for both paths rather than a finding about the native
+apply. The host survived every attempt. Whether a native apply registers an undo
+entry is therefore still unknown; the real handler's wrapper OART +0x8A13E0 sets
+up an action scope that the experiment deliberately skips.
 
 Capabilities stay false. The experiments retain nothing across calls, so there is
 still no texture handle and no performance claim: reuse has been shown to work,

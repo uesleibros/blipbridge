@@ -1,0 +1,9 @@
+Undo after a native apply was refused: Erro HRESULT E_FAIL foi retornado de uma chamada para o componente COM.
+Control: Undo after an ordinary UserPicture was also refused: Erro HRESULT E_FAIL foi retornado de uma chamada para o componente COM.
+Host survived Undo/Redo.
+100 repeated native applies on one Shape: identity and picture fill intact.
+Private bytes 98 MB -> 98.1 MB during the run (includes Office undo state).
+Elapsed 123.7 ms total; this is NOT a benchmark: each call re-decodes the image and rebuilds every record.
+Ordinary UserPicture still works after the stress run.
+Private bytes after closing the presentation: 98.1 MB
+Fresh presentation still works after everything above.

@@ -23,6 +23,33 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - stability, retention and an inconclusive Undo result
+
+Three checks the single apply could not cover.
+
+Retention. Two hundred repeated native applies to one Shape moved the host's
+private bytes from 98.0 MB to 98.0 MB, and closing the presentation left 98.1 MB;
+a hundred applies behaved the same. Each of those applies decodes a fresh image
+and hands it to the document, so if the two-or-three extra references were being
+stranded the run would have grown by tens of megabytes. It did not move. That
+resolves the leak question the reference delta raised, without attributing the
+individual references.
+
+Stability. Identity, geometry and the picture fill survived the whole run;
+ordinary UserPicture worked before and after; a fresh presentation worked
+afterwards. 200 applies took 235 ms wall clock, but that is not a benchmark:
+every call re-decodes the image and rebuilds every record, which is precisely the
+work a texture handle is supposed to remove.
+
+Undo, inconclusive. CommandBars.ExecuteMso('Undo') returned E_FAIL after a native
+apply - but the control did too: the same call fails after an ordinary
+Fill.UserPicture in this harness. So the refusal is an artifact of driving Undo
+through automation here, not a property of the native path, and nothing can be
+concluded either way. The host survived every attempt. Whether the native apply
+registers an undo entry remains unknown; the real wrapper OART +0x8A13E0 sets up
+an action scope with +0x1B8BE0/+0x1B8C60 that the experiment skips, so the
+honest expectation is that it does not, but that has not been shown.
+
 ## 2026-09-09 - one cached image applied to many Shapes
 
 Hypothesis: because `+0x8F94C` AddRefs rather than taking ownership, one cached

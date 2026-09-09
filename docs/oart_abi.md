@@ -95,10 +95,17 @@ What the measurements do establish:
   picture fill, and probably undo state, but the individual references have not
   been attributed.
 
-So this is no longer evidence of a defect in the record we build. It is still an
-unattributed count, and attributing it - in particular confirming that Office
-releases all of it on presentation close - remains a prerequisite for
-productionization, not for the research experiments.
+A retention run then answered the part that actually mattered. Two hundred
+repeated native applies to one Shape moved the host's private bytes from 98.0 MB
+to 98.0 MB, and closing the presentation left it at 98.1 MB. A hundred applies
+behaved the same. If each apply were stranding a decoded image, that run would
+have grown by tens of megabytes; it did not move at all. Office is releasing the
+previous image when the fill is replaced.
+
+So this is not a defect in the record we build, and it is not a leak. It remains
+an unattributed count - which individual owner holds each of the two or three
+references is unknown - and attributing it is a productionization prerequisite,
+not a blocker for the research experiments.
 
 ## Guarding
 
