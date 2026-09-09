@@ -31,8 +31,22 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"RunFocusedBenchmarks", DispatchId::RunFocusedBenchmarks},
     {L"MemoryFillExperiment", DispatchId::MemoryFillExperiment},
     {L"RunStress", DispatchId::RunStress},
-    {L"TraceCachedApply", DispatchId::TraceCachedApply}
+    {L"TraceCachedApply", DispatchId::TraceCachedApply},
+    {L"InspectFillReceiver", DispatchId::InspectFillReceiver}
 };
+
+/**
+ * Highest DISPID GetIDsOfNames can hand out. Invoke must accept every one of
+ * them, so this is derived from the table rather than written out: a hard-coded
+ * bound silently rejects any member appended to the enum.
+ */
+constexpr DISPID kHighestDispatchId = [] {
+    DISPID highest = 0;
+    for (const auto& entry : kDispatchEntries) {
+        highest = std::max(highest, static_cast<DISPID>(entry.id));
+    }
+    return highest;
+}();
 } // namespace
 
 void AutomationArguments::RequireCount(UINT expected) const {
@@ -141,8 +155,7 @@ HRESULT Engine::Invoke(
         return RPC_E_WRONG_THREAD;
     }
     // Unknown DISPIDs retain the original direct HRESULT, without EXCEPINFO.
-    if (id < static_cast<DISPID>(DispatchId::GetVersion) ||
-        id > static_cast<DISPID>(DispatchId::TraceCachedApply)) {
+    if (id < static_cast<DISPID>(DispatchId::GetVersion) || id > kHighestDispatchId) {
         return DISP_E_MEMBERNOTFOUND;
     }
     try {

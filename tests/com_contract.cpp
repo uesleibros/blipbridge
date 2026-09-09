@@ -43,6 +43,24 @@ void ExpectAutomationError(IDispatch* engine, DISPID id, HRESULT expected) {
     Require(status == DISP_E_EXCEPTION, "Expected Automation exception");
     Require(exception.value.scode == expected, "Incorrect underlying HRESULT");
 }
+
+/**
+ * Every name GetIDsOfNames resolves must also be reachable through Invoke.
+ * A hard-coded DISPID bound in Invoke once silently rejected a newly appended
+ * member while its name still resolved, so the round trip is asserted here.
+ * Any HRESULT is acceptable except DISP_E_MEMBERNOTFOUND, which means the ID
+ * was refused before dispatch.
+ */
+void ExpectNameReachableThroughInvoke(IDispatch* engine, const wchar_t* name) {
+    LPOLESTR mutableName = const_cast<LPOLESTR>(name);
+    DISPID id = DISPID_UNKNOWN;
+    Require(engine->GetIDsOfNames(IID_NULL, &mutableName, 1, LOCALE_USER_DEFAULT, &id) == S_OK,
+            "Dispatch name did not resolve");
+    DISPPARAMS empty{};
+    const HRESULT status = engine->Invoke(
+        id, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &empty, nullptr, nullptr, nullptr);
+    Require(status != DISP_E_MEMBERNOTFOUND, "Resolved name was refused by Invoke");
+}
 } // namespace
 
 /** Runs without Office: covers COM lifetime, stable IDs, error and STA contracts. */
@@ -78,6 +96,18 @@ int wmain(int argc, wchar_t** argv) {
                     "New Engine must be empty");
             ExpectAutomationError(engine.value, 6, bb::BB_E_TEXTURE_NOT_FOUND);
             ExpectAutomationError(engine.value, 10, E_NOTIMPL);
+
+            // Covers the whole published surface, research members included.
+            for (const wchar_t* name : {
+                     L"GetVersion", L"GetBackendName", L"GetCapabilities",
+                     L"RegisterTextureShape", L"ApplyTexture", L"ReleaseTexture",
+                     L"ClearTextures", L"GetTextureCount", L"GetLastError",
+                     L"LoadTexture", L"SetImageBytes", L"RunBenchmarks",
+                     L"GetHostProcessId", L"TraceUserPicture", L"RunFocusedBenchmarks",
+                     L"MemoryFillExperiment", L"RunStress", L"TraceCachedApply",
+                     L"InspectFillReceiver"}) {
+                ExpectNameReachableThroughInvoke(engine.value, name);
+            }
 
             // Intentional invalid raw cross-thread call: tests the early guard only.
             // No Office object is present, and no marshaling or business logic runs.

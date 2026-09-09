@@ -2,12 +2,16 @@
 
 Run inside GDB after ``tools/prepare_receiver_identity.ps1``; see
 ``tools/run_office_probe.ps1`` for the supported invocation. Three ordinary
-AutoShapes - two on one slide, one on another - receive the same picture, so the
-only thing that varies between the observed calls is Shape and slide context.
+AutoShapes - two on one slide, one on another - receive the same picture in the
+order A, A, B, C, so the only thing that varies between the observed calls is
+Shape and slide context.
 
-The question this answers is narrow: is the receiver passed to the fill
-transaction per Shape, per slide or per document, and which of its fields (or of
-the property record below the image sub-record) change with the target.
+The repeat on shape A is what makes the classification sound: a value that
+changes between calls 0 and 1 cannot denote the Shape, however neatly it happens
+to differ between different Shapes. The question this answers is whether the
+receiver handed to the fill transaction is per call, per Shape, per slide or per
+document, and which of its fields - or of the property record below the image
+sub-record - track the target.
 
 This experiment only reads registers and bounded records. It never calls a
 private Office function, never writes inferior memory, and never retains an
@@ -57,8 +61,20 @@ RECEIVER_OBSERVATION_SIZE = 0x40
 # receiver holds at +0x8, and the only pointer in the record prefix.
 RECEIVER_CONTAINER_OFFSET = 0x8
 RECORD_REFERENCE_OFFSET = 0x40
+# Written by receiver constructor OART +0x223950 as a process-global sequence
+# number from [OART +0xD40038]; it is an allocation counter, not an identifier
+# of anything in the document.
+RECEIVER_SEQUENCE_OFFSET = 0x20
+# The token at handler+0x58 is a control block: strong count at +0, weak count
+# at +4, pointee at +0x10. Handler factory OART +0x23B220 AddRefs it.
+TOKEN_STRONG_COUNT_OFFSET = 0x0
+TOKEN_POINTEE_OFFSET = 0x10
+# Enough of an unknown target to recognise a repeat, without scanning heap.
+REFERENCE_TARGET_SIZE = 0x30
 
-EXPECTED_OBSERVATIONS = 3
+# Call order in tools/prepare_receiver_identity.ps1.
+CALL_LABELS = ['shape A', 'shape A again', 'shape B same slide', 'shape C other slide']
+EXPECTED_OBSERVATIONS = len(CALL_LABELS)
 
 
 class ReceiverProbe:
@@ -94,6 +110,18 @@ class ReceiverProbe:
 
     def rva(self, rva):
         return self.oart['base'] + rva
+
+    def dword(self, address):
+        return struct.unpack('<I', self.read(address, 4))[0]
+
+    def snapshot(self, address):
+        """Hex prefix of an unknown target, only to recognise repeats."""
+        if not address:
+            return 'null'
+        try:
+            return self.read(address, REFERENCE_TARGET_SIZE).hex()
+        except gdb.MemoryError:
+            return 'unreadable'
 
     def described(self, address):
         """Describe the pointer at ``address`` by target address and vtable."""
@@ -147,7 +175,8 @@ class ReceiverProbe:
     def record_observation(self, observation):
         index = len(self.observations)
         self.observations.append(observation)
-        gdb.write('\nOBSERVATION %d\n' % index)
+        label = CALL_LABELS[index] if index < len(CALL_LABELS) else 'extra call'
+        gdb.write('\nOBSERVATION %d (%s)\n' % (index, label))
         gdb.write('  handler state   = %#x\n' % observation['handler'])
         gdb.write('  receiver token  = %#x\n' % observation['token'])
         gdb.write('  receiver        = %#x\n' % observation['receiver'])
@@ -170,23 +199,61 @@ class ReceiverProbe:
             for breakpoint in self.breakpoints:
                 breakpoint.enabled = False
 
+    @staticmethod
+    def verdict(values):
+        """Classify a per-call series against the fixed A, A, B, C call order.
+
+        The repeat on shape A is what makes the classification possible: a value
+        that changes between calls 0 and 1 cannot denote the Shape.
+        """
+        if len(values) != EXPECTED_OBSERVATIONS:
+            return 'identical' if len(set(values)) == 1 else 'differs per call'
+        same_shape = values[0] == values[1]
+        same_slide = values[1] == values[2]
+        all_equal = len(set(values)) == 1
+        if all_equal:
+            return 'constant across every call'
+        if not same_shape:
+            return 'differs per call (cannot denote the Shape)'
+        if same_slide:
+            return 'stable per slide'
+        return 'stable per Shape'
+
+    @staticmethod
+    def verdict(values):
+        """Classify a per-call series against the fixed A, A, B, C call order.
+
+        The repeat on shape A is what makes the classification sound: a value
+        that changes between calls 0 and 1 cannot denote the Shape, however
+        neatly it happens to differ between different Shapes.
+        """
+        if len(values) != EXPECTED_OBSERVATIONS:
+            return 'identical' if len(set(values)) == 1 else 'differs between calls'
+        if len(set(values)) == 1:
+            return 'constant across every call'
+        if values[0] != values[1]:
+            return 'differs per call, so it cannot denote the Shape'
+        if values[1] == values[2]:
+            return 'stable per slide'
+        return 'stable per Shape'
+
     def summarize(self):
-        """Report what varied between Shapes; say nothing about what did not."""
+        """Classify every per-call value; say nothing beyond what varied."""
         if len(self.observations) < 2:
             gdb.write('\nToo few observations to compare.\n')
             return
-        gdb.write('\nRECEIVER COMPARISON ACROSS %d SHAPES\n' % len(self.observations))
-        for name in ['handler', 'token', 'receiver', 'cached']:
+        gdb.write('\nRECEIVER COMPARISON ACROSS %d CALLS\n' % len(self.observations))
+        gdb.write('  call order: %s\n' % ', '.join(CALL_LABELS[:len(self.observations)]))
+        for name in ['handler', 'token', 'receiver', 'cached', 'sequence']:
             values = [observation[name] for observation in self.observations]
-            gdb.write('  %-16s %s -> %s\n' % (
+            gdb.write('  %-16s %s\n      -> %s\n' % (
                 name, ' '.join('%#x' % value for value in values),
-                'identical' if len(set(values)) == 1 else 'differs per call'))
-        for name in ['container', 'record_reference']:
+                self.verdict(values)))
+        for name in ['container', 'record_reference', 'reference_bytes']:
             values = [observation[name] for observation in self.observations]
-            gdb.write('  %-16s %s\n' % (
-                name, 'identical' if len(set(values)) == 1 else 'differs per call'))
+            gdb.write('  %-16s -> %s\n' % (name, self.verdict(values)))
             for index, value in enumerate(values):
-                gdb.write('      call %d: %s\n' % (index, value))
+                gdb.write('      %-22s %s\n' % (CALL_LABELS[index] + ':', value))
 
         for label, key, size in [('receiver', 'receiver_words', RECEIVER_OBSERVATION_SIZE),
                                  ('record', 'record_words', RECORD_PREFIX_SIZE)]:
@@ -200,8 +267,9 @@ class ReceiverProbe:
                 continue
             gdb.write('  %s words differing between calls:\n' % label)
             for offset, values in differing:
-                gdb.write('    +%#x : %s\n' % (
-                    offset, ' '.join('%#x' % value for value in values)))
+                gdb.write('    +%#-6x %s\n           -> %s\n' % (
+                    offset, ' '.join('%#x' % value for value in values),
+                    self.verdict(values)))
 
 
 class ReceiverBreakpoint(gdb.Breakpoint):
@@ -234,9 +302,10 @@ class ReceiverBreakpoint(gdb.Breakpoint):
         if not cached:
             return False
         probe.thread_id = current_thread
+        token = probe.pending_token or 0
         probe.record_observation({
             'handler': probe.pending_handler or 0,
-            'token': probe.pending_token or 0,
+            'token': token,
             'receiver': receiver,
             'cached': cached,
             'receiver_words': probe.words(receiver, RECEIVER_OBSERVATION_SIZE),
@@ -245,6 +314,13 @@ class ReceiverBreakpoint(gdb.Breakpoint):
             'container': probe.described(receiver + RECEIVER_CONTAINER_OFFSET),
             'record_reference': probe.described(
                 transaction + PROPERTY_RECORD_OFFSET + RECORD_REFERENCE_OFFSET),
+            'sequence': probe.pointer(receiver + RECEIVER_SEQUENCE_OFFSET),
+            'token_strong': probe.dword(token + TOKEN_STRONG_COUNT_OFFSET) if token else 0,
+            'token_is_receiver': bool(
+                token and probe.pointer(token + TOKEN_POINTEE_OFFSET) == receiver),
+            'reference_bytes': probe.snapshot(
+                probe.pointer(transaction + PROPERTY_RECORD_OFFSET
+                              + RECORD_REFERENCE_OFFSET)),
         })
         return False
 

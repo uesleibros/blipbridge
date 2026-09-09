@@ -23,7 +23,8 @@ enum class DispatchId : DISPID {
     RunFocusedBenchmarks,
     MemoryFillExperiment,
     RunStress,
-    TraceCachedApply
+    TraceCachedApply,
+    InspectFillReceiver
 };
 
 /**

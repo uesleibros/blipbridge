@@ -4,9 +4,9 @@ Prepares three ordinary AutoShapes and fills each with the same picture.
 
 .DESCRIPTION
 Companion to experiments/exp_internal_blip/probe_receiver_identity.py. Two
-shapes live on the first slide and one on a second slide, so the probe can tell
-whether the OART receiver used by the fill transaction is per Shape, per slide
-or per document.
+shapes live on the first slide and one on a second slide, and the first shape is
+filled twice, so the probe can tell whether the OART receiver used by the fill
+transaction is per call, per Shape, per slide or per document.
 
 This script deliberately calls the public Fill.UserPicture directly rather than
 the instrumented research entry point: no IAT hooks are installed, so the
@@ -65,9 +65,10 @@ try {
         Start-Sleep -Milliseconds 200
     }
 
-    # Same bytes for every Shape, so any per-call difference in the observed
-    # records comes from Shape or slide context rather than from the image.
-    foreach ($shape in $shapes) {
+    # Call order is A, A, B, C. The repeat on A is what separates "per Shape"
+    # from "per call": anything that changes between the first two calls cannot
+    # be Shape identity. Same bytes throughout, so nothing varies from the image.
+    foreach ($shape in @($shapes[0], $shapes[0], $shapes[1], $shapes[2])) {
         $shape.Fill.UserPicture($texture)
     }
 

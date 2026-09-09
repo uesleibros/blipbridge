@@ -2,15 +2,29 @@
 #include "../src/com/engine.hpp"
 
 namespace bb {
+namespace {
+/// Argument counts are part of the research ABI; keep them in one place.
+UINT ExpectedResearchArgumentCount(DispatchId id) {
+    switch (id) {
+    case DispatchId::RunBenchmarks:
+    case DispatchId::InspectFillReceiver:
+        return 1;
+    case DispatchId::MemoryFillExperiment:
+    case DispatchId::TraceCachedApply:
+        return 3;
+    default:
+        return 2;
+    }
+}
+} // namespace
+
 /**
  * Explicit research-only Automation routing. Lives with the experiments so
  * production texture operations cannot silently acquire instrumentation hooks.
  * Argument Values retain COM objects/SAFEARRAYs for the synchronous call only.
  */
 Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& arguments) {
-    const UINT expectedCount =
-        id == DispatchId::RunBenchmarks ? 1 :
-        (id == DispatchId::MemoryFillExperiment || id == DispatchId::TraceCachedApply ? 3 : 2);
+    const UINT expectedCount = ExpectedResearchArgumentCount(id);
     arguments.RequireCount(expectedCount);
     if (!GetModuleHandleW(L"POWERPNT.EXE")) {
         throw Error(E_ACCESSDENIED, "Research methods require PowerPoint host");
@@ -43,6 +57,9 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     case DispatchId::RunStress:
         check(stressExperiment(target.obj(), arguments.At(1).str()), "Stress experiment");
         break;
+    case DispatchId::InspectFillReceiver:
+        // Throws bb::Error naming the failed guard; Invoke reports it verbatim.
+        return Value(inspectFillReceiver(target.obj()).c_str());
     case DispatchId::TraceCachedApply: {
         auto destination = arguments.At(1);
         check(traceCachedApply(target.obj(), destination.obj(), arguments.At(2).str()),
