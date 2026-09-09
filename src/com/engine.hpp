@@ -29,7 +29,8 @@ enum class DispatchId : DISPID {
     NativeApplyExperiment,
     NativeApplyReuseExperiment,
     InspectTexture,
-    BenchmarkNativeTexture
+    BenchmarkNativeTexture,
+    BenchmarkTextureBatch
 };
 
 /**

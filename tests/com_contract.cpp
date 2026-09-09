@@ -111,7 +111,8 @@ int wmain(int argc, wchar_t** argv) {
                      L"MemoryFillExperiment", L"RunStress", L"TraceCachedApply",
                      L"InspectFillReceiver", L"LoadCachedImageExperiment",
                      L"NativeApplyExperiment", L"NativeApplyReuseExperiment",
-                     L"InspectTexture", L"BenchmarkNativeTexture"}) {
+                     L"InspectTexture", L"BenchmarkNativeTexture",
+                     L"BenchmarkTextureBatch"}) {
                 ExpectNameReachableThroughInvoke(engine.value, name);
             }
 

@@ -14,6 +14,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::MemoryFillExperiment:
     case DispatchId::TraceCachedApply:
     case DispatchId::BenchmarkNativeTexture:
+    case DispatchId::BenchmarkTextureBatch:
         return 3;
     default:
         return 2;
@@ -65,6 +66,10 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     case DispatchId::BenchmarkNativeTexture:
         return Value(benchmarkNativeTexture(target.obj(), arguments.At(1).str(),
                                             arguments.At(2).integer())
+                         .c_str());
+    case DispatchId::BenchmarkTextureBatch:
+        return Value(benchmarkTextureBatch(target.obj(), arguments.At(1).integer(),
+                                           arguments.At(2).integer())
                          .c_str());
     case DispatchId::InspectFillReceiver:
         // Throws bb::Error naming the failed guard; Invoke reports it verbatim.

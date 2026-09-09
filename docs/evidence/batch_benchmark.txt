@@ -1,0 +1,4 @@
+shapes=10;iterations=50;individualMeanMs=2.0081;individualMedianMs=1.9629;batchMeanMs=2.0517;batchMedianMs=1.9487;perShapeIndividualMs=0.2008;perShapeBatchMs=0.2052;batchSpeedup=0.9787;savedPerShapeUs=-4.3600;
+shapes=50;iterations=50;individualMeanMs=10.3810;individualMedianMs=10.3141;batchMeanMs=9.8602;batchMedianMs=9.4754;perShapeIndividualMs=0.2076;perShapeBatchMs=0.1972;batchSpeedup=1.0528;savedPerShapeUs=10.4156;
+shapes=100;iterations=50;individualMeanMs=18.4012;individualMedianMs=18.5059;batchMeanMs=18.2910;batchMedianMs=17.9966;perShapeIndividualMs=0.1840;perShapeBatchMs=0.1829;batchSpeedup=1.0060;savedPerShapeUs=1.1018;
+shapes=200;iterations=50;individualMeanMs=101.3182;individualMedianMs=96.4154;batchMeanMs=107.2443;batchMedianMs=101.8487;perShapeIndividualMs=0.5066;perShapeBatchMs=0.5362;batchSpeedup=0.9447;savedPerShapeUs=-29.6305;

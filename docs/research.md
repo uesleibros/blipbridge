@@ -23,6 +23,58 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - standalone C ABI, VBA FFI and a batch that is not faster
+
+Turning the validated backend into a library anyone can use, without touching
+the apply path.
+
+The public interface is now plain C in include/blipbridge/blipbridge.h: fixed
+width types, opaque uint64 handles, explicit error codes, no C++ or STL across
+the boundary, and an outermost catch in every entry point because an exception
+crossing a C ABI is undefined behaviour rather than a bug report. On x64 there is
+one calling convention, so all twelve exports are undecorated and VBA binds them
+by plain name.
+
+Registration-free deployment turned out to hinge on one detail worth recording.
+A bare `Declare ... Lib "BlipBridge.dll"` asks the OS loader for that name, and
+the loader's search path does not include the folder holding the presentation, so
+beside-the-pptm deployment fails. Calling LoadLibraryW with the full path first
+makes the later bare-name resolution find the already-loaded module. That is why
+the wrapper does both, and why every public entry point calls Initialize first.
+
+A platform seam went in at src/backend/backend.hpp. Nothing above it knows Office
+exists; the Windows backend is the only file aware that the implementation is
+reverse-engineered, and it converts that layer's exceptions into results so none
+reach the ABI. macOS gets an implementation that refuses honestly and a document
+saying what would have to be researched, rather than a stub dylib.
+
+The batch API was measured rather than assumed, and it does not help: 0.98x,
+1.05x, 1.01x and 0.94x at 10, 50, 100 and 200 Shapes - noise around 1.0. The
+arithmetic explains it. Each Shape costs about 190 microseconds of real work
+while an ABI entry costs well under one, so even a VBA caller, who additionally
+saves an interpreter transition per call, cannot gain more than low single digit
+percent. It ships as a convenience with that stated plainly.
+
+One capability bug surfaced from the new off-host test: the Windows backend was
+reporting PickUpFallback unconditionally, but the donor path drives PickUp/Apply
+through Automation and needs PowerPoint too. Now every capability is gated on the
+host, and the capability word really is zero off-host.
+
+Testing gained tests/abi_contract.cpp, which runs without PowerPoint and holds
+the fail-closed behaviour in place - the common case for anyone who downloads the
+library. In-host ABI behaviour is covered by the batch benchmark, which drives
+BB_Init, BB_LoadTexture, BB_ApplyTexture and BB_ApplyTextureBatch inside
+PowerPoint against 200 Shapes.
+
+Repository prepared for release: README, CHANGELOG, examples/, docs/c_abi.md,
+docs/capabilities.md, docs/macos.md, and tools/make_dist.ps1 producing
+dist/windows-x64 with the DLL, the .bas, the header and a README.txt. No macOS
+folder, because there is no macOS backend.
+
+Validation: Release and Debug builds, CTest both configurations now covering two
+suites, COM smoke, fallback contract, native apply, texture matrix and the memory
+experiment all pass.
+
 ## 2026-09-09 - hardening: undo works, ownership attributed, capabilities enabled
 
 Three things were blocking production, and all three came down to instruments

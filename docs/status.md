@@ -1,5 +1,23 @@
 # Current status
 
+**0.2.0** - the C ABI is now the primary public interface. `BB_Init`,
+`BB_LoadTexture`, `BB_ApplyTexture`, `BB_ApplyTextureBatch`, `BB_ReleaseTexture`,
+`BB_ClearTextures`, `BB_GetCapabilities`, `BB_GetLastError`, `BB_GetVersion` and
+`BB_Shutdown` export undecorated from BlipBridge.dll; `vba/BlipBridge.bas` loads
+the DLL from beside the presentation with LoadLibraryW, so deployment needs no
+regsvr32, ProgID, CreateObject or add-in install. COM Automation remains as the
+research and compatibility layer and its tests still run.
+
+A platform seam (`src/backend/backend.hpp`) separates the public API from the
+reverse-engineered Windows implementation; macOS gets a documented refusal rather
+than a stub. See docs/c_abi.md and docs/macos.md.
+
+Measured and **not** claimed: BB_ApplyTextureBatch is within noise of the same
+number of individual calls at 10/50/100/200 Shapes. Each Shape costs ~190 us of
+real work against well under 1 us of ABI entry, so there is nothing to save. It
+is a convenience.
+
+
 Current backend: **PickupApplyFallback**, experimental, whole-style transfer from an existing normal donor shape with a preloaded picture fill.
 
 A reusable native texture API now exists alongside it - LoadTexture,

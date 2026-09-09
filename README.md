@@ -1,76 +1,183 @@
 # BlipBridge
 
-Experimental C++20 native research project for assigning and reusing image fills on existing PowerPoint AutoShapes and Freeforms from VBA. Built and tested locally with MSYS2 UCRT64 GCC on Windows x64.
-
-**PNG/JPEG Byte arrays can reach existing fills on PowerPoint LTSC 2021 build 16.0.14334.20848, but Office creates a temporary PNG internally. The strict no-temporary-image milestone and an internal decoded-BLIP cache remain unsolved.**
-
-The normal COM backend is explicitly `PickupApplyFallback`: it retains a preloaded donor Shape and transfers its style to existing targets. PickUp/Apply copies line and other formatting as well as the fill. It is suitable only when that behavior is acceptable.
-
-The separate `MemoryFillExperiment` temporarily adapts Office source-file API imports to a memory buffer. BlipBridge supplies bytes without an input image file, but the write trace proves Office copies them to `INetCache\Content.MSO\<name>.png` and then decodes that cache through an IStream adapter. This disqualifies the experiment as the requested no-temporary-image solution. It is build/signature guarded, explicitly invoked research instrumentation, and is not used by normal LoadTexture/SetImageBytes. Those methods currently return an unsupported error.
-
-## Verified results
-
-- Detected Office version, bitness, toolchain and dynamically loaded modules.
-- Ran in-process QPC benchmarks with 100, 1,000 and 10,000 fill operations and a pooled 130-freeform workload.
-- Traced UserPicture from PPCORE through OART and MSO20 to the full compressed-image read, preserving real RVAs and call stacks.
-- Fed 32/64/128/256 PNGs and JPEG from Byte arrays into existing shapes using the experimental memory adapter, with the Office-internal temporary-file limitation above.
-- Verified freeform identity and geometry, editable nodes, saving and reopening. The final PNG export is pixel-identical to ordinary UserPicture before and after reopen. Its saved media bytes match the source SHA256.
-- Saved baseline: 134 normal image-filled shapes, zero Picture shapes, two shared media resources. Serialized deduplication does not establish decoded-memory reuse.
-
-See [status](docs/status.md), [native pipeline](docs/userpicture_pipeline.md), [research journal](docs/research.md), [environment](docs/environment.md) and [measurements](docs/benchmarks.md).
-
-## Build and registration
-
-From 64-bit PowerShell:
-
-```powershell
-.\tools\office_probe.ps1 -StartPowerPoint
-.\tools\generate_textures.ps1
-.\build.ps1 -Configuration Release
-.\tools\register.ps1
-```
-
-Debug: `.\build.ps1 -Configuration Debug`. The probe first discovers existing tools, including the installed MSYS2 UCRT64 environment. No MSVC dependency or System32 copying is required. Registration is per-user x64; unregister with `.\tools\unregister.ps1`. Close PowerPoint before rebuilding a loaded DLL; Windows locks loaded modules.
-
-From UCRT64 shell:
-
-```bash
-cmake -S . -B build/ucrt64 -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release
-cmake --build build/ucrt64 --parallel
-```
-
-## VBA fallback
-
-Import the modules under `vba/`, or call Automation directly:
+Fast, reusable image textures for ordinary PowerPoint Shapes, callable from VBA.
 
 ```vb
-Dim bb As Object, texture As Long
-Set bb = CreateObject("BlipBridge.Engine")
-Debug.Print bb.GetBackendName()
-texture = bb.RegisterTextureShape(ActivePresentation.Slides(1).Shapes("texture_donor"))
-bb.ApplyTexture ActivePresentation.Slides(1).Shapes("poly_17"), texture
-bb.ReleaseTexture texture
+BlipBridge.Initialize
+tex = BlipBridge.LoadTexture(bytes)      ' decode once
+BlipBridge.ApplyTexture shp, tex         ' ~0.19 ms, no file, no donor Shape
+BlipBridge.ReleaseTexture tex
+BlipBridge.Shutdown
 ```
 
-The donor must already be a normal Shape with a picture fill. Keep its presentation open while using the handle. ClearTextures before closing the document. Handles own COM references, are local to an Engine instance, and are not native pointers. Calls execute synchronously on the owning STA. VBA wrappers are supplied; separate VBA interpreter/wrapper timings have not yet been run.
+No `regsvr32`. No ProgID. No `CreateObject`. No add-in installer. Put the DLL
+next to your presentation and import one `.bas` module.
 
-Creating the Engine from VBA loads it in POWERPNT.EXE. Creating it directly from PowerShell loads it in PowerShell instead. For native in-process experiments, explicitly connect the research COM add-in:
+> **Status: research-grade, working, and narrow.** The accelerated backend runs
+> against **one validated Office build** and refuses to run against anything
+> else. Read [Supported builds](#supported-builds) before depending on it.
+
+## Why it exists
+
+`Fill.UserPicture` is the only supported way to put an image on a Shape's fill
+from VBA, and it re-does all of the work every time. Measured on the test
+machine, each call writes a temporary PNG under `INetCache\Content.MSO`, decodes
+it again, and builds a fresh internal image object - even when you pass the same
+file to the same Shape twice in a row.
+
+For a document that repaints many Shapes per frame, that is the whole budget.
+
+BlipBridge decodes an image **once** into the same internal cached-image object
+PowerPoint uses, and then applies that object to as many Shapes as you like.
+
+## What it does, in one paragraph
+
+`LoadTexture` wraps your bytes in an in-memory stream and calls PowerPoint's own
+exported cached-image creator, giving back a handle. `ApplyTexture` builds the
+same property record PowerPoint's own `UserPicture` handler builds, puts the
+already-decoded image into it, and commits it through the same internal
+transaction. The Shape is not replaced, moved, restyled or converted - only its
+fill changes. Save, reopen, Undo and Redo all behave exactly as they do for a
+normal picture fill.
+
+## Performance
+
+Measured in process on the test machine, 1000 iterations, same Shape and image:
+
+| | mean | median | p95 | p99 |
+|---|---:|---:|---:|---:|
+| `Fill.UserPicture(path)` | 0.6588 ms | 0.6189 ms | 0.8348 ms | 1.6002 ms |
+| `BlipBridge.ApplyTexture` | **0.1860 ms** | **0.1756 ms** | **0.2260 ms** | **0.3361 ms** |
+
+**≈3.5x faster on the mean, ≈3.5x on the median**, and a wider margin in the
+tail. One-off costs: `LoadTexture` 0.0231 ms, `ReleaseTexture` 0.0001 ms.
+Alternating between two textures costs the same as repeating one.
+
+These numbers are from one Office build, one machine and one workload. Your
+mileage will differ with Office version, hardware, image size and how much else
+the document is doing. Re-measure with `tools/run_texture_benchmark.ps1` rather
+than trusting the table.
+
+**`BB_ApplyTextureBatch` is not faster.** Measured at 10/50/100/200 Shapes it
+lands within noise of the same number of individual calls, because each Shape
+costs ~190 microseconds of real work and an ABI entry costs well under one. Use
+it because one call is tidier, not because it is quicker. See
+[docs/c_abi.md](docs/c_abi.md).
+
+## Supported builds
+
+| | |
+|---|---|
+| Platform | Windows x64 only |
+| Host | PowerPoint (the accelerated path is refused elsewhere) |
+| Office | **16.0.14334.20848** (PowerPoint LTSC 2021 x64), the build every offset was validated against |
+| VBA | VBA7, 64-bit |
+| macOS | **not supported** - see [docs/macos.md](docs/macos.md) |
+
+On any other build, `BB_Init` returns `BB_E_UNSUPPORTED_BUILD` and
+`BB_GetCapabilities` reports nothing. That is deliberate: the backend depends on
+internal Office layouts, and guessing at an unvalidated one could corrupt a
+document. This is **not** universal Office compatibility, and it is not marketed
+as such.
+
+Adding a build means re-validating its layouts, not editing a version number.
+
+## Safety
+
+The backend calls undocumented Office internals, so every call is gated:
+
+* **Module versions** - `oart.dll`, `ppcore.dll` and `gfx.dll` must all be the
+  validated build.
+* **Structural wrapper validation** - `Shape.Fill`'s PPCORE vtable is verified by
+  *shape*, not address: its delegating thunks are decoded and the inner-object
+  offset is read out of them rather than assumed.
+* **Vtable identity** - every OART and GFX object is checked against its recorded
+  vtable before a field is read.
+* **Signature bytes** - the first sixteen bytes at every private entry point must
+  match the bytes its ABI was derived from, or nothing is called.
+* **No cached receiver** - the per-Shape receiver is re-resolved on every apply,
+  because a deleted Shape still passes every pointer check.
+* **Fail closed** - anything unrecognised is refused with a specific message, not
+  worked around.
+
+## Getting started
+
+```text
+MyGame.pptm
+BlipBridge.dll        <- next to the presentation
+```
+
+1. Copy `BlipBridge.dll` beside your `.pptm`.
+2. Import `vba/BlipBridge.bas` into the VBA project.
+3. Use it:
+
+```vb
+Sub Demo()
+    Dim bytes() As Byte, tex As LongLong, shp As Shape
+
+    If Not BlipBridge.IsAvailable Then
+        MsgBox "BlipBridge: " & BlipBridge.Version   ' says why
+        Exit Sub
+    End If
+
+    bytes = LoadFileBytes("C:\textures\brick.png")
+    tex = BlipBridge.LoadTexture(bytes)
+
+    For Each shp In ActivePresentation.Slides(1).Shapes
+        BlipBridge.ApplyTexture shp, tex
+    Next shp
+
+    BlipBridge.ReleaseTexture tex
+End Sub
+```
+
+More in [examples/](examples/).
+
+## Limitations
+
+* Windows x64 and one Office build.
+* AutoShapes and Freeforms only; other Shape types are refused.
+* Single-threaded: call from the thread that called `Initialize`.
+* A texture handle must be released before PowerPoint exits. `Shutdown` and the
+  add-in's teardown both do this; do not leak handles across a session.
+* The batch API is a convenience, not a speed-up.
+* Undo works, but each apply lands in the undo history like any other edit - a
+  renderer doing thousands of applies will fill it.
+
+## How it was built
+
+Every claim in this README is backed by a measurement in [docs/](docs/):
+
+| Document | What it establishes |
+|---|---|
+| [receiver_lookup.md](docs/receiver_lookup.md) | how a Shape reaches its internal fill receiver |
+| [record_construction.md](docs/record_construction.md) | what the fill property record actually needs |
+| [oart_abi.md](docs/oart_abi.md) | every private entry point, its ABI and its evidence |
+| [native_texture.md](docs/native_texture.md) | reuse, lifetime, Undo, reference ownership |
+| [capabilities.md](docs/capabilities.md) | what each capability flag claims and why |
+| [c_abi.md](docs/c_abi.md) | the public interface and the batch measurement |
+| [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |
+| [research.md](docs/research.md) | the journal, including the wrong turns |
+
+Raw transcripts are in `docs/evidence/`.
+
+## Building
+
+Windows x64, MinGW-w64 UCRT and CMake:
 
 ```powershell
-.\tools\register.ps1 -ResearchAddin
-.\tools\run_inproc.ps1
-.\tools\trace_userpicture.ps1
-.\tools\test_memory.ps1
-.\tools\run_stress.ps1
-.\tests\com_smoke.ps1
+.\build.ps1 -Configuration Release
+& ctest --test-dir build/Release --output-on-failure
 ```
 
-The add-in is registered with LoadBehavior=0 and connected by these scripts. They create disposable presentations. Long synchronous batches block the PowerPoint UI and accumulate Office undo/document memory; do not use them during interactive editing. Scripts do not change Office security settings.
+`tests/abi_contract.cpp` runs without PowerPoint. The PowerPoint regressions in
+`tools/` need a live host.
 
-## Performance and limitations
+## License
 
-The initial visible-document in-process 10,000-call averages and all distributions are in [the benchmark report](docs/benchmarks.md). A separate hidden-document dual-COM experiment measured about 1.09 ms for UserPicture and 0.87 ms for a pre-picked Apply; PickUp plus Apply was about 1.25 ms. These are measured operation completion times, not screen refresh FPS. The public fallback is not universally faster.
+MIT. See [LICENSE](LICENSE).
 
-The memory adapter still runs Office's ordinary image materialization pipeline, including its own temporary image copy. A negative test showed Office can report success for invalid bytes, so the current experiment first validates PNG/JPEG through Windows WIC. This adds a validation decode before Office's work. Limits: 64 MiB compressed and 16 megapixels decoded. Profile checks, hook setup and logging add research overhead. No compressed source data is processed by the public donor-application code, but internal decoder invocations during Apply have not yet been comprehensively counted. Internal stream ABI, decoded-resource ownership, fill-only binding, broad compatibility and production reliability remain open work.
-
-License: MIT for this project. No Office binaries or PDBs are distributed.
+BlipBridge is not affiliated with or endorsed by Microsoft. It calls
+undocumented internals of Microsoft Office, which may change or break in any
+update; the version guards exist so that a change stops it rather than corrupts
+anything.

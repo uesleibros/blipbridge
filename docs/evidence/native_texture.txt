@@ -1,16 +1,16 @@
 LoadTexture returned handle 16777216; count=1
 One texture filled 6 Shapes across 2 slides including a Freeform; nodes still editable.
-1000 applies round-robin over 6 Shapes: 464.3 ms total
-  private bytes 154.5 MB -> 154.7 MB; texture report: textures=1;nextHandle=16777217;creations=1;handle=16777216;cached=0x25a230289f0;cachedCount=60;bytes=11822;applies=1006;
+1000 applies round-robin over 6 Shapes: 467.9 ms total
+  private bytes 115.7 MB -> 120.9 MB; texture report: textures=1;nextHandle=16777217;creations=1;handle=16777216;cached=0x18ec6010570;cachedCount=60;bytes=11822;applies=1006;
 Three textures coexist; each applies to a different Shape (PNG, PNG, JPEG).
 Releasing one texture out of order left the others usable.
 Released handle is rejected; handles are not recycled.
 Unknown handle is rejected.
 Deleting a filled Shape left the texture and later applies healthy.
 SaveAs succeeded.
-Textures still loaded after Presentation.Close: 2; private bytes 162.7 MB
+Textures still loaded after Presentation.Close: 2; private bytes 140.5 MB
 Reopen: 6 Shapes carry a picture fill; Picture shapes: 0
 A texture outlived its original presentation and applied in two others (handles 16777216,16777218).
 ClearTextures released everything.
-Private bytes after ClearTextures and all documents closed: 162.6 MB
+Private bytes after ClearTextures and all documents closed: 140.9 MB
 Ordinary UserPicture still works after everything above.

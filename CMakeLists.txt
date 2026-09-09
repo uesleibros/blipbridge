@@ -12,6 +12,9 @@ add_executable(bb_experiment experiments/main.cpp)
 target_link_libraries(bb_experiment PRIVATE ole32 oleaut32 uuid psapi)
 target_link_options(bb_experiment PRIVATE -municode -static-libgcc -static-libstdc++)
 add_library(BlipBridge SHARED
+    # Public C ABI and the platform seam beneath it.
+    src/abi/blipbridge_abi.cpp
+    src/backend/windows_office_backend.cpp
     src/dllmain.cpp
     src/com/class_factory.cpp
     src/com/engine.cpp
@@ -29,8 +32,9 @@ add_library(BlipBridge SHARED
     experiments/exp_internal_blip/native_apply.cpp
     experiments/exp_internal_blip/native_texture.cpp
     experiments/exp_internal_blip/texture_benchmark.cpp
+    experiments/exp_internal_blip/batch_benchmark.cpp
 )
-target_compile_definitions(BlipBridge PRIVATE BB_DLL)
+target_compile_definitions(BlipBridge PRIVATE BB_DLL BLIPBRIDGE_BUILD)
 target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
 target_link_options(BlipBridge PRIVATE -static -static-libgcc -static-libstdc++)
 set_target_properties(BlipBridge PROPERTIES PREFIX "")
@@ -53,4 +57,10 @@ if(BUILD_TESTING)
     target_link_libraries(bb_com_contract PRIVATE ole32 oleaut32 uuid)
     target_link_options(bb_com_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
     add_test(NAME com_contract COMMAND bb_com_contract $<TARGET_FILE:BlipBridge>)
+
+    # The C ABI is exercised the way the VBA wrapper binds to it: LoadLibraryW
+    # by path, then GetProcAddress by undecorated name. No COM involved.
+    add_executable(bb_abi_contract tests/abi_contract.cpp)
+    target_link_options(bb_abi_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
+    add_test(NAME abi_contract COMMAND bb_abi_contract $<TARGET_FILE:BlipBridge>)
 endif()

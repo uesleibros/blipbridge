@@ -74,3 +74,9 @@ std::wstring nativeTextureReport(long handle);
  */
 std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath,
                                     long iterations);
+/**
+ * Compares one BB_ApplyTextureBatch call against the same number of individual
+ * BB_ApplyTexture calls, through the real C ABI, in process. Creates and deletes
+ * its own Shapes.
+ */
+std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long iterations);

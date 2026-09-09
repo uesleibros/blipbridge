@@ -1,0 +1,7 @@
+version: 0.2.0 (windows-x64, windows-office-native)
+BB_Init from a non-PowerPoint process: -4 (BlipBridge's accelerated backend runs inside PowerPoint for Windows; this process is not PowerPoint)
+capabilities off-host: 0x0
+BB_LoadTexture off-host: -5, handle=0
+The C ABI fails closed outside PowerPoint, with a readable reason.
+In-host behaviour is covered by the COM-driven suites, which call the
+same texture store the ABI calls.

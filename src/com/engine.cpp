@@ -38,7 +38,8 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"NativeApplyExperiment", DispatchId::NativeApplyExperiment},
     {L"NativeApplyReuseExperiment", DispatchId::NativeApplyReuseExperiment},
     {L"InspectTexture", DispatchId::InspectTexture},
-    {L"BenchmarkNativeTexture", DispatchId::BenchmarkNativeTexture}
+    {L"BenchmarkNativeTexture", DispatchId::BenchmarkNativeTexture},
+    {L"BenchmarkTextureBatch", DispatchId::BenchmarkTextureBatch}
 };
 
 /**
