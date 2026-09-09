@@ -144,7 +144,7 @@ POWERPNT.EXE+0x1cad absolute=0x7ff7815e1cad
 POWERPNT.EXE+0x1b86 absolute=0x7ff7815e1b86
 KERNEL32.DLL+0x2ccb7 absolute=0x7ff95522ccb7
 ntdll.dll+0xaad6c absolute=0x7ff95664ad6c
-cacheHandle=0xb68 access=3221225472 path=C:\Users\UeKei\AppData\Local\Microsoft\Windows\INetCache\Content.MSO\80C7E40.png
+cacheHandle=0xb68 access=3221225472 path=C:\Users\<user>\AppData\Local\Microsoft\Windows\INetCache\Content.MSO\80C7E40.png
 
 EVENT CreateFileW entry (unique texture) thread=30112
 BlipBridge.dll+0x20861 absolute=0x7ff8b4c60861
@@ -289,7 +289,7 @@ POWERPNT.EXE+0x1cad absolute=0x7ff7815e1cad
 POWERPNT.EXE+0x1b86 absolute=0x7ff7815e1b86
 KERNEL32.DLL+0x2ccb7 absolute=0x7ff95522ccb7
 ntdll.dll+0xaad6c absolute=0x7ff95664ad6c
-payloadBytes=11822 handle=0xb68 offset=0 path=\\?\C:\Users\UeKei\AppData\Local\Microsoft\Windows\INetCache\Content.MSO\80C7E40.png
+payloadBytes=11822 handle=0xb68 offset=0 path=\\?\C:\Users\<user>\AppData\Local\Microsoft\Windows\INetCache\Content.MSO\80C7E40.png
 
 EVENT CloseHandle unique texture thread=30112
 BlipBridge.dll+0x1fcf4 absolute=0x7ff8b4c5fcf4

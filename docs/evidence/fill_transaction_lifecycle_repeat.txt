@@ -153,9 +153,9 @@ CACHED COUNT transaction-entry      = 3
 #6  0x00007ff954d63f97 in OLEAUT32!DispInvoke () from C:\WINDOWS\System32\oleaut32.dll
 #7  0x00007ff88aee4898 in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
 #8  0x00007ff88b1cc25d in ppcore!PPMain () from C:\Program Files\Microsoft Office\Root\Office16\PPCORE.DLL
-#9  0x00007ff89d0abc34 in bb::invoke(IDispatch*, wchar_t const*, unsigned short, std::vector<bb::Value, std::allocator<bb::Value> >) () from C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll
-#10 0x00007ff89d07bf5f in traceUserPicture(IDispatch*, std::__cxx11::basic_string<wchar_t, std::char_traits<wchar_t>, std::allocator<wchar_t> > const&) () from C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll
-#11 0x00007ff89d0648b9 in bb::Engine::DispatchResearch(bb::DispatchId, bb::AutomationArguments const&) () from C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll
+#9  0x00007ff89d0abc34 in bb::invoke(IDispatch*, wchar_t const*, unsigned short, std::vector<bb::Value, std::allocator<bb::Value> >) () from C:\Users\<user>\desktop\blipbridge\build\Release\BlipBridge.dll
+#10 0x00007ff89d07bf5f in traceUserPicture(IDispatch*, std::__cxx11::basic_string<wchar_t, std::char_traits<wchar_t>, std::allocator<wchar_t> > const&) () from C:\Users\<user>\desktop\blipbridge\build\Release\BlipBridge.dll
+#11 0x00007ff89d0648b9 in bb::Engine::DispatchResearch(bb::DispatchId, bb::AutomationArguments const&) () from C:\Users\<user>\desktop\blipbridge\build\Release\BlipBridge.dll
 
 STAGE build target=oart.dll+0x2290f0 receiver=0x2b52e1d62c0 transaction=0xce2ed0d120
 

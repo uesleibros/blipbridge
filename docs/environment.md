@@ -218,7 +218,7 @@ Loaded modules (all modules enumerated dynamically; addresses are process-specif
 | 31144 | sxs.dll | 10.0.26100.8972 (WinBuild.160101.0800) | x64 | 0x7FF9535D0000 | C:\WINDOWS\SYSTEM32\sxs.dll | C:\WINDOWS\SYSTEM32\sxs.dll |
 | 31144 | d3d10_1.dll | 10.0.26100.1882 (WinBuild.160101.0800) | x64 | 0x7FF8E3B20000 | C:\WINDOWS\SYSTEM32\d3d10_1.dll | C:\WINDOWS\SYSTEM32\d3d10_1.dll |
 | 31144 | d3d10_1core.dll | 10.0.26100.1882 (WinBuild.160101.0800) | x64 | 0x7FF93A7D0000 | C:\WINDOWS\SYSTEM32\d3d10_1core.dll | C:\WINDOWS\SYSTEM32\d3d10_1core.dll |
-| 31144 | BlipBridge.dll |  | x64 | 0x7FF8A8810000 | C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll | C:\Users\UeKei\desktop\blipbridge\build\Release\BlipBridge.dll |
+| 31144 | BlipBridge.dll |  | x64 | 0x7FF8A8810000 | C:\Users\<user>\desktop\blipbridge\build\Release\BlipBridge.dll | C:\Users\<user>\desktop\blipbridge\build\Release\BlipBridge.dll |
 | 31144 | twinapi.appcore.dll | 10.0.26100.8875 (WinBuild.160101.0800) | x64 | 0x7FF93F360000 | C:\Windows\System32\twinapi.appcore.dll | C:\Windows\System32\twinapi.appcore.dll |
 | 31144 | virtdisk.dll | 10.0.26100.8972 (WinBuild.160101.0800) | x64 | 0x7FF927E50000 | C:\WINDOWS\SYSTEM32\virtdisk.dll | C:\WINDOWS\SYSTEM32\virtdisk.dll |
 | 31144 | usermgrcli.dll | 10.0.26100.8115 (WinBuild.160101.0800) | x64 | 0x7FF94DB00000 | C:\WINDOWS\SYSTEM32\usermgrcli.dll | C:\WINDOWS\SYSTEM32\usermgrcli.dll |
