@@ -61,6 +61,32 @@ the file on disk therefore produces the new image rather than a stale one, and
 the superseded texture is released instead of accumulating. The check is one
 `GetFileAttributesExW`, about two microseconds against roughly 190 for an apply.
 
+#### Why not hash the contents
+
+A content hash would be strictly stronger: it would catch an edit that preserved
+both size and timestamp, which the current key cannot. It is deliberately not
+used, and the tradeoff is worth stating rather than leaving implied.
+
+Hashing means reading the whole file on **every** call, not just the first. That
+is the one thing this cache exists to avoid: the cache turns a repeated apply
+into a dictionary lookup, and re-reading a megabyte to validate the lookup would
+cost far more than the 190 microseconds it saves. The metadata check reads no
+file content at all.
+
+What the current key misses is narrow. Every ordinary way of changing a file -
+an editor saving, a build step writing, a copy, a download - changes the size, the
+last-write time, or both. Defeating it takes a deliberate same-size write with a
+restored timestamp.
+
+So the rule is: **keep the metadata key unless a stale-cache collision is
+actually observed.** If one ever is, the fix is not to hash on the hot path but to
+hash at *preload* time - when a texture is first created - and compare hashes only
+when the metadata says the file changed. That keeps the repeated-apply path free.
+Until then, adding a hash would be paying a certain cost for a hypothetical bug.
+
+A caller who knows a file changed underneath it in that pathological way has
+`BB_ClearPictureCache`.
+
 ### Shape to last texture
 
 Applying the same image to the same Shape twice in a row does no Office work.
