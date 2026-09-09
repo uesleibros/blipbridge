@@ -20,6 +20,9 @@
  * pointer - because a pointer would outlive the object it named. Nothing here
  * has to be told when a Shape dies.
  *
+ * A Shape that cannot yield a complete key is not cached at all, which costs one
+ * apply and never risks a wrong one.
+ *
  * Threading: STA only, like everything else that touches these objects.
  */
 

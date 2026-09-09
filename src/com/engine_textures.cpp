@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "../backend/windows_office/native_texture.hpp"
+#include "../backend/windows_office/shape_policy.hpp"
 #include <blipbridge/errors.hpp>
 #include <climits>
 #include <string>
@@ -12,14 +13,13 @@ constexpr long kPictureFill = 6;
 /**
  * Rejects Shape classes with no validated picture-fill path.
  *
- * The policy itself is requireFillableShapeClass, which lives with the texture
- * store: both this surface and the C ABI reach the same store, so both must
- * accept exactly the same Shapes. @p message survives only as the caller's own
- * wording for the donor case.
+ * The policy itself is bb::office::RequireNativePictureFillTarget: both this
+ * surface and the C ABI reach the same texture store, so both must accept
+ * exactly the same Shapes. @p message survives only as the caller's own wording.
  */
 void RequireNormalShape(IDispatch* shape, const char* message) {
     try {
-        requireFillableShapeClass(shape);
+        office::RequireNativePictureFillTarget(shape);
     } catch (const Error& error) {
         throw Error(error.hr, std::string(message) + ": " + error.what());
     }

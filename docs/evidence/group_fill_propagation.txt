@@ -1,0 +1,9 @@
+children before grouping: a.Fill.Type=6 b.Fill.Type=6
+after grouping: child1.Fill.Type=6 child2.Fill.Type=6
+child render before group fill: 33515 bytes
+group filled: group.Fill.Type=6
+children after group fill: child1.Fill.Type=6 child2.Fill.Type=6
+child render after group fill: 35725 bytes
+CHILD RENDER UNCHANGED BY GROUP FILL: False
+after ungroup: item 1 Id=2 Fill.Type=6
+after ungroup: item 2 Id=3 Fill.Type=6

@@ -1,0 +1,8 @@
+before grouping: child ids 5, 6
+group id 7, type 6
+child 1 : Id=5 Parent=Slide1 SlideID=256 ParentGroup=7
+child 2 : Id=6 Parent=Slide1 SlideID=256 ParentGroup=7
+all ids: top:2 top:3 top:4 top:7 child:5 child:6
+ids total 6, distinct 6
+COLLISION: False
+after ungroup: ids 5, 6 (were 5, 6)

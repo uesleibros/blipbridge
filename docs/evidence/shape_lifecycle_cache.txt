@@ -1,0 +1,25 @@
+  ok   a duplicated Shape is not skipped on its first apply
+  ok   the duplicate is skipped on its second apply
+  ok   the original keeps its own cache entry
+  ok   a different image on the duplicate is not skipped
+  ok   a pasted Shape is not skipped on its first apply
+  ok   and it ends up with the picture fill
+  ok   a Shape moved to another slide is not skipped
+  ok   a group child is never skipped
+  ok   and it is filled correctly every time
+  ok   a group is never skipped either
+  ok   and the group is filled
+  ok   an ungrouped child does real work for a new image
+  ok   and is filled
+  ok   and is cacheable again once out of the group
+  ok   undo brings the deleted Shape back
+  ok   redo deletes it again
+  ok   and a second undo restores it once more
+  ok   an undeleted Shape still applies correctly
+  ok   and caches normally afterwards
+  ok   a Shape created after a delete is not skipped
+  ok   and PowerPoint did not reuse the deleted Id
+  ok   after ClearPictureCache a reopened Shape is not skipped
+  ok   and it is filled
+  note final cache: textures=1;shapes=1;skipped=7;
+  ok   ordinary Fill.UserPicture still works at the end

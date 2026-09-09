@@ -85,6 +85,14 @@ using StageSampler = std::function<void(const wchar_t*)>;
 void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
                       void* cachedImage, const StageSampler& sample = {});
 
+/**
+ * How many times ApplyCachedImage has been entered this process.
+ *
+ * Diagnostic, for the regression tests that must show a Shape was refused
+ * *before* the private OART apply, not merely that the host survived it.
+ */
+unsigned long NativeApplyEntryCount() noexcept;
+
 /// One cached image and its companion image, each carrying one owned reference.
 struct CreatedImage {
     void* cached = nullptr;

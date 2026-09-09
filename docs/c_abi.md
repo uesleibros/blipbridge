@@ -43,6 +43,13 @@ signature, a removed entry point, a changed meaning. **Adding** an export does
 not bump it, because an older caller simply never calls the new one. That is why
 `BB_LoadTexturePixels` and `BB_GetAbiVersion` arrived at ABI version 1.
 
+**Version 2** was a changed meaning, not a new export. `BB_ApplyTexture` on a
+Shape whose class has no native path used to return `BB_E_INVALID_ARG`; it now
+returns `BB_E_UNSUPPORTED_SHAPE`, which says something different and useful - the
+object is a perfectly good Shape, its class simply has no native picture-fill
+path. A caller branching on `BB_E_INVALID_ARG` would silently stop matching, so
+the version moved and the VBA wrapper refuses a mismatched pair loudly.
+
 `BB_GetVersion` is separate: it is the release number and moves independently.
 
 ## The handle contract
@@ -119,6 +126,22 @@ The message describes the most recent failure **on the calling thread**.
 | Shape types | ten classes natively; others fall back or are refused - see shape_compatibility.md |
 | Threading | the thread that called `BB_Init` |
 | Office | the validated build only; others return `BB_E_UNSUPPORTED_BUILD` |
+
+## Ownership
+
+### Invalid against unsupported
+
+Two refusals that used to look alike:
+
+| Code | Meaning |
+|---|---|
+| `BB_E_INVALID_SHAPE` / `BB_E_INVALID_ARG` | the pointer is not a usable Shape - null, freed, not an `IDispatch`, or an object that will not answer `Shape.Type` |
+| `BB_E_UNSUPPORTED_SHAPE` | a perfectly good Shape whose **class** has no native picture-fill path on this build |
+
+The distinction matters because the two call for different responses. The first
+is a bug in the caller or a Shape that died underneath it. The second is a fact
+about PowerPoint, and the answer is `BB_ApplyPicture`, which routes such classes
+to Office's own `Fill.UserPicture` where one exists.
 
 ## Ownership
 

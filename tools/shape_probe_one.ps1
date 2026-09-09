@@ -126,12 +126,26 @@ try {
     try { $connector = $shape.Connector } catch { }
     Set-Field 'connector' $connector
 
+    # Structural: how far the Shape gets along the validated internal chain.
     $report = $engine.ProbeShapeCompatibility($shape)
     $step = Get-Field $report 'step'
+    Set-Field 'structural' $step
     Set-Field 'step' $step
     Set-Field 'agrees' (Get-Field $report 'agrees')
     $inner = Get-Field $report 'innerVtableRva'
     if ($inner) { Set-Field 'inner' $inner }
+
+    <#
+     Semantic: what the production policy says about this class. The two layers
+     are independent, and the Connector is why - it passes every structural check
+     and is still refused here.
+    #>
+    $policy = $engine.ProbeShapePolicy($shape)
+    $eligibility = Get-Field $policy 'eligibility'
+    Set-Field 'semantic' $eligibility
+    $fillBefore = 'unreadable'
+    try { $fillBefore = $shape.Fill.Type } catch { }
+    Set-Field 'fillBefore' $fillBefore
 
     if ((Get-Field $report 'agrees') -ne '1') {
         Set-Field 'class' 'Unsupported'
@@ -156,8 +170,10 @@ try {
 
     if ($step -ne 'Complete') {
         $class = 'Unsupported'
-        if ($fallback -eq 'yes') { $class = 'FallbackSupported' }
+        $route = 'refused'
+        if ($fallback -eq 'yes') { $class = 'FallbackSupported'; $route = 'fallback' }
         Set-Field 'class' $class
+        Set-Field 'route' $route
         Set-Field 'detail' 'no validated receiver chain'
         Save-Result
         exit 0
@@ -196,7 +212,10 @@ try {
         Set-Field 'detail' $applyError
 
         $unrestricted = 'notTried'
-        if ($applyError -like '*no validated picture-fill path*') {
+        # Only a FallbackSupported class is a candidate for widening. An
+        # Unsupported one - a connector - is never re-attempted: that experiment
+        # is settled, and repeating it costs a PowerPoint.
+        if ($eligibility -eq 'FallbackSupported') {
             $probeShape = $null
             try { $probeShape = & $factories[$Category] $slide $textSlide $app } catch { }
             if ($probeShape) {
@@ -235,8 +254,10 @@ try {
         Set-Field 'unrestricted' $unrestricted
 
         $class = 'Unsupported'
-        if ($fallback -eq 'yes') { $class = 'FallbackSupported' }
-        # A class the allowlist refuses but which applies and verifies cleanly is
+        $route = 'refused'
+        if ($fallback -eq 'yes') { $class = 'FallbackSupported'; $route = 'fallback' }
+        Set-Field 'route' $route
+        # A class the policy refuses but which applies and verifies cleanly is
         # a *candidate* for native support, not a decision. Promoting it happens
         # in the backend, deliberately, after the stress suite has run.
         if ($unrestricted -eq 'applied and verified') { $class = 'NativeCandidate' }
@@ -264,13 +285,17 @@ try {
     try { $null = $engine.ApplyTexture($shape, $handleB) } catch { $problems.Add('second apply failed') }
 
     $undo = 'no'
+    $redo = 'no'
     try {
         $app.StartNewUndoEntry()
         $null = $engine.ApplyTexture($shape, $handle)
         $app.CommandBars.ExecuteMso('Undo')
         $undo = 'yes'
-    } catch { $undo = 'no' }
+        $app.CommandBars.ExecuteMso('Redo')
+        $redo = 'yes'
+    } catch { }
     Set-Field 'undo' $undo
+    Set-Field 'redo' $redo
 
     # Save and reopen, in this child, so the row carries its own persistence
     # evidence rather than relying on a shared document at the end of a run.
@@ -307,6 +332,7 @@ try {
     }
     Set-Field 'reopen' $reopen
 
+    Set-Field 'route' 'native'
     if ($problems.Count -gt 0) {
         Set-Field 'class' 'Unsupported'
         Set-Field 'step' 'VerificationFailed'

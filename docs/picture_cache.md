@@ -17,8 +17,9 @@ otherwise, Fill.UserPicture accepts it?   -> Office's own path
 neither                                   -> BB_E_UNSUPPORTED_SHAPE, by name
 ```
 
-The class list is `requireFillableShapeClass`, the same one the raw texture API
-uses, so the two surfaces cannot disagree. Which classes are in it, and what each
+The verdict comes from `ClassifyShapeForNativePictureFill`, the one semantic
+authority, which the raw texture API asks too - so the two surfaces cannot
+disagree about a Shape. Which classes are in it, and what each
 one had to survive to get there, is in
 [shape_compatibility.md](shape_compatibility.md).
 
@@ -72,9 +73,45 @@ documents. Reading the composite costs three Automation property fetches at abou
 a microsecond each.
 
 A Shape that cannot produce a complete key is simply **not cached**. It still
-gets a correct apply, it just pays for it. A group child is the case that
-matters: its `Parent` is the group rather than the slide, so there is no
-`SlideID` to read, and inventing a key would risk collisions with real ones.
+gets a correct apply, it just pays for it. Inventing a key would risk showing the
+wrong image, which is worse than paying for one transaction.
+
+### Groups, and why they are never cached
+
+A group child *can* be keyed. `tools/probe_shape_identity.ps1` measured its
+`Parent` to be the **Slide**, not the group, so it reports a `SlideID`, and its
+`Id` collides with nothing on the slide:
+
+```text
+child 1 : Id=5 Parent=Slide1 SlideID=256 ParentGroup=7
+all ids: top:2 top:3 top:4 top:7 child:5 child:6
+ids total 6, distinct 6      COLLISION: False
+```
+
+It is still not cached, for a better reason. **Filling a group changes what its
+children render.** `tools/probe_group_fill_propagation.ps1` renders a child to
+PNG before and after the group is filled and compares the bytes:
+
+```text
+child render before group fill: 33515 bytes
+child render after  group fill: 35725 bytes
+CHILD RENDER UNCHANGED BY GROUP FILL: False
+```
+
+`Fill.Type` reads 6 throughout, so no cheap property reveals the change. That
+makes a child's remembered texture stale the moment its group is filled - a later
+request to restore the child's own image would be skipped, and the child would
+keep showing the group's picture. Silently. The reverse holds too: filling a
+child changes what the group displays.
+
+Tracking that correctly would mean invalidating a subtree in both directions on
+every group and child apply, nested groups included. The cheap and obviously
+correct rule is to cache neither: **a group, and anything inside one, always does
+real work.** One `ParentGroup` read per apply is the whole cost of being sure,
+and a Shape becomes cacheable again as soon as it is ungrouped.
+
+This was a real defect in the first version of this cache, caught by
+`tools/test_shape_lifecycle_cache.ps1`.
 
 Nothing in either cache holds a Shape, a receiver, or any other document object.
 The Shape cache stores identity *values*, so it never needs to be told when a

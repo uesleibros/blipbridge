@@ -5,6 +5,62 @@ the test machine.
 
 ## [Unreleased]
 
+### Changed - ABI version 2
+
+- `BB_ApplyTexture` on a Shape whose class has no native path now returns
+  **`BB_E_UNSUPPORTED_SHAPE`** where it returned `BB_E_INVALID_ARG`. That is a
+  changed meaning on an existing entry point, so `BB_ABI_VERSION` moved to 2 and
+  the VBA wrapper refuses a mismatched pair loudly. `BB_E_INVALID_SHAPE` now means
+  only what it says: the object is not a usable Shape.
+
+### Added - the semantic safety layer
+
+- **One authority for Shape eligibility**, `ClassifyShapeForNativePictureFill` in
+  `src/backend/windows_office/shape_policy.cpp`, returning `NativeSupported`,
+  `FallbackSupported`, `Unsupported` or `Invalid`. The C ABI, the COM surface and
+  the `UserPicture2` dispatcher all ask it; none re-derives it. Documented in
+  `docs/safety_model.md`: structural validation proves an object is the Office
+  object we expect, semantic validation proves the operation is meaningful for
+  that Shape class, and the Connector proves neither implies the other.
+- **Permanent regressions** (`tools/test_semantic_guards.ps1`) for Connector,
+  Line and WordArt, each in its own PowerPoint. They assert something stronger
+  than "it did not crash": the backend counts entries into the private OART
+  apply, and Connector and Line report `0 -> 0` - the dangerous call was never
+  reached. WordArt reports `0 -> 1` and is verified end to end: still WordArt,
+  text and geometry intact, picture fill persists through save, reopen, undo and
+  redo.
+- **Lifecycle cache regressions** (`tools/test_shape_lifecycle_cache.ps1`) across
+  Duplicate, Copy/Paste, Group, Ungroup, move between slides, delete, undo
+  delete, redo delete and reopen.
+- The compatibility matrix now records structural and semantic verdicts as
+  separate columns, plus route, `Fill.Type` before and after, undo, redo, reopen
+  and host survival, and uses `CrashedDuringResearch` for a class whose host died.
+
+### Fixed
+
+- **The picture path could fall back for the wrong reasons.** It treated any
+  refusal as "this class needs the fallback", which would have routed a deleted or
+  unusable Shape - and a Connector - into `Fill.UserPicture` instead of reporting
+  the real problem. It now switches on the explicit verdict, so only
+  `FallbackSupported` falls back.
+- **Groups and their children are no longer cached by the skip cache.** Filling a
+  group changes what its children render - `tools/probe_group_fill_propagation.ps1`
+  measures a child's PNG at 33,515 bytes before and 35,725 after, with `Fill.Type`
+  reading 6 throughout - so a child's remembered texture went stale the moment its
+  group was filled, and a later apply would have been skipped, leaving the wrong
+  picture on screen silently. Caught by the new lifecycle suite.
+
+### Measured
+
+- The semantic guard costs two Automation property reads, about two microseconds.
+  Apply median 0.1547 ms against 0.1673 ms before it existed - within machine
+  variance, so no measurable hot-path cost.
+- A group child *can* be keyed safely, contrary to the previous comment in the
+  code: `tools/probe_shape_identity.ps1` shows its `Parent` is the Slide, it
+  reports a `SlideID`, its `Id` collides with nothing on the slide, and Ids
+  survive grouping and ungrouping. It is excluded from the cache for the
+  propagation reason above, not for want of a key.
+
 ### Added
 
 - **`BB_ApplyPicture` / `UserPicture2`**: one call taking a Shape and a file

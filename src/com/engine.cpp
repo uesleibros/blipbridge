@@ -48,7 +48,8 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"ApplyPicture", DispatchId::ApplyPicture},
     {L"InvalidateShape", DispatchId::InvalidateShape},
     {L"ClearPictureCache", DispatchId::ClearPictureCache},
-    {L"PictureCacheStats", DispatchId::PictureCacheStats}
+    {L"PictureCacheStats", DispatchId::PictureCacheStats},
+    {L"ProbeShapePolicy", DispatchId::ProbeShapePolicy}
 };
 
 /**

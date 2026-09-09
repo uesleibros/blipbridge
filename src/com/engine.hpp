@@ -39,7 +39,8 @@ enum class DispatchId : DISPID {
     ApplyPicture,
     InvalidateShape,
     ClearPictureCache,
-    PictureCacheStats
+    PictureCacheStats,
+    ProbeShapePolicy
 };
 
 /**

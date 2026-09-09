@@ -26,6 +26,7 @@
 
 #include "windows_office/native_texture.hpp"
 #include "windows_office/picture_cache.hpp"
+#include "windows_office/shape_policy.hpp"
 
 #include <cstring>
 #include <new>
@@ -148,9 +149,11 @@ IDispatch* RequireFillableShape(void* shape) {
         ~Release() { value->Release(); }
     } release{dispatch};
 
-    // Which Shape classes are safe is one policy, and it lives with the texture
-    // store so the C ABI and the COM surface cannot disagree about it.
-    requireFillableShapeClass(dispatch);
+    // Semantic eligibility: one authority, asked by every entry point, so the C
+    // ABI and the COM surface cannot disagree about what they accept. This is
+    // the gate in front of the private OART apply - nothing internal has been
+    // touched yet when it refuses.
+    office::RequireNativePictureFillTarget(dispatch);
     return dispatch;
 }
 

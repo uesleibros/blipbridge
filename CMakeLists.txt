@@ -20,6 +20,7 @@ add_library(BlipBridge SHARED
     src/backend/windows_office/oart_layout.cpp
     src/backend/windows_office/native_apply.cpp
     src/backend/windows_office/native_texture.cpp
+    src/backend/windows_office/shape_policy.cpp
     src/backend/windows_office/picture_cache.cpp
     src/dllmain.cpp
     src/com/class_factory.cpp

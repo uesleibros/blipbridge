@@ -11,6 +11,33 @@ what ought to work.
 
 ## The matrix
 
+Two columns matter and they are independent: **structural** is how far the Shape
+gets along the validated internal chain, **semantic** is what the production
+policy decides about its class. Connector and Line are `Complete` structurally
+and `Unsupported` semantically, which is the whole point - see
+[safety_model.md](safety_model.md).
+
+| Category | Class | `Shape.Type` | Structural | Semantic |
+|---|---|---|---|---|
+| AutoShape | **NativeSupported** | 1 msoAutoShape | Complete | NativeSupported |
+| Freeform | **NativeSupported** | 5 msoFreeform | Complete | NativeSupported |
+| TextBox | **NativeSupported** | 17 msoTextBox | Complete | NativeSupported |
+| Placeholder | **NativeSupported** | 14 msoPlaceholder | Complete | NativeSupported |
+| Callout | **NativeSupported** | 2 msoCallout | Complete | NativeSupported |
+| Group | **NativeSupported** | 6 msoGroup | Complete | NativeSupported |
+| Group child | **NativeSupported** | 1 msoAutoShape | Complete | NativeSupported |
+| Picture | **NativeSupported** | 13 msoPicture | Complete | NativeSupported |
+| WordArt | **NativeSupported** | 1 msoAutoShape | Complete | NativeSupported |
+| Media | **NativeSupported** | 16 msoMedia | Complete | NativeSupported |
+| Table | FallbackSupported | 19 msoTable | NoReceiver | FallbackSupported |
+| SmartArt | FallbackSupported | 24 msoIgraphic | NoReceiver | FallbackSupported |
+| OLE object | FallbackSupported | 7 msoEmbeddedOLEObject | NoReceiver | FallbackSupported |
+| Chart | Unsupported | 3 msoChart | NoReceiver | Unsupported |
+| **Connector** | **Unsupported** | 1 msoAutoShape | **Complete** | **Unsupported** |
+| **Line** | **Unsupported** | 9 msoLine | **Complete** | **Unsupported** |
+
+<details><summary>The earlier one-column form</summary>
+
 | Category | Class | `Shape.Type` | Native path |
 |---|---|---|---|
 | AutoShape | **NativeSupported** | 1 msoAutoShape | validated chain |
@@ -30,9 +57,15 @@ what ought to work.
 | Connector | **Unsupported - refused by name** | 1 msoAutoShape | chain present, but fatal |
 | Line | **Unsupported - refused by name** | 9 msoLine | chain present, but fatal |
 
+</details>
+
 `FallbackSupported` means the native path is refused but ordinary
 `Fill.UserPicture` works, so the `UserPicture2` dispatcher has somewhere to go.
-`Unsupported` means neither path produces a picture fill.
+`Unsupported` means neither path produces a picture fill. The research harness
+also has `NotApplicable`, for a class that could not be created on the machine,
+and `CrashedDuringResearch`, for one whose host did not survive the test -
+kept as historical evidence and never relied on by production code, which turns a
+known-dangerous class into a clean refusal before any private call.
 
 Reproduce with `tools/test_shape_compatibility.ps1`; the machine-readable form is
 `artifacts/shape_matrix.txt`.
@@ -111,13 +144,22 @@ every case, handles at end 0 in every case, host healthy in every case.
 
 ## The policy lives in one place
 
-`requireFillableShapeClass` in `src/backend/windows_office/native_texture.cpp` is
-the only definition of what is acceptable. The C ABI backend and the COM research
-surface both call it, because both reach the same texture store and it would be a
-defect for them to disagree about what they accept.
+`ClassifyShapeForNativePictureFill` in
+`src/backend/windows_office/shape_policy.cpp` is the only definition of what is
+acceptable. The C ABI backend, the COM compatibility surface and the
+`UserPicture2` dispatcher all ask it; none re-derives the answer, because both
+reach the same texture store and it would be a defect for them to disagree.
 
-It is an allowlist of `msoShapeType` values plus the connector refusal. Adding a
-class means running the two harnesses above, not editing the list.
+It returns one of four verdicts - `NativeSupported`, `FallbackSupported`,
+`Unsupported`, `Invalid` - from an allowlist of `msoShapeType` values plus the
+connector refusal, which is checked *first* because a Connector reports
+msoAutoShape. Adding a class means running the two harnesses above, not editing
+the list.
+
+The refusal is proved to happen before any private call:
+`tools/test_semantic_guards.ps1` reads the backend's count of entries into the
+OART apply, attempts one, and reads it again. Connector and Line report `0 -> 0`.
+Those cases are permanent.
 
 ## What is not claimed
 

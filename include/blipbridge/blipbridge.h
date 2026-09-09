@@ -78,7 +78,7 @@ extern "C" {
  * to continue on a mismatch, so an old .bas paired with a new DLL fails with a
  * clear message instead of calling something whose shape it has wrong.
  */
-#define BB_ABI_VERSION 1u
+#define BB_ABI_VERSION 2u
 
 /**
  * Opaque texture handle.

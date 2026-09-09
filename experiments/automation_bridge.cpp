@@ -11,6 +11,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
         return 0;
     case DispatchId::RunBenchmarks:
     case DispatchId::ProbeShapeCompatibility:
+    case DispatchId::ProbeShapePolicy:
     case DispatchId::InvalidateShape:
     case DispatchId::InspectFillReceiver:
     case DispatchId::LoadCachedImageExperiment:
@@ -111,6 +112,8 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
                                             arguments.At(5).integer())
                          .c_str());
     }
+    case DispatchId::ProbeShapePolicy:
+        return Value(probeShapePolicy(target.obj()).c_str());
     case DispatchId::ProbeShapeCompatibility:
         // Read-only classifier: never throws for an unsupported Shape class, so
         // the harness can put a row in the matrix instead of an exception.

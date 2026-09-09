@@ -19,7 +19,7 @@ Classifications:
   NativeSupported    applied natively, identity/geometry/type intact, verified
   FallbackSupported  native refused, but ordinary Fill.UserPicture works
   Unsupported        neither path works, or verification failed
-  Crashed            the host did not survive the test
+  CrashedDuringResearch  the host did not survive the test
   NotApplicable      no instance could be created on this machine
 
 Output: artifacts/shape_matrix.txt (machine-readable) and a printed table.
@@ -81,10 +81,12 @@ foreach ($category in $categories) {
         # The child wrote nothing at all, which it only does if it died before
         # its very first write, or could not start.
         $results.Add([pscustomobject]@{
-            Category = $category; Class = 'Crashed'; Type = '-'
-            Step = 'NoResult'; Detail = "child exited $($process.ExitCode) with no row"
+            Category = $category; Class = 'CrashedDuringResearch'; Type = '-'
+            Structural = '-'; Semantic = '-'; Route = '-'; Fill = '-'
+            Undo = '-'; Redo = '-'; Reopen = '-'; Survived = 'no'
+            Detail = "child exited $($process.ExitCode) with no row"
         })
-        Write-Host ' Crashed (no row)'
+        Write-Host ' CrashedDuringResearch (no row)'
         continue
     }
 
@@ -100,12 +102,21 @@ foreach ($category in $categories) {
         if ($value) { $detailParts.Add("$key=$value") }
     }
 
+    $fillBefore = Get-Field $line 'fillBefore'
+    $fillAfter = Get-Field $line 'fillType'
     $results.Add([pscustomobject]@{
-        Category = $category
-        Class    = $class
-        Type     = $typeName
-        Step     = Get-Field $line 'step'
-        Detail   = ($detailParts -join '; ')
+        Category   = $category
+        Class      = $class
+        Type       = $typeName
+        Structural = Get-Field $line 'structural'
+        Semantic   = Get-Field $line 'semantic'
+        Route      = Get-Field $line 'route'
+        Fill       = "$fillBefore->$fillAfter"
+        Undo       = Get-Field $line 'undo'
+        Redo       = Get-Field $line 'redo'
+        Reopen     = Get-Field $line 'reopen'
+        Survived   = 'yes'
+        Detail     = ($detailParts -join '; ')
     })
     Write-Host " $class"
 }
@@ -120,13 +131,15 @@ if (-not $build) { $build = 'unknown' }
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add('# BlipBridge Shape compatibility matrix')
 $lines.Add("# build=$build")
-$lines.Add('# category|class|shapeType|step|detail')
+$lines.Add('# category|class|shapeType|structural|semantic|route|fill|undo|redo|reopen|survived|detail')
 foreach ($row in $results) {
-    $lines.Add(('{0}|{1}|{2}|{3}|{4}' -f $row.Category, $row.Class, $row.Type, $row.Step, $row.Detail))
+    $lines.Add(('{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}' -f `
+        $row.Category, $row.Class, $row.Type, $row.Structural, $row.Semantic, $row.Route,
+        $row.Fill, $row.Undo, $row.Redo, $row.Reopen, $row.Survived, $row.Detail))
 }
 $lines | Set-Content "$root/artifacts/shape_matrix.txt"
 
 ''
 "PowerPoint build: $build"
-$results | Format-Table -AutoSize Category, Class, Type, Step
+$results | Format-Table -AutoSize Category, Class, Type, Structural, Semantic, Route, Fill, Undo, Redo, Survived
 'Full detail in artifacts/shape_matrix.txt'

@@ -108,12 +108,13 @@ Public Const BB_CAP_CACHED_TEXTURE As Long = &H4
 Public Const BB_CAP_BATCH_APPLY As Long = &H8
 Public Const BB_CAP_PICKUP_FALLBACK As Long = &H10
 Public Const BB_CAP_RAW_PIXELS As Long = &H20
+Public Const BB_CAP_APPLY_PICTURE As Long = &H40
 
 ''' ABI version this module was written against. The DLL reports its own with
 ''' BB_GetAbiVersion; a mismatch means an old .bas is paired with a newer DLL (or
 ''' the reverse), which must fail loudly rather than call something whose shape
 ''' this module has wrong.
-Private Const BB_EXPECTED_ABI As Long = 1
+Private Const BB_EXPECTED_ABI As Long = 2
 
 Private Const BB_ERROR_BASE As Long = vbObjectError + 0.5E3
 Private mModule As LongPtr

@@ -79,6 +79,15 @@ std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long wid
 std::wstring probeShapeCompatibility(IDispatch* shape);
 
 /**
+ * Research: the semantic verdict for a Shape, plus the running count of entries
+ * into the private OART apply.
+ *
+ * The count is what lets a regression test prove a refusal happened *before* the
+ * dangerous call, rather than merely observing that PowerPoint survived it.
+ */
+std::wstring probeShapePolicy(IDispatch* shape);
+
+/**
  * Research: applies a texture with the Shape-type allowlist bypassed, so the
  * matrix can find out which classes are genuinely safe rather than merely
  * structurally identical. Connectors stay refused - that case is settled.

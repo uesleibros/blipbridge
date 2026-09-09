@@ -6,8 +6,9 @@
  *
  * Native where the Shape class has a validated path, ordinary
  * `Fill.UserPicture` where it does not, a specific refusal where neither
- * applies. The class list is `requireFillableShapeClass`, which is also what the
- * raw texture API uses, so the two can never disagree.
+ * applies. The decision comes from `ClassifyShapeForNativePictureFill`, the one
+ * semantic authority, which the raw texture API also asks - so the two surfaces
+ * can never disagree about a Shape.
  *
  * The distinction that matters: **falling back is a statement about the Shape
  * class, not a response to failure.** If the native path is refused because the
@@ -29,9 +30,33 @@
  * it costs three Automation property fetches at about a microsecond each,
  * against roughly 190 microseconds for the apply it may avoid.
  *
- * A Shape that cannot produce a full key - a group child, whose parent chain
- * differs - is simply not cached. It still gets a correct apply; it just pays
- * for it. Refusing to guess at a key is the whole point.
+ * A Shape that cannot produce a full key is simply not cached. It still gets a
+ * correct apply; it just pays for it. Refusing to guess at a key is the point.
+ *
+ * Group children *can* be keyed - `tools/probe_shape_identity.ps1` measured a
+ * child's `Parent` to be the *Slide*, not the group, so it reports a `SlideID`,
+ * and its `Id` collides with nothing on the slide. They are still deliberately
+ * **not** cached, for a different reason, given below.
+ *
+ * ## Groups are never cached, and that is not conservatism
+ *
+ * Filling a group changes what its children render.
+ * `tools/probe_group_fill_propagation.ps1` renders a child to PNG before and
+ * after the group is filled and compares the bytes: 33,515 against 35,725, not
+ * equal. `Fill.Type` stays 6 through all of it, so no cheap property reveals it.
+ *
+ * That makes a child's remembered texture stale the moment its group is filled.
+ * A later request to put the child's own image back would be skipped as
+ * redundant and the child would keep showing the group's image - a wrong picture,
+ * silently, which is the one failure this cache must never produce. The reverse
+ * holds too: filling a child changes what the group displays, so a group's
+ * remembered texture goes stale when any child is filled.
+ *
+ * Tracking that properly would mean invalidating a whole subtree on every group
+ * apply and every child apply, in both directions, including nested groups. The
+ * cheap, obviously-correct rule is to not cache either: a group and anything
+ * inside one always does real work. Groups are a small share of applies, and one
+ * extra property read is the entire cost of being sure.
  *
  * ## What the skip can and cannot see
  *
@@ -48,6 +73,7 @@
 #include "picture_cache.hpp"
 
 #include "native_texture.hpp"
+#include "shape_policy.hpp"
 
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
@@ -117,6 +143,7 @@ struct ShapeKey {
     long presentation = 0;
     long slide = 0;
     long shape = 0;
+    /// False when this Shape must not be cached at all - see DescribeShape.
     bool valid = false;
 
     bool operator<(const ShapeKey& other) const {
@@ -136,17 +163,35 @@ struct ShapeKey {
  * Never throws: an unkeyable Shape is a reason to skip the cache, not to fail an
  * apply that would otherwise have worked.
  */
-ShapeKey DescribeShape(IDispatch* shape) noexcept {
+ShapeKey DescribeShape(IDispatch* shape, long shapeType) noexcept {
     ShapeKey key;
+    // A group's fill propagates to its children, and a child's fill changes what
+    // the group shows, so a remembered texture on either side goes stale when the
+    // other is filled. Neither is cached; see the file comment for the pixel
+    // evidence. msoGroup is 6.
+    constexpr long kGroup = 6;
+    if (shapeType == kGroup) {
+        return key;
+    }
+    try {
+        // ParentGroup answers only for a Shape inside a group. One property read,
+        // about a microsecond, against the 190 an incorrect skip would misplace.
+        bb::Value owner = bb::get(shape, L"ParentGroup");
+        if (owner.v.vt == VT_DISPATCH && owner.obj()) {
+            return key;
+        }
+    } catch (const bb::Error&) {
+        // Top-level Shapes refuse the question, which is the common case and
+        // means exactly what it should: this Shape is not inside a group.
+    }
     try {
         key.shape = bb::get(shape, L"Id").integer();
         bb::Value parent = bb::get(shape, L"Parent");
         if (parent.v.vt != VT_DISPATCH || !parent.obj()) {
             return key;
         }
-        // Shape.Parent is the Slide for a top-level Shape. For a group child it
-        // is the group, which has no SlideID - so those go uncached rather than
-        // being given a key that means something different.
+        // Shape.Parent is the Slide. Anything that does not report a SlideID
+        // goes uncached rather than being given a key that means something else.
         key.slide = bb::get(parent.obj(), L"SlideID").integer();
         bb::Value presentation = bb::get(parent.obj(), L"Parent");
         if (presentation.v.vt != VT_DISPATCH || !presentation.obj()) {
@@ -375,27 +420,33 @@ void ApplyPictureCached(IDispatch* shape, const std::wstring& path) {
     }
 
     /*
-     * Which route to take is decided from the Shape's *class* alone, before any
-     * work happens. A class with no native path falls back; a class with one
-     * gets the native apply and keeps whatever error it produces.
+     * The route is chosen from the Shape's *class*, before any work happens, and
+     * from an explicit verdict rather than from whether something threw.
+     *
+     * That distinction is the whole point. Treating any refusal as "fall back"
+     * would route a Connector - which Office also refuses - and, worse, a deleted
+     * or unusable Shape into the slower path, turning a real failure into a
+     * confusing one. Only FallbackSupported falls back.
      */
-    bool nativeClass = true;
-    std::string classRefusal;
-    try {
-        requireFillableShapeClass(shape);
-    } catch (const bb::Error& error) {
-        nativeClass = false;
-        classRefusal = error.what();
-    }
-
-    if (!nativeClass) {
+    const office::ShapeClassification classification =
+        office::ClassifyShapeForNativePictureFill(shape);
+    switch (classification.eligibility) {
+    case office::ShapeEligibility::FallbackSupported:
         ApplyThroughUserPicture(shape, path);
         return;
+    case office::ShapeEligibility::Invalid:
+        throw bb::Error(E_INVALIDARG, classification.reason);
+    case office::ShapeEligibility::Unsupported:
+        throw bb::Error(bb::BB_E_SHAPE_CLASS_UNSUPPORTED, classification.reason);
+    case office::ShapeEligibility::NativeSupported:
+        break;
     }
 
     PictureCache& cache = PictureCache::Instance();
     const long handle = cache.TextureFor(path);
-    const ShapeKey key = DescribeShape(shape);
+    // The type was already read by the classifier; passing it on saves a second
+    // Automation fetch on every apply.
+    const ShapeKey key = DescribeShape(shape, classification.shapeType);
     if (cache.AlreadyApplied(key, handle, shape)) {
         return;
     }
@@ -415,7 +466,8 @@ void InvalidateShapeCache(IDispatch* shape) {
     if (!shape) {
         throw bb::Error(E_POINTER, "Missing Shape");
     }
-    PictureCache::Instance().Forget(DescribeShape(shape));
+    const ShapeClassification classification = ClassifyShapeForNativePictureFill(shape);
+    PictureCache::Instance().Forget(DescribeShape(shape, classification.shapeType));
 }
 
 void ClearPictureCache() noexcept {

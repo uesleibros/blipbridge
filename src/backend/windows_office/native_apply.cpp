@@ -403,8 +403,25 @@ ApplyFunctions ResolveApplyFunctions(std::uintptr_t oart) {
  * All temporary Office objects are destroyed before returning, in the reverse
  * order the real handler uses.
  */
+/**
+ * How many times the private OART apply has been entered this process.
+ *
+ * This exists so a regression test can *prove* a refusal happened before the
+ * dangerous call rather than merely observing that PowerPoint survived. A
+ * Connector must leave this untouched. One non-atomic increment on an operation
+ * that costs ~190 microseconds is not measurable; STA-only, like everything else
+ * here.
+ */
+unsigned long g_applyEntries = 0;
+
+unsigned long NativeApplyEntryCount() noexcept {
+    return g_applyEntries;
+}
+
 void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
                       void* cachedImage, const StageSampler& sample) {
+    // Counted at the top: entering at all is what the test is asking about.
+    ++g_applyEntries;
     CountedPointer cachedStorage;
     cachedStorage.value = cachedImage;
     CountedPointer* cached = &cachedStorage;

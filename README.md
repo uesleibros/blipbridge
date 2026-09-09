@@ -115,6 +115,8 @@ reasoning about which ones expose a `Fill`:
 | **Refused** | Chart, Connector, Line |
 
 Connectors and lines are refused *by name*, and that is the most important row.
+They pass every **structural** check and fail the **semantic** one - two
+independent layers, described in [docs/safety_model.md](docs/safety_model.md).
 A Connector reports `Shape.Type = 1` (msoAutoShape) and presents byte-identical
 internals to a rectangle - same wrapper, same FillFormat, same receiver - so no
 structural check can tell them apart. Office's own `Fill.UserPicture` refuses one
@@ -199,6 +201,7 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [record_construction.md](docs/record_construction.md) | what the fill property record actually needs |
 | [oart_abi.md](docs/oart_abi.md) | every private entry point, its ABI and its evidence |
 | [native_texture.md](docs/native_texture.md) | reuse, lifetime, Undo, reference ownership |
+| [safety_model.md](docs/safety_model.md) | structural against semantic validation, and why both are needed |
 | [shape_compatibility.md](docs/shape_compatibility.md) | which Shape classes work, and the connector that crashes |
 | [capabilities.md](docs/capabilities.md) | what each capability flag claims and why |
 | [picture_cache.md](docs/picture_cache.md) | UserPicture2, the dispatch decision and both caches |

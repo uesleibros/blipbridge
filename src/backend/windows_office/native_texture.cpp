@@ -38,6 +38,8 @@
 
 #include "native_texture.hpp"
 
+#include "shape_policy.hpp"
+
 #include "native_apply.hpp"
 #include "oart_layout.hpp"
 
@@ -177,85 +179,6 @@ private:
 };
 
 } // namespace
-
-namespace {
-
-/**
- * The Shape classes a native apply is known to be safe on, by msoShapeType.
- *
- * Every entry was earned: the class presents the validated PPCORE wrapper, OART
- * FillFormat and receiver; a native apply to it leaves identity, type, geometry
- * and rotation untouched and produces a picture fill; and it survived 1000
- * repeated applies, 500 alternating applies, undo, redo, save, reopen, deletion
- * and presentation close with the cached image's reference count returning to
- * the handle's own. The evidence is docs/shape_compatibility.md,
- * tools/test_shape_compatibility.ps1 and tools/test_shape_class_stress.ps1.
- *
- * Absent on purpose: Table, Chart, SmartArt and embedded OLE objects, none of
- * which present the validated receiver chain at all.
- *
- * WordArt and group children are not listed because they report msoAutoShape.
- */
-constexpr long kFillableShapeTypes[] = {
-    1,    // msoAutoShape - also WordArt and group children
-    2,    // msoCallout
-    5,    // msoFreeform
-    6,    // msoGroup
-    13,   // msoPicture
-    14,   // msoPlaceholder
-    16,   // msoMedia
-    17,   // msoTextBox
-};
-
-/// `Shape.Connector`, like every Office boolean, is msoTrue = -1.
-constexpr long kMsoTrue = -1;
-
-} // namespace
-
-void requireFillableShapeClass(IDispatch* shape) {
-    const long type = bb::get(shape, L"Type").integer();
-    bool known = false;
-    for (const long candidate : kFillableShapeTypes) {
-        if (type == candidate) {
-            known = true;
-            break;
-        }
-    }
-    if (!known) {
-        std::ostringstream out;
-        out << "Shape type " << type << " has no validated picture-fill path; "
-            << "see docs/shape_compatibility.md for the classes that do";
-        throw bb::Error(E_INVALIDARG, out.str());
-    }
-
-    /*
-     * Connectors and lines are why the type alone is not enough.
-     *
-     * A Connector reports msoAutoShape and presents the *identical* wrapper,
-     * FillFormat vtable and receiver as a rectangle, so neither the list above
-     * nor the structural walk in ResolveFillTarget separates them. But a
-     * connector is a line with no interior: Office's own Fill.UserPicture
-     * refuses it with "value out of range", from a check PPCORE performs before
-     * the handler is reached. The native apply reproduces the handler, not that
-     * pre-check, and applying to one **terminates PowerPoint** - reproduced in
-     * tools/test_connector_isolation.ps1.
-     *
-     * A Shape that will not answer the question is refused rather than assumed
-     * safe: the cost of being wrong here is the user's document.
-     */
-    bool isConnector = true;
-    try {
-        isConnector = bb::get(shape, L"Connector").integer() == kMsoTrue;
-    } catch (const bb::Error&) {
-        throw bb::Error(E_INVALIDARG,
-                        "Shape did not answer whether it is a connector, so it is refused");
-    }
-    if (isConnector) {
-        throw bb::Error(E_INVALIDARG,
-                        "Connectors and lines have no fillable interior; Office's own "
-                        "Fill.UserPicture refuses them and a native apply crashes PowerPoint");
-    }
-}
 
 bool nativeTextureBackendAvailable() noexcept {
     // Everything the backend needs, checked without touching a document: the
