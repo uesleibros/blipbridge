@@ -3,7 +3,7 @@ RAM fill succeeded: texture_64_1.png (11822 bytes)
 RAM fill succeeded: texture_128_0.png (49087 bytes)
 RAM fill succeeded: texture_256_1.png (203682 bytes)
 RAM fill succeeded: texture_64_0.jpg (2265 bytes)
-Memory experiment passed identity, geometry, picture fill, node editing, and SaveAs. PID=8696
+Memory experiment passed identity, geometry, picture fill, node editing, and SaveAs. PID=30340
 Reopen preserved editable freeform and picture fill.
 Pixel differences against memory_reference.png: 0
 Pixel differences against memory_reopened.png: 0

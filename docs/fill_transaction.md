@@ -2,7 +2,7 @@
 
 Observed on OART 16.0.14334.20848 x64 and GFX 16.0.14334.20848 x64, 2026-09-09.
 The experiment is `experiments/exp_internal_blip/probe_fill_transaction.py`,
-driven by `tools/run_fill_transaction.ps1`. It sets validated breakpoints during
+driven by `tools/run_office_probe.ps1`. It sets validated breakpoints during
 an ordinary `Fill.UserPicture` call; it does not invoke internal methods, write
 inferior memory, or retain pointers after detach.
 
@@ -121,7 +121,7 @@ by the receiver, which `OART +0x63EA0` resolves from handler state +0x58:
 
 ```text
 receiver +0x00  vtable OART +0x9F6658
-receiver +0x08  heap object (not yet identified)
+receiver +0x08  PPCORE object, vtable ppcore.dll+0x1396DB8 (shared per slide)
 receiver +0x10  smart pointer holding the shared null singleton OART +0x9E5690
 receiver +0x18  vtable OART +0x9F64D0   -- the context sub-object
 ```
@@ -139,10 +139,51 @@ OperationApply(operation, context, receiver + 0x10, &nullHolder, extra);
 
 Live registers matched: RCX = operation, RDX = receiver+0x18, R8 = receiver+0x10.
 
-Which Shape the receiver denotes is **not established**. The receiver dump shows
-no obvious per-Shape pointer, and the remaining candidates are receiver+0x8 and
-fields of the property record itself. Do not assume the receiver is document-wide
-or Shape-scoped until that is measured.
+### The receiver is per Shape
+
+`experiments/exp_internal_blip/probe_receiver_identity.py`, driven by
+`tools/prepare_receiver_identity.ps1`, fills three ordinary AutoShapes with the
+same PNG: two on slide 1 and one on slide 2. Because the bytes are identical,
+anything that varies between the calls comes from Shape or slide context.
+
+Measured, and reproduced across two runs:
+
+| Value | Call 0 (slide 1) | Call 1 (slide 1) | Call 2 (slide 2) | Reading |
+|---|---|---|---|---|
+| handler state | distinct | distinct | distinct | per Shape |
+| receiver token (handler +0x58) | distinct | distinct | distinct | per Shape |
+| receiver | distinct | distinct | distinct | per Shape |
+| receiver +0x8 | A | A | B | shared within a slide |
+| receiver +0x20 | small integer, distinct per Shape | | | per-Shape index |
+| record prefix +0x0..+0x90 | equal except +0x40 | | | see below |
+
+So Shape identity is carried by the receiver, and the receiver is built per
+Shape - not per slide and not per document. `receiver+0x8` points to a PPCORE
+object whose vtable is `ppcore.dll+0x1396DB8`; it is the *same* object for the
+two Shapes on one slide and a different one for the Shape on the other slide,
+which is consistent with a slide-level PPCORE container. That identification is
+inferred from the sharing pattern and a stable vtable, not from a symbol.
+
+`receiver+0x20` is a small integer that differs per Shape (2/4/7 in one run,
+0x21/0x23/0x26 in another). It is not `Shape.Id` and it is not stable between
+runs, so treat it as an internal per-Shape index, not a document identifier.
+`receiver+0x28..+0x48` holds inline UTF-16 fragments with `receiver+0x38`
+pointing at `receiver+0x48`, which reads as a small-buffer string rather than a
+reference.
+
+The property record prefix below the image sub-record is identical across all
+three Shapes except `record+0x40`, a non-polymorphic heap pointer (first qword
+zero). Every call also created its own cached image, so `record+0x40` cannot yet
+be attributed to Shape identity rather than to the per-call image resource. It
+stays unidentified.
+
+**Consequence for a native backend.** Neither the operation nor the property
+record names the target Shape, so a hypothetical `ApplyTexture(shape, handle)`
+cannot be built by constructing a record alone. It would have to obtain the
+per-Shape OART receiver, which today is produced inside the `UserPicture`
+handler at `OART +0x89C860` from state the handler itself owns. Reaching that
+receiver from a PowerPoint `Shape` without going through `UserPicture` is the
+open problem, and nothing here shows it is reachable.
 
 ## Ownership and lifetime
 
@@ -199,13 +240,14 @@ Answered by this experiment:
    `UserPicture` call; two further references survive it. Undo and Redo have not
    been sampled yet.
 
+3. Where Shape identity lives — the receiver, which is constructed per Shape.
+   The record prefix is Shape-independent apart from one unidentified pointer.
+
 Still open:
 
-3. Where Shape identity lives. The receiver carries it, but the field is not
-   identified, and the property record has not been mapped below +0x90.
-6. Whether a cached image built from our own `IStream` can enter this flow. That
-   needs both a constructible property record and a way to obtain a receiver for
-   a chosen Shape without going through `UserPicture`.
+6. Whether a cached image built from our own `IStream` can enter this flow. The
+   blocking half is no longer the record: it is obtaining a per-Shape receiver
+   without going through `UserPicture`.
 7. Save/reopen of a synthesized fill — untested; only the ordinary path is
    validated.
 8. Guarding. All anchors here are byte-validated per build, but no private call
@@ -217,6 +259,7 @@ repeated-decode avoidance remain unimplemented.
 
 Raw evidence: `docs/evidence/fill_transaction_lifecycle.txt`,
 `docs/evidence/fill_transaction_lifecycle_repeat.txt`,
-`docs/evidence/fill_transaction_validated.txt` and
+`docs/evidence/fill_transaction_validated.txt`,
+`docs/evidence/receiver_identity.txt` and
 `docs/evidence/decoder_shape_validation.txt`. Saved package details:
 `docs/fill_transaction_package.md`.

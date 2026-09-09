@@ -4,4 +4,4 @@ Handles are not recycled; ClearTextures releases registered entries.
 Normal LoadTexture explicitly rejects unsupported backend.
 Deleted donor returns COM error; PowerPoint remains usable.
 Invalid image rejected; subsequent ordinary UserPicture succeeds after hook cleanup.
-Host PID=9524
+Host PID=18120

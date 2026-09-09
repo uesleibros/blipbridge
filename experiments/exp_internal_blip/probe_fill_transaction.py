@@ -1,7 +1,7 @@
 """Observe the loaded-image transfer, the OART operation lifecycle and refcounts.
 
 Run inside GDB after ``tools/prepare_decoder_trace.ps1``; see
-``tools/run_fill_transaction.ps1`` for the supported invocation. This
+``tools/run_office_probe.ps1`` for the supported invocation. This
 experiment only reads registers and bounded live records. It never calls a
 private Office function, never writes inferior memory, and never retains an
 Office pointer after detaching.

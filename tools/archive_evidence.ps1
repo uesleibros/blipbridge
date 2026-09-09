@@ -1,7 +1,7 @@
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 New-Item -ItemType Directory -Force "$root/docs/evidence","$root/benchmarks/results" | Out-Null
-foreach($name in 'functional_inproc.txt','memory_functional.txt','com_smoke.txt','userpicture_trace.txt','memory_trace.txt','pdb_probe_mso20.txt','pdb_probe_oart.txt','decoder_watch.txt','decoder_stream.txt','cached_factory.txt','cached_apply_trace.txt','gfx_stream_exports.txt','stress_reopen.txt','fill_transaction_validated.txt','fill_transaction_lifecycle.txt','fill_transaction_lifecycle_repeat.txt','decoder_shape_validation.txt','oart_consumer.txt','oart_lifetime_phases.txt','oart_retention.txt','decoder_lifetime_reopen.txt','fallback_contract.txt'){
+foreach($name in 'functional_inproc.txt','memory_functional.txt','com_smoke.txt','userpicture_trace.txt','memory_trace.txt','pdb_probe_mso20.txt','pdb_probe_oart.txt','decoder_watch.txt','decoder_stream.txt','cached_factory.txt','cached_apply_trace.txt','gfx_stream_exports.txt','stress_reopen.txt','fill_transaction_validated.txt','fill_transaction_lifecycle.txt','fill_transaction_lifecycle_repeat.txt','decoder_shape_validation.txt','oart_consumer.txt','oart_lifetime_phases.txt','oart_retention.txt','decoder_lifetime_reopen.txt','fallback_contract.txt','receiver_identity.txt','receiver_identity_validation.txt'){
  $source=Join-Path "$root/artifacts" $name
  if(Test-Path -LiteralPath $source){Copy-Item -LiteralPath $source -Destination "$root/docs/evidence/$name" -Force}
 }

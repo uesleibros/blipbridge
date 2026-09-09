@@ -1,17 +1,29 @@
 <#
 .SYNOPSIS
-Reproducible driver for the OART fill-transaction observation.
+Reproducible driver for a read-only GDB observation of live PowerPoint.
 
 .DESCRIPTION
-Starts tools/prepare_decoder_trace.ps1 in a background PowerShell job, waits
-for it to publish artifacts/decoder_target.json, then attaches GDB with
-experiments/exp_internal_blip/probe_fill_transaction.py. The probe only reads
-memory; it sets no inferior call and detaches before the job finishes.
+Starts a preparation script in a background PowerShell job, waits for it to
+publish artifacts/decoder_target.json, then attaches GDB with the requested
+probe. Every supported probe only reads memory: it makes no inferior call and
+detaches before the preparation job finishes.
 
-The transcript is written to the file named by -Output so evidence can be
-archived without re-running Office.
+The preparation script is expected to publish artifacts/decoder_target.json and
+then block until artifacts/decoder_go appears. This driver writes that trigger
+and always releases the job, including when the probe aborts early.
+
+.EXAMPLE
+.\tools\run_office_probe.ps1
+Runs the fill-transaction observation with its default transcript path.
+
+.EXAMPLE
+.\tools\run_office_probe.ps1 -Prepare tools/prepare_receiver_identity.ps1 `
+    -Probe experiments/exp_internal_blip/probe_receiver_identity.py `
+    -Output artifacts/receiver_identity.txt
 #>
 param(
+    [string]$Prepare = 'tools/prepare_decoder_trace.ps1',
+    [string]$Probe = 'experiments/exp_internal_blip/probe_fill_transaction.py',
     [string]$Output = 'artifacts/fill_transaction_lifecycle.txt',
     [int]$ReadyTimeoutSeconds = 90
 )
@@ -30,7 +42,7 @@ if (!(Test-Path -LiteralPath $gdb)) { throw "GDB not found at $gdb" }
 $job = Start-Job -ScriptBlock {
     param($script)
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
-} -ArgumentList (Join-Path $root 'tools/prepare_decoder_trace.ps1')
+} -ArgumentList (Join-Path $root $Prepare)
 
 try {
     $deadline = (Get-Date).AddSeconds($ReadyTimeoutSeconds)
@@ -44,7 +56,7 @@ try {
     try {
         # GDB reports every Office worker thread; those lines carry no
         # evidence and would dominate the archived transcript.
-        & $gdb -batch -x 'experiments/exp_internal_blip/probe_fill_transaction.py' 2>&1 |
+        & $gdb -batch -x $Probe 2>&1 |
             Where-Object { $_ -notmatch '^\[(New|Thread) ' } |
             Set-Content -LiteralPath (Join-Path $root $Output) -Encoding utf8
     } finally {

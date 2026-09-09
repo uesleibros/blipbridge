@@ -63,10 +63,26 @@ and after construction, before and after destruction, and UserPicture return.
 Construction is exactly +1 and destruction exactly -1, so the operation owns a
 counted reference rather than borrowing one; the two references that survive the
 call are taken during apply and live until Presentation.Close. Both runs of
-tools/run_fill_transaction.ps1 produced identical values and preserved Shape
+tools/run_office_probe.ps1 produced identical values and preserved Shape
 identity, geometry, Z order and picture fill.
 
-Next experiment: identify which receiver field denotes the target Shape, and map
-the property record below +0x90. Both are prerequisites for supplying a
-stream-created resource. Internal cache-file elimination and donor-free fill
-binding remain unresolved; no private call is enabled, and no capability flipped.
+Receiver scope measured. Filling three AutoShapes - two on one slide, one on
+another - with identical bytes produced three distinct receivers, handler states
+and tokens, so the receiver is constructed per Shape. receiver+0x8 is a PPCORE
+object (vtable ppcore.dll+0x1396DB8) shared by Shapes on the same slide and
+different across slides, consistent with a slide-level container. The property
+record prefix below the image sub-record was identical for all three Shapes apart
+from one unidentified non-polymorphic pointer at record+0x40, which also tracks
+the per-call image resource and so cannot yet be read as Shape identity.
+
+Consequence: a native ApplyTexture cannot be reached by constructing a property
+record alone, because neither the record nor the operation names the target
+Shape. The open problem is obtaining the per-Shape OART receiver from a
+PowerPoint Shape without going through the UserPicture handler; nothing observed
+so far shows that is reachable.
+
+Next experiment: determine how OART +0x89C860 obtains its handler state from
+PPCORE, and whether any reachable OART or PPCORE entry point yields the same
+receiver for an arbitrary Shape. Internal cache-file elimination and donor-free
+fill binding remain unresolved; no private call is enabled, and no capability
+flipped.

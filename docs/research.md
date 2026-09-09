@@ -1,5 +1,41 @@
 # Research journal
 
+## 2026-09-09 - the fill receiver is per Shape
+
+Hypothesis: since neither the operation nor its property record carries a Shape
+reference, the target must be denoted by the receiver. Its scope was unknown.
+
+Method: `tools/prepare_receiver_identity.ps1` fills three ordinary AutoShapes -
+two on slide 1, one on slide 2 - with the same PNG through the public
+Fill.UserPicture, with no IAT instrumentation installed.
+`probe_receiver_identity.py` records the handler state, the token at handler+0x58,
+the receiver, a bounded receiver dump and the property-record prefix below the
+image sub-record, then reports only what differed. Both scripts run through the
+generalized `tools/run_office_probe.ps1`.
+
+Result: the handler state, token and receiver are all distinct for every Shape,
+so the receiver is per Shape rather than per slide or per document. receiver+0x8
+holds a PPCORE object with vtable ppcore.dll+0x1396DB8 that is shared by the two
+Shapes on one slide and different for the Shape on the other, which reads as a
+slide-level container - inferred from the sharing pattern and a stable vtable,
+not from a symbol. receiver+0x20 is a small per-Shape integer that is not
+Shape.Id and not stable between runs. receiver+0x28..+0x48 is a small-buffer
+string, with +0x38 pointing at +0x48.
+
+The property-record prefix was byte-identical across all three Shapes except
+record+0x40, a heap pointer whose first qword is zero. Each call also produced
+its own cached image, so that difference cannot yet be attributed to Shape
+identity; it stays unidentified rather than being assigned a role.
+
+Consequence for the intended backend: constructing a property record is not
+sufficient for ApplyTexture, because the record does not name a Shape. The
+blocking problem is obtaining the per-Shape receiver outside the UserPicture
+handler, and nothing observed shows that it is reachable.
+
+Limits: two runs, one Office build, three Shapes, one image. Shape identity was
+preserved and every Shape ended with a picture fill. No internal function was
+called, no capability changed, no benchmark claim made.
+
 ## 2026-09-09 - operation construction, inputs and cached-image ownership
 
 Hypothesis: the operation object handed to application slot +0x58 is built by a
@@ -10,7 +46,7 @@ Method: static PE work first. `.pdata` lookups resolved every observed return
 address to a real function entry, so the construction chain could be read from
 disassembly before any breakpoint was placed. The probe was then rewritten
 around those anchors, adding intrusive reference-count sampling at six points,
-and driven twice through the new `tools/run_fill_transaction.ps1`.
+and driven twice through the new `tools/run_office_probe.ps1`.
 
 Result. The construction chain is OART +0x2290F0 -> +0x21BC50 -> +0x2F1E00 ->
 +0xF740 -> +0xE7F0 -> +0x10244, confirmed by the live backtrace in both runs.
