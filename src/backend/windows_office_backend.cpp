@@ -24,7 +24,7 @@
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
 
-#include "../../experiments/experiment_api.hpp"
+#include "windows_office/native_texture.hpp"
 
 #include <cstring>
 #include <new>

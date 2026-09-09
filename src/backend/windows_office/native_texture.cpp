@@ -36,7 +36,8 @@
  * fully attributed. See docs/native_texture.md.
  */
 
-#include "../experiment_api.hpp"
+#include "native_texture.hpp"
+
 #include "native_apply.hpp"
 #include "oart_layout.hpp"
 

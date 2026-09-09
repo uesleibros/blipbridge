@@ -60,7 +60,20 @@ struct ApplyFunctions {
 /// signature no longer matches the bytes its ABI was derived from.
 ApplyFunctions ResolveApplyFunctions(std::uintptr_t oartBase);
 
-/// Optional per-stage hook, used by the experiments to sample reference counts.
+/**
+ * Optional per-stage hook, used by the experiments to sample reference counts
+ * and, in the stage profiler, wall-clock time.
+ *
+ * It is called after each step of the apply, in this order:
+ *
+ *   enter, record, subrecord, install, transfer, holder, transaction, apply,
+ *   released
+ *
+ * `enter` is a baseline taken before any work, so the cost of a stage is the
+ * difference between its sample and the previous one. When no sampler is
+ * supplied - which is every production call - the only cost is one null test
+ * per stage.
+ */
 using StageSampler = std::function<void(const wchar_t*)>;
 
 /**

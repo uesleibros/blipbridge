@@ -3,6 +3,10 @@
 #include <oleauto.h>
 #include <string>
 
+// The texture store is production code and lives with the backend. The research
+// harnesses below drive it; it does not know they exist.
+#include "../src/backend/windows_office/native_texture.hpp"
+
 /** Research entry points: synchronous PowerPoint STA only, never normal backends. */
 int runExperiment(int argc, wchar_t** argv);
 /** Temporarily instruments file APIs and restores patches before returning. */
@@ -44,34 +48,6 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes);
  */
 std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes);
 
-/**
- * Reusable texture handles over GFX cached images. A texture owns one decoded
- * image and is independent of any document; see native_texture.cpp for the
- * ownership rules and docs/native_texture.md for the validation matrix.
- *
- * STA only. Handles never recycle, and live in a range disjoint from the donor
- * fallback's so one ApplyTexture can serve both.
- */
-/**
- * True when the native backend can actually run in this process: PowerPoint
- * host, all three Office modules at the validated build, the exported GFX
- * creator present, and every private entry point's signature bytes intact.
- * False on any other host, which is what the capability string must report.
- */
-bool nativeTextureBackendAvailable() noexcept;
-long nativeTextureLoad(SAFEARRAY* bytes);
-/**
- * Loads a texture from a raw 32-bit BGRA buffer instead of an encoded image.
- * Same handles, same lifetime rules; only the decode is skipped.
- */
-long nativeTextureLoadPixels(const void* pixels, unsigned long width,
-                             unsigned long height, long stride);
-void nativeTextureApply(IDispatch* fill, long handle);
-void nativeTextureRelease(long handle);
-void nativeTextureClear() noexcept;
-bool nativeTextureOwnsHandle(long handle);
-long nativeTextureCount();
-std::wstring nativeTextureReport(long handle);
 
 /**
  * In-process comparison of Fill.UserPicture against LoadTexture once plus
@@ -94,6 +70,15 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
  */
 std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long width,
                                     long height, long stride, long surfaceFormat);
+
+/**
+ * Research: stage-by-stage attribution of the picture-fill path, across four
+ * legs (reuse, new-same-bytes, new-distinct-content, and a pre-created pool).
+ * Answers where the difference between applying an existing texture and
+ * creating new content actually goes. See stage_profiler.cpp.
+ */
+std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
+                               long iterations);
 
 /** Compares encoded-image loading against raw-pixel loading at one size. */
 std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long height,

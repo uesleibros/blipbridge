@@ -170,28 +170,30 @@ PowerPoint precisely to hold that behaviour in place.
 ## Architecture
 
 ```text
-    blipbridge.h                 stable C ABI, platform independent
+    include/blipbridge/blipbridge.h   stable C ABI, platform independent
          |
-    src/abi/blipbridge_abi.cpp   thread affinity, error text, translation
+    src/abi/blipbridge_abi.cpp        thread affinity, error text, translation
          |
-    src/backend/backend.hpp      the platform seam
+    src/backend/backend.hpp           the platform seam
          |
-   +-----+---------------------------+
-   |                                 |
-windows_office_backend.cpp    unsupported_backend.cpp
-   |                            (macOS and everything else)
-experiments/exp_internal_blip
-   the reverse-engineered PowerPoint implementation
+   +-----+-----------------------------+
+   |                                   |
+windows_office_backend.cpp      unsupported_backend.cpp
+   |                              (macOS and everything else)
+src/backend/windows_office/
+   oart_layout       module and layout guards, the validation cache
+   native_apply      the property record, the transaction, the receiver call
+   native_texture    the texture store: handles, ownership, lifetime
 ```
 
 Nothing above `backend.hpp` knows Office exists. The reverse-engineered code is
 reached only through `bb::Backend`, and its exceptions are converted to
 `BackendResult` there so none can reach the C ABI.
 
-That directory is still named `experiments/` for historical reasons; it holds
-the validated Windows backend and the research probes that produced it. Renaming
-it would break a large number of evidence links in `docs/`, so it is deferred
-rather than done hastily.
+`experiments/` holds only research now: the probes that produced the layouts, the
+benchmarks, and the stage profiler. The dependency runs one way - a probe
+includes `src/backend/windows_office/...`, and nothing under `src/` includes a
+probe - so the shipping path cannot acquire instrumentation by accident.
 
 ## The batch API, measured
 

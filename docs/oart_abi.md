@@ -9,7 +9,7 @@ Every function below is **byte-verified before it is called**: the first sixteen
 bytes at its RVA are compared against the bytes recorded when its ABI was
 derived, and a single mismatch aborts the whole operation before anything is
 constructed. The signatures live in
-`experiments/exp_internal_blip/native_apply.cpp`.
+`src/backend/windows_office/native_apply.cpp`.
 
 ## Entry points
 

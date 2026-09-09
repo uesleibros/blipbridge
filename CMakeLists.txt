@@ -15,6 +15,11 @@ add_library(BlipBridge SHARED
     # Public C ABI and the platform seam beneath it.
     src/abi/blipbridge_abi.cpp
     src/backend/windows_office_backend.cpp
+    # The reverse-engineered Windows implementation, reached only through
+    # backend.hpp. Research probes include these; nothing here includes a probe.
+    src/backend/windows_office/oart_layout.cpp
+    src/backend/windows_office/native_apply.cpp
+    src/backend/windows_office/native_texture.cpp
     src/dllmain.cpp
     src/com/class_factory.cpp
     src/com/engine.cpp
@@ -27,13 +32,12 @@ add_library(BlipBridge SHARED
     experiments/exp_pickup_apply/focused.cpp
     experiments/exp_pickup_apply/stress.cpp
     experiments/exp_internal_blip/receiver_inspect.cpp
+    experiments/exp_internal_blip/native_apply_probe.cpp
     experiments/exp_internal_blip/cached_image_load.cpp
-    experiments/exp_internal_blip/oart_layout.cpp
-    experiments/exp_internal_blip/native_apply.cpp
-    experiments/exp_internal_blip/native_texture.cpp
     experiments/exp_internal_blip/texture_benchmark.cpp
     experiments/exp_internal_blip/batch_benchmark.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
+    experiments/exp_internal_blip/stage_profiler.cpp
 )
 target_compile_definitions(BlipBridge PRIVATE BB_DLL BLIPBRIDGE_BUILD)
 target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)

@@ -56,7 +56,7 @@ This rules out the exported surface rather than proving impossibility, but
 guessing at an unexported path would mean writing into a shared content-addressed
 cache, which is exactly the class of change this project refuses without proof.
 
-So changing content means a new texture per frame: about 0.9-1.0 ms end to end
+So changing content means a new texture per frame: about 0.31 ms end to end
 against 0.19 ms to apply an existing one. Pooling was considered and rejected -
 without mutation a pool recycles handles, not work.
 

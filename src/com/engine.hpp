@@ -32,7 +32,8 @@ enum class DispatchId : DISPID {
     BenchmarkNativeTexture,
     BenchmarkTextureBatch,
     PixelTextureExperiment,
-    BenchmarkPixelLoad
+    BenchmarkPixelLoad,
+    ProfileFillStages
 };
 
 /**

@@ -109,6 +109,40 @@ HMODULE EnsureOfficeModule(const wchar_t* moduleName);
 /// Throws bb::Error unless the named module is loaded and is the supported build.
 HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* description);
 
+/// The three Office modules an apply depends on, as one lookup.
+struct OfficeModules {
+    HMODULE oart = nullptr;
+    HMODULE ppcore = nullptr;
+    /// Delay-loaded: legitimately null until Office's first picture operation.
+    HMODULE gfx = nullptr;
+};
+
+/**
+ * Fetches all three module handles once and points the validation cache at them,
+ * discarding everything it holds if any of them changed.
+ *
+ * This exists because the handles are the cache's *reload detector*, so they
+ * cannot themselves be cached - but fetching them once per operation rather than
+ * three times per module check costs a tenth as much and detects exactly the
+ * same thing. GFX is looked up and never loaded here: only the create path needs
+ * it, and loading it as a side effect of an apply would be a surprise.
+ */
+OfficeModules SynchroniseOfficeModules();
+
+/**
+ * Version-checks an already-resolved module handle. Identical to
+ * RequireSupportedModule except that the caller has done the lookup, so nothing
+ * is fetched twice.
+ */
+HMODULE RequireValidatedModule(HMODULE module, const char* description);
+
+/**
+ * The module's SizeOfImage, read once per loaded image and then remembered.
+ * A property of the image rather than of any document, so it is cached under the
+ * same rule as everything else in the validation cache.
+ */
+std::size_t OfficeModuleImageSize(HMODULE module);
+
 /**
  * Walks Shape.Fill to the OART receiver, verifying both module versions and
  * every vtable on the way. Throws bb::Error naming the check that failed.

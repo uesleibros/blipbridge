@@ -63,12 +63,14 @@ buffer and skips image decoding, which matters if you already hold pixels and
 would otherwise encode a PNG first. Against an *already encoded* PNG of the same
 size it is ~15-18% slower. See [docs/pixel_textures.md](docs/pixel_textures.md).
 
-**Changing content is not the strong case.** Images cannot be mutated in place -
-no Office export writes to one, and the cached image is content-addressed by a
-unique ID. Content that changes every frame therefore needs a new texture per
-frame, about 0.9-1.0 ms end to end against 0.19 ms to apply an existing one.
-BlipBridge is excellent for a fixed set of images reused many times, and merely
-adequate for a video-like workload.
+**Changing content costs more, but less than first reported.** Images cannot be
+mutated in place - no Office export writes to one, and the cached image is
+content-addressed by a unique ID - so content that changes every frame needs a
+new texture per frame. Measured in process through the C ABI that is **0.31 ms**
+end to end against 0.19 ms to apply an existing one. An earlier ~0.9-1.0 ms
+figure was a measurement artefact of the PowerShell harness and is corrected in
+[docs/cost_profile.md](docs/cost_profile.md). BlipBridge is best for a fixed set
+of images reused many times, and workable for a video-like workload.
 
 **`BB_ApplyTextureBatch` is not faster.** Measured at 10/50/100/200 Shapes it
 lands within noise of the same number of individual calls, because each Shape
@@ -170,6 +172,7 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [c_abi.md](docs/c_abi.md) | the public interface, handle and lifecycle contracts |
 | [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |
 | [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |
+| [cost_profile.md](docs/cost_profile.md) | where each microsecond of an apply goes |
 | [research.md](docs/research.md) | the journal, including the wrong turns |
 
 Raw transcripts are in `docs/evidence/`.

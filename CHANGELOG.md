@@ -3,6 +3,48 @@
 All notable changes to BlipBridge. Dates are the day the work was validated on
 the test machine.
 
+## [Unreleased]
+
+### Measured
+
+- **Stage-by-stage cost profile** (`docs/cost_profile.md`,
+  `tools/run_stage_profiler.ps1`). About 80% of an apply is inside Office's own
+  receiver call - the document edit, the undo entry, the invalidation. Record
+  construction, the image sub-record, both AddRef steps, the stretch holder, the
+  transaction constructor and all four destructors together are **under 4%**,
+  about 8 microseconds, so reusing or pooling any of those allocations cannot
+  pay. That is now measured rather than assumed.
+- **The ~0.9-1.0 ms new-content figure was a harness artefact** and is corrected
+  everywhere it appeared. It was taken from PowerShell, which pays a
+  cross-process Automation round trip per call and made three per frame. In
+  process through the public C ABI a new-content frame costs **0.31-0.34 ms**.
+- **A pool of pre-created images is safe but is not a speed-up.** Eight distinct
+  images applied in turn over 400 applies: reference counts bounded, private
+  bytes +2-3 MB, apply cost identical to reusing one texture. Without mutation a
+  pool recycles handles, not work, so no pooling API was added.
+
+### Changed
+
+- **Guard chain roughly halved**, from 0.042 ms to 0.022 ms per apply, with every
+  check kept exactly as strict. `SynchroniseOfficeModules()` fetches the three
+  module handles once per operation instead of six times, and `SizeOfImage` is
+  cached per module handle alongside the version check that was already cached.
+  Nothing was removed or relaxed: the receiver is still re-resolved on every
+  apply, every vtable checked, every signature verified. Hot-path apply median
+  0.176 ms -> 0.167 ms.
+- **The validated Windows backend moved into the production tree.**
+  `src/backend/windows_office/` now holds `oart_layout`, `native_apply`,
+  `native_texture` and a `native_texture.hpp` seam; `experiments/` keeps only
+  research - the probes, the benchmarks and the stage profiler. The production
+  backend no longer includes the research header, and the two research entry
+  points that lived in `native_apply.cpp` moved to
+  `experiments/exp_internal_blip/native_apply_probe.cpp`. Behaviour is unchanged:
+  the reference-count timelines the Office harnesses print are identical before
+  and after the move.
+- Removed four empty placeholder directories (`src/core`, `src/diagnostics`,
+  `src/office`, `experiments/exp_stream`) that described a hypothetical
+  architecture rather than the real one.
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

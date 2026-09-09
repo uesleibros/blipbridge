@@ -116,15 +116,33 @@ refuses to make without proof.
 
 ### What that leaves for changing content
 
-Create a new texture per frame, apply, release. Measured over 2,400 iterations
-that costs about 0.9-1.0 ms per frame end to end, against 0.19 ms for applying an
-existing texture. The extra is the create and release cycle.
+Create a new texture per frame, apply, release.
 
-That is the honest answer today: **BlipBridge is excellent for a fixed set of
-images reused many times, and merely adequate for content that changes every
-frame.** Ring buffers or pooling of cached images were considered and are not
-implemented, because without mutation they would still create a new image per
-distinct frame - the pool would only recycle handles, not work.
+> **Corrected.** This section first reported ~0.9-1.0 ms per frame, measured over
+> 2,400 iterations. That measurement was taken **from PowerShell**, which pays a
+> cross-process Automation round trip per call and made three of them per frame.
+> Re-measured in process through the public C ABI, a new-content frame costs
+> **0.31-0.34 ms**: 0.08 ms to create a 128x128 BGRA image, 0.21-0.24 ms to
+> apply it, and 0.0007 ms to release it. The stage-by-stage breakdown is in
+> [cost_profile.md](cost_profile.md).
+
+Against 0.19 ms for applying an existing texture, changing content therefore
+costs roughly 1.6x an ordinary apply, not 5x. It is still more, and the extra is
+almost entirely the image creation - the apply itself barely notices whether the
+image is new.
+
+That makes the honest answer: **BlipBridge is excellent for a fixed set of images
+reused many times, and usable for content that changes every frame** - a
+new-content frame is still about twice as fast as `Fill.UserPicture` is for a
+*repeated* one.
+
+Ring buffers and pooling of cached images were measured rather than assumed. A
+pool of pre-created images is safe - reference counts stay bounded and applying
+from one costs exactly what any other apply costs - but without mutation it can
+only recycle handles, never work, so it helps only when the set of distinct
+images is bounded and recurring. See `cost_profile.md`; no pooling API was added,
+because a caller with a bounded image set already expresses it by holding those
+handles.
 
 ## No slowdown over time was reproduced
 
@@ -138,6 +156,10 @@ handle count and private bytes:
 | one texture, undo accumulating | 0.466 -> 0.438 ms | 0.87x - 1.00x, flat |
 | one texture, `StartNewUndoEntry` per apply | 0.574 -> 0.753 ms | up to 1.31x, and slower overall |
 | a new texture every apply | 0.929 -> 0.877 ms | 0.92x - 1.27x, noisy but flat |
+
+The absolute numbers in that table are cross-process Automation timings, so they
+are several times the in-process cost; what the table is evidence for is the
+*drift* column, which is what it was built to measure.
 
 **The symptom did not reproduce.** Reference counts stayed pinned at their
 attributed values, creations tracked `LoadTexture` calls exactly, handles

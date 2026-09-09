@@ -19,6 +19,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::TraceCachedApply:
     case DispatchId::BenchmarkNativeTexture:
     case DispatchId::BenchmarkTextureBatch:
+    case DispatchId::ProfileFillStages:
         return 3;
     default:
         return 2;
@@ -74,6 +75,10 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     case DispatchId::BenchmarkTextureBatch:
         return Value(benchmarkTextureBatch(target.obj(), arguments.At(1).integer(),
                                            arguments.At(2).integer())
+                         .c_str());
+    case DispatchId::ProfileFillStages:
+        return Value(profileFillStages(target.obj(), arguments.At(1).str(),
+                                       arguments.At(2).integer())
                          .c_str());
     case DispatchId::BenchmarkPixelLoad:
         return Value(benchmarkPixelLoad(target.str(), arguments.At(1).integer(),
