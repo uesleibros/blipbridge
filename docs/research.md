@@ -23,6 +23,61 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - raw pixels work, mutation does not, and no slowdown reproduced
+
+Three questions about turning this into a general-purpose fill subsystem rather
+than a static-texture one. All three answers came out different from what the
+design intuition suggested.
+
+Raw pixels. GFX exports a second cached-image creator taking a pixel pointer,
+width, height, stride, an ARC::SurfaceFormat and a DPI vector. The prologue at
+GFX +0x193C00 has the same shape as the stream creator, so ownership is
+identical. The format enum has no symbols, so it was probed: every value from 0
+to 24 produced an identical, correct BGRA render. That could equally have meant
+the value never reached the format slot, so the argument mapping was proved
+separately - a two-colour image renders as two halves with the right stride and
+swaps halves with stride+4, which pins width and stride. So the format genuinely
+is tolerated, and the public API therefore offers BGRA32 only rather than a
+parameter that looks like a contract and is not.
+
+And raw pixels are *slower*: 15-18% behind an encoded PNG of the same dimensions
+across 32x32 to 256x256, because Office's decode is quick while the raw path
+still copies and converts every pixel. The path is worth having only because a
+caller holding pixels would otherwise have to encode a PNG first, which costs far
+more than either. It is documented that way, not as an optimisation.
+
+Mutation. Enumerating all 880 GFX exports finds nothing that writes to an
+existing IImage or ICachedImage - only creators, one reader, GetUniqueID and
+FCachingEnabled. IImage::GpImageLock exists as a type but only its copy
+constructor and destructor are exported, so no lock can be obtained. The design
+agrees with the absence: an object carrying a unique ID and a caching flag is
+content-addressed, and mutating it would invalidate every cache keyed on that ID.
+This rules out the exported surface rather than proving impossibility, but
+guessing at an unexported path would mean writing into a shared content-addressed
+cache, which is exactly the class of change this project refuses without proof.
+
+So changing content means a new texture per frame: about 0.9-1.0 ms end to end
+against 0.19 ms to apply an existing one. Pooling was considered and rejected -
+without mutation a pool recycles handles, not work.
+
+Slowdown over time. The reported "fast then gradually slower then stabilises"
+symptom did not reproduce in any of three configurations totalling thousands of
+applies: one texture with undo accumulating (flat, 0.466 -> 0.438 ms), one
+texture with StartNewUndoEntry per apply (slower overall and drifting to 1.31x),
+and a fresh texture every apply (noisy, flat). Reference counts stayed at their
+attributed values, creations tracked LoadTexture calls exactly, handles returned
+to baseline, and private bytes grew about 20 MB then fell back unaided. One
+useful negative: StartNewUndoEntry per apply, the obvious-looking fix, is an
+anti-fix. Reproducing the symptom needs the workload that showed it; the four
+counters needed to instrument it are exposed through InspectTexture.
+
+Also added: BB_GetAbiVersion and BB_ABI_VERSION, with the VBA wrapper refusing a
+mismatched DLL; BB_LoadTexturePixels through the ABI, backend seam and wrapper;
+lifecycle assertions for every Init/Shutdown ordering; and CI that builds both
+configurations, runs both contract suites and checks the export surface, while
+being explicit that the Office integration suites are not run there and are not
+reported as passing.
+
 ## 2026-09-09 - standalone C ABI, VBA FFI and a batch that is not faster
 
 Turning the validated backend into a library anyone can use, without touching

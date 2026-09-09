@@ -10,9 +10,11 @@ compatibility layer - nothing in normal use needs `regsvr32`, a ProgID,
 
 ```c
 BB_Init / BB_Shutdown
-BB_LoadTexture / BB_ApplyTexture / BB_ApplyTextureBatch
+BB_LoadTexture / BB_LoadTexturePixels
+BB_ApplyTexture / BB_ApplyTextureBatch
 BB_ReleaseTexture / BB_ClearTextures / BB_GetTextureCount
-BB_GetCapabilities / BB_GetLastError / BB_GetVersion / BB_GetVersionString
+BB_GetCapabilities / BB_GetLastError
+BB_GetVersion / BB_GetVersionString / BB_GetAbiVersion
 ```
 
 Every entry point returns `BB_Result` (`0` success, negative failure). Handles
@@ -21,10 +23,100 @@ calling convention, so exports are undecorated - which is what lets VBA bind by
 plain name:
 
 ```text
-BB_ApplyTexture  BB_ApplyTextureBatch  BB_ClearTextures  BB_GetCapabilities
-BB_GetLastError  BB_GetTextureCount    BB_GetVersion     BB_GetVersionString
-BB_Init          BB_LoadTexture        BB_ReleaseTexture BB_Shutdown
+BB_ApplyTexture   BB_ApplyTextureBatch  BB_ClearTextures  BB_GetAbiVersion
+BB_GetCapabilities BB_GetLastError      BB_GetTextureCount BB_GetVersion
+BB_GetVersionString BB_Init             BB_LoadTexture    BB_LoadTexturePixels
+BB_ReleaseTexture BB_Shutdown
 ```
+
+## Versioning
+
+`BB_ABI_VERSION` in the header is the compiled-against version; `BB_GetAbiVersion()`
+is what the DLL implements. The VBA wrapper compares them in `Initialize` and
+refuses to continue on a mismatch, so an old `.bas` paired with a newer DLL fails
+with a clear message rather than calling something whose shape it has wrong.
+
+It changes only when the exported surface stops being compatible - a changed
+signature, a removed entry point, a changed meaning. **Adding** an export does
+not bump it, because an older caller simply never calls the new one. That is why
+`BB_LoadTexturePixels` and `BB_GetAbiVersion` arrived at ABI version 1.
+
+`BB_GetVersion` is separate: it is the release number and moves independently.
+
+## The handle contract
+
+`BB_Handle` is an opaque **64-bit** token on every platform. It is not a pointer.
+Do not dereference it, cast it to one, or give it meaning through arithmetic. The
+only guarantees are:
+
+* zero is never a valid handle;
+* values are never recycled within a process.
+
+Lifecycle:
+
+```text
+BB_LoadTexture  or  BB_LoadTexturePixels
+    -> BB_ApplyTexture, zero or more times, on any number of Shapes
+    -> BB_ReleaseTexture
+```
+
+or `BB_ClearTextures`, or `BB_Shutdown`, either of which releases everything.
+
+**Stale handles.** After release, a handle stays stale for the life of the
+process. Using one returns `BB_E_INVALID_HANDLE`; because handles never recycle
+it can never silently resolve to a different texture. Releasing twice returns
+`BB_E_INVALID_HANDLE` on the second call rather than double-freeing.
+
+In VBA a handle is a `LongLong`, matching the 64-bit contract exactly. It is
+deliberately not `LongPtr`, which would imply pointer semantics the handle does
+not have.
+
+## Init and Shutdown
+
+| Sequence | Behaviour |
+|---|---|
+| `BB_Init` twice | idempotent; re-probes and returns the same result |
+| `BB_Shutdown` twice | both return `BB_OK` |
+| `BB_Shutdown` before `BB_Init` | `BB_OK`, nothing to do |
+| `BB_Shutdown` with live textures | releases them all first |
+| `BB_Init` after `BB_Shutdown` | works; the library is usable again |
+| any texture call before `BB_Init` | `BB_E_NOT_INITIALIZED` |
+
+`BB_Init` claims the calling thread **even when the backend is unavailable**, so
+a later call reports the real reason - `BB_E_UNSUPPORTED_BUILD`, say - rather
+than the misleading `BB_E_NOT_INITIALIZED`.
+
+`BB_Shutdown` releases only objects BlipBridge created. It never touches a Shape,
+a receiver or any document object, because none of those is ever retained, so it
+cannot reach through something Office has already destroyed. These sequences are
+asserted in `tests/abi_contract.cpp`.
+
+## Errors
+
+`BB_GetLastError` is **copy-out**, not a pointer into internal storage:
+
+```c
+uint32_t BB_GetLastError(char* buffer, uint32_t capacity);
+```
+
+It writes UTF-8 into the caller's buffer and returns the size needed including
+the terminator, so a caller can size a buffer by passing `(NULL, 0)` first. The
+result is always terminated, including when truncated. There is no lifetime to
+reason about, which is the point: an FFI caller should never have to know how
+long a returned pointer stays valid.
+
+The message describes the most recent failure **on the calling thread**.
+`BB_GetVersionString` uses the same convention.
+
+## Supported inputs
+
+| | |
+|---|---|
+| Encoded images | whatever Office decodes - PNG and JPEG are tested |
+| Raw pixels | BGRA32 only, stride >= width*4; see `pixel_textures.md` |
+| Shape types | AutoShape and Freeform; anything else is refused |
+| Threading | the thread that called `BB_Init` |
+| Office | the validated build only; others return `BB_E_UNSUPPORTED_BUILD` |
 
 ## Ownership
 
@@ -35,11 +127,31 @@ BB_Init          BB_LoadTexture        BB_ReleaseTexture BB_Shutdown
 | Shape pointer | **borrowed for the call only**, never stored |
 | Error / version strings | copied into the caller's buffer |
 
+**`BB_ApplyTexture` does not retain the Shape pointer.** Neither does the batch
+form. Nothing in this library stores a Shape, a `FillFormat`, or a receiver
+beyond the call that received it.
+
 Passing `ObjPtr(shape)` is safe because the Shape is a live argument in the VBA
-frame for the duration of the call, which keeps a reference alive. The native
-side additionally validates before trusting it: the pointer must address
-committed memory, must answer `QueryInterface` for `IDispatch`, and the object
-must report an AutoShape or Freeform type. Never cache the value of `ObjPtr`.
+frame for the duration of the call, which keeps a reference alive. Never cache
+the value of `ObjPtr` yourself.
+
+The native side validates rather than trusts, in this order:
+
+1. the pointer addresses committed memory;
+2. it answers `QueryInterface` for `IDispatch`;
+3. the object reports an AutoShape or Freeform `Type`;
+4. its `Fill` is a PPCORE delegating wrapper, verified structurally;
+5. the inner object presents the recorded OART FillFormat vtable;
+6. the control block and receiver present theirs.
+
+Steps 1 and 2 are cheap sanity checks and are **not** proof of the concrete type -
+any COM object passes them. The structural Office validation in steps 4 to 6 is
+the actual authority, and it is what distinguishes a `Shape.Fill` from a
+`Shape.Line` or an unrelated object.
+
+**Receiver pointers are never cached.** The receiver is re-resolved immediately
+before every apply, because a deleted Shape still passes every pointer and vtable
+check in the chain - see the hazard in `receiver_lookup.md`.
 
 ## Threading
 

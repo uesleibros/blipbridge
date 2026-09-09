@@ -24,6 +24,9 @@
  */
 
 #include "../experiment_api.hpp"
+
+#include <blipbridge/blipbridge.h>
+
 #include "native_apply.hpp"
 #include "oart_layout.hpp"
 
@@ -274,5 +277,107 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
                 : 0.0)
         << L';';
     out << cachedReport;
+    return out.str();
+}
+
+/**
+ * Compares loading an encoded image against loading raw pixels, at one size.
+ *
+ * The encoded leg reads a real PNG from @p imagePath; the raw leg builds a BGRA
+ * buffer of @p width x @p height. Both go through the public C ABI and release
+ * each texture immediately, so what is timed is creation and teardown rather
+ * than any steady-state cache.
+ *
+ * The two legs are not the same picture, and they are not meant to be: the
+ * question is what a caller pays to get pixels it already holds into Office,
+ * versus what it pays to hand over an encoded file of comparable size.
+ */
+std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long height,
+                                long iterations) {
+    if (width <= 0 || height <= 0 || iterations <= 0) {
+        throw bb::Error(E_INVALIDARG, "Size and iterations must be positive");
+    }
+    if (BB_Init() != BB_OK) {
+        char message[512]{};
+        BB_GetLastError(message, sizeof(message));
+        throw bb::Error(E_NOTIMPL, std::string("BB_Init failed: ") + message);
+    }
+
+    std::ifstream file(std::filesystem::path(imagePath), std::ios::binary);
+    if (!file) {
+        throw bb::Error(E_INVALIDARG, "Cannot read the benchmark image");
+    }
+    const std::vector<unsigned char> encoded((std::istreambuf_iterator<char>(file)),
+                                             std::istreambuf_iterator<char>());
+
+    // A gradient rather than a flat colour, so nothing can collapse the work.
+    const long stride = width * 4;
+    std::vector<unsigned char> pixels(static_cast<std::size_t>(stride) * height);
+    for (long y = 0; y < height; ++y) {
+        for (long x = 0; x < width; ++x) {
+            unsigned char* pixel = pixels.data() + y * stride + x * 4;
+            pixel[0] = static_cast<unsigned char>(x);
+            pixel[1] = static_cast<unsigned char>(y);
+            pixel[2] = static_cast<unsigned char>(x ^ y);
+            pixel[3] = 0xFF;
+        }
+    }
+
+    const double tick = SecondsPerTick();
+    std::vector<double> encodedSamples;
+    std::vector<double> pixelSamples;
+    encodedSamples.reserve(iterations);
+    pixelSamples.reserve(iterations);
+
+    BB_Handle warm = 0;
+    if (BB_LoadTexture(encoded.data(), static_cast<uint32_t>(encoded.size()), &warm) == BB_OK) {
+        BB_ReleaseTexture(warm);
+    }
+    if (BB_LoadTexturePixels(pixels.data(), static_cast<uint32_t>(width),
+                             static_cast<uint32_t>(height), static_cast<int32_t>(stride),
+                             &warm) == BB_OK) {
+        BB_ReleaseTexture(warm);
+    }
+
+    for (long index = 0; index < iterations; ++index) {
+        BB_Handle handle = 0;
+        const long long start = Now();
+        const BB_Result status =
+            BB_LoadTexture(encoded.data(), static_cast<uint32_t>(encoded.size()), &handle);
+        encodedSamples.push_back((Now() - start) * tick * 1000.0);
+        if (status != BB_OK) {
+            throw bb::Error(E_FAIL, "BB_LoadTexture failed during the benchmark");
+        }
+        BB_ReleaseTexture(handle);
+    }
+
+    for (long index = 0; index < iterations; ++index) {
+        BB_Handle handle = 0;
+        const long long start = Now();
+        const BB_Result status = BB_LoadTexturePixels(
+            pixels.data(), static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+            static_cast<int32_t>(stride), &handle);
+        pixelSamples.push_back((Now() - start) * tick * 1000.0);
+        if (status != BB_OK) {
+            char message[512]{};
+            BB_GetLastError(message, sizeof(message));
+            throw bb::Error(E_FAIL, std::string("BB_LoadTexturePixels failed: ") + message);
+        }
+        BB_ReleaseTexture(handle);
+    }
+
+    const Timing encodedTiming = Summarise(encodedSamples);
+    const Timing pixelTiming = Summarise(pixelSamples);
+
+    std::wostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(4);
+    out << L"size=" << width << L"x" << height << L";iterations=" << iterations
+        << L";encodedBytes=" << encoded.size() << L";pixelBytes=" << pixels.size() << L';';
+    Append(out, L"encodedLoad", encodedTiming);
+    Append(out, L"pixelLoad", pixelTiming);
+    if (pixelTiming.meanMs > 0.0) {
+        out << L"pixelSpeedup=" << (encodedTiming.meanMs / pixelTiming.meanMs) << L';';
+    }
     return out.str();
 }

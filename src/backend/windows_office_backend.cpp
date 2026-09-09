@@ -163,6 +163,7 @@ public:
         capabilities.memoryImage = available;
         capabilities.cachedTexture = available;
         capabilities.batchApply = available;
+        capabilities.rawPixels = available;
         return capabilities;
     }
 
@@ -196,6 +197,28 @@ public:
             std::memcpy(raw, bytes, length);
             SafeArrayUnaccessData(array);
             *out = static_cast<std::uint64_t>(nativeTextureLoad(array));
+        });
+    }
+
+    BackendResult LoadTexturePixels(const std::uint8_t* pixels, std::uint32_t width,
+                                    std::uint32_t height, std::int32_t stride,
+                                    std::uint64_t* out) noexcept override {
+        if (out) {
+            *out = 0;
+        }
+        if (!pixels || width == 0 || height == 0 || !out) {
+            return BackendResult::Failure(BackendStatus::InvalidArgument,
+                                          "Pixels, dimensions and an output handle are required");
+        }
+        // A stride smaller than one row of BGRA would read past every row.
+        if (stride < static_cast<std::int32_t>(width) * 4) {
+            return BackendResult::Failure(
+                BackendStatus::InvalidArgument,
+                "Stride must be at least width*4 bytes for BGRA32");
+        }
+        return Guarded([&] {
+            *out = static_cast<std::uint64_t>(
+                nativeTextureLoadPixels(pixels, width, height, stride));
         });
     }
 

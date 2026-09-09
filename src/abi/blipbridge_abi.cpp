@@ -212,6 +212,34 @@ BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length,
     }
 }
 
+BB_API BB_Result BB_CALL BB_LoadTexturePixels(const uint8_t* pixels, uint32_t width,
+                                              uint32_t height, int32_t stride,
+                                              BB_Handle* out) {
+    try {
+        if (out) {
+            *out = 0;
+        }
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        if (!pixels || width == 0 || height == 0 || !out) {
+            return Fail(BB_E_INVALID_ARG,
+                        "BB_LoadTexturePixels needs pixels, dimensions and an output handle");
+        }
+        std::uint64_t handle = 0;
+        const bb::BackendResult result = Library::Instance().Ensure().LoadTexturePixels(
+            pixels, width, height, stride, &handle);
+        if (!result.ok()) {
+            return Translate(result);
+        }
+        *out = handle;
+        g_lastError.clear();
+        return BB_OK;
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_LoadTexturePixels");
+    }
+}
+
 BB_API BB_Result BB_CALL BB_ApplyTexture(void* shape, BB_Handle texture) {
     try {
         if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
@@ -315,6 +343,7 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void) {
         bits |= capabilities.cachedTexture ? BB_CAP_CACHED_TEXTURE : 0u;
         bits |= capabilities.batchApply ? BB_CAP_BATCH_APPLY : 0u;
         bits |= capabilities.pickUpFallback ? BB_CAP_PICKUP_FALLBACK : 0u;
+        bits |= capabilities.rawPixels ? BB_CAP_RAW_PIXELS : 0u;
         return bits;
     } catch (...) {
         return 0;
@@ -330,6 +359,10 @@ BB_API uint32_t BB_CALL BB_GetLastError(char* buffer, uint32_t capacity) {
         }
         return 1;
     }
+}
+
+BB_API uint32_t BB_CALL BB_GetAbiVersion(void) {
+    return BB_ABI_VERSION;
 }
 
 BB_API uint32_t BB_CALL BB_GetVersion(void) {

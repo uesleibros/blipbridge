@@ -58,6 +58,18 @@ mileage will differ with Office version, hardware, image size and how much else
 the document is doing. Re-measure with `tools/run_texture_benchmark.ps1` rather
 than trusting the table.
 
+**Raw pixels are available but not faster.** `LoadTexturePixels` takes a BGRA32
+buffer and skips image decoding, which matters if you already hold pixels and
+would otherwise encode a PNG first. Against an *already encoded* PNG of the same
+size it is ~15-18% slower. See [docs/pixel_textures.md](docs/pixel_textures.md).
+
+**Changing content is not the strong case.** Images cannot be mutated in place -
+no Office export writes to one, and the cached image is content-addressed by a
+unique ID. Content that changes every frame therefore needs a new texture per
+frame, about 0.9-1.0 ms end to end against 0.19 ms to apply an existing one.
+BlipBridge is excellent for a fixed set of images reused many times, and merely
+adequate for a video-like workload.
+
 **`BB_ApplyTextureBatch` is not faster.** Measured at 10/50/100/200 Shapes it
 lands within noise of the same number of individual calls, because each Shape
 costs ~190 microseconds of real work and an ABI entry costs well under one. Use
@@ -155,7 +167,8 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [oart_abi.md](docs/oart_abi.md) | every private entry point, its ABI and its evidence |
 | [native_texture.md](docs/native_texture.md) | reuse, lifetime, Undo, reference ownership |
 | [capabilities.md](docs/capabilities.md) | what each capability flag claims and why |
-| [c_abi.md](docs/c_abi.md) | the public interface and the batch measurement |
+| [c_abi.md](docs/c_abi.md) | the public interface, handle and lifecycle contracts |
+| [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |
 | [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |
 | [research.md](docs/research.md) | the journal, including the wrong turns |
 

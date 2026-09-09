@@ -221,6 +221,24 @@ long nativeTextureLoad(SAFEARRAY* bytes) {
     }
 }
 
+long nativeTextureLoadPixels(const void* pixels, unsigned long width,
+                             unsigned long height, long stride) {
+    // Same store, same handles, same lifetime rules as an encoded texture. The
+    // only difference is where the decoded image came from.
+    const bb::oart::CreatedImage created = bb::oart::CreateCachedImageFromPixels(
+        pixels, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
+        static_cast<std::int32_t>(stride));
+    try {
+        return TextureStore::Instance().Add(
+            created.cached, created.image,
+            static_cast<std::size_t>(stride) * height);
+    } catch (...) {
+        bb::oart::ReleaseIntrusive(created.image);
+        bb::oart::ReleaseIntrusive(created.cached);
+        throw;
+    }
+}
+
 void nativeTextureApply(IDispatch* fill, long handle) {
     NativeTexture& texture = TextureStore::Instance().Get(handle);
     // Re-resolved for every apply and never cached: a Shape deleted through

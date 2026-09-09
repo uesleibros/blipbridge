@@ -87,4 +87,20 @@ struct CreatedImage {
  */
 CreatedImage CreateCachedImageFromBytes(SAFEARRAY* bytes);
 
+/**
+ * Builds a cached image from a raw 32-bit BGRA buffer, through the exported
+ * GEL::ICachedImage::Create overload that takes a pixel pointer.
+ *
+ * Only BGRA32 is offered. The surface-format argument that overload takes was
+ * probed across values 0 to 24 and every one produced an identical, correct
+ * BGRA render, so the value carries no information this code could honestly act
+ * on; a fixed value is passed and other layouts are the caller's to convert.
+ * See docs/pixel_textures.md.
+ *
+ * @p pixels is borrowed for the duration of the call. Both returned pointers
+ * carry one reference each and belong to the caller.
+ */
+CreatedImage CreateCachedImageFromPixels(const void* pixels, std::uint32_t width,
+                                         std::uint32_t height, std::int32_t stride);
+
 } // namespace bb::oart

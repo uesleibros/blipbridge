@@ -50,6 +50,9 @@ struct Api {
     uint32_t (*GetCapabilities)(void) = nullptr;
     uint32_t (*GetLastError)(char*, uint32_t) = nullptr;
     uint32_t (*GetVersion)(void) = nullptr;
+    uint32_t (*GetAbiVersion)(void) = nullptr;
+    BB_Result (*LoadTexturePixels)(const uint8_t*, uint32_t, uint32_t, int32_t,
+                                   BB_Handle*) = nullptr;
     uint32_t (*GetVersionString)(char*, uint32_t) = nullptr;
 
     ~Api() {
@@ -102,6 +105,8 @@ int wmain(int argc, wchar_t** argv) {
     Resolve(api, api.GetCapabilities, "BB_GetCapabilities");
     Resolve(api, api.GetLastError, "BB_GetLastError");
     Resolve(api, api.GetVersion, "BB_GetVersion");
+    Resolve(api, api.GetAbiVersion, "BB_GetAbiVersion");
+    Resolve(api, api.LoadTexturePixels, "BB_LoadTexturePixels");
     Resolve(api, api.GetVersionString, "BB_GetVersionString");
     if (g_failures) {
         return 1;
@@ -109,6 +114,8 @@ int wmain(int argc, wchar_t** argv) {
 
     // --- questions answerable without any host --------------------------------
     Check(api.GetVersion() != 0, "BB_GetVersion returns a non-zero packed version");
+    Check(api.GetAbiVersion() == BB_ABI_VERSION,
+          "the DLL's ABI version matches the header this test was built against");
     {
         const uint32_t needed = api.GetVersionString(nullptr, 0);
         Check(needed > 1, "BB_GetVersionString reports a required size");
@@ -191,11 +198,35 @@ int wmain(int argc, wchar_t** argv) {
     api.ClearTextures();
     Check(api.GetTextureCount() == 0, "ClearTextures leaves nothing behind");
 
-    // --- shutdown ------------------------------------------------------------
+    // --- raw pixel argument validation ---------------------------------------
+    const uint8_t bgra[16] = {};   // 2x2 BGRA
+    Check(api.LoadTexturePixels(nullptr, 2, 2, 8, &handle) == BB_E_INVALID_ARG,
+          "pixel load rejects a null buffer");
+    Check(api.LoadTexturePixels(bgra, 0, 2, 8, &handle) == BB_E_INVALID_ARG,
+          "pixel load rejects zero width");
+    Check(api.LoadTexturePixels(bgra, 2, 0, 8, &handle) == BB_E_INVALID_ARG,
+          "pixel load rejects zero height");
+    Check(api.LoadTexturePixels(bgra, 2, 2, 8, nullptr) == BB_E_INVALID_ARG,
+          "pixel load rejects a null output pointer");
+    if (!inPowerPoint) {
+        Check(api.LoadTexturePixels(bgra, 2, 2, 4, &handle) != BB_OK,
+              "a stride below width*4 is refused");
+    }
+
+    // --- lifecycle semantics --------------------------------------------------
+    // Init is documented as safe to repeat and as re-probing, and Shutdown as
+    // safe without a matching Init and safe to repeat. These are the contracts a
+    // wrapper relies on when it calls Initialize from every entry point.
+    const BB_Result again = api.Init();
+    Check(again == init, "a second Init reports the same thing as the first");
+    Check(api.Init() == init, "Init stays idempotent");
+
     Check(api.Shutdown() == BB_OK, "Shutdown succeeds");
     Check(api.Shutdown() == BB_OK, "Shutdown is idempotent");
     Check(api.LoadTexture(&byte, 1, &handle) == BB_E_NOT_INITIALIZED,
           "after Shutdown the library is uninitialised again");
+    Check(api.Init() == init, "Init works again after Shutdown");
+    Check(api.Shutdown() == BB_OK, "and Shutdown still succeeds after that");
 
     if (g_failures == 0) {
         std::cout << "ABI contract tests passed\n";

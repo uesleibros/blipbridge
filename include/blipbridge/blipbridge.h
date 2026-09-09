@@ -66,7 +66,37 @@
 extern "C" {
 #endif
 
-/** Opaque texture handle. Zero is never a valid handle. */
+/**
+ * ABI version of this header.
+ *
+ * Bumped whenever the exported surface changes in a way an older caller could
+ * not survive: a signature change, a removed entry point, or a changed meaning.
+ * Adding a new export does not bump it, because an older caller simply will not
+ * call the new one.
+ *
+ * A wrapper should compare this against BB_GetAbiVersion() at startup and refuse
+ * to continue on a mismatch, so an old .bas paired with a new DLL fails with a
+ * clear message instead of calling something whose shape it has wrong.
+ */
+#define BB_ABI_VERSION 1u
+
+/**
+ * Opaque texture handle.
+ *
+ * A 64-bit token, always, on every platform. It is **not** a pointer and must
+ * not be dereferenced, cast to one, or given meaning by arithmetic; the only
+ * guarantees are that zero is never valid and that values are never recycled
+ * within a process.
+ *
+ * Lifecycle:
+ *
+ *     BB_LoadTexture / BB_LoadTexturePixels
+ *         -> use zero or more times with BB_ApplyTexture
+ *         -> BB_ReleaseTexture      (or BB_ClearTextures, or BB_Shutdown)
+ *
+ * After release the handle is stale for the rest of the process. Using one
+ * returns BB_E_INVALID_HANDLE; it never silently resolves to another texture.
+ */
 typedef uint64_t BB_Handle;
 
 /** Result of every entry point. Zero is success; negative values are failures. */
@@ -91,6 +121,7 @@ typedef int32_t BB_Result;
 #define BB_CAP_CACHED_TEXTURE   0x0004u /* one decode serves many applies       */
 #define BB_CAP_BATCH_APPLY      0x0008u /* BB_ApplyTextureBatch is implemented  */
 #define BB_CAP_PICKUP_FALLBACK  0x0010u /* the donor COM fallback exists        */
+#define BB_CAP_RAW_PIXELS       0x0020u /* BB_LoadTexturePixels is implemented  */
 
 /**
  * Prepares the library on the calling thread and probes the host.
@@ -119,6 +150,27 @@ BB_API BB_Result BB_CALL BB_Shutdown(void);
  */
 BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length,
                                         BB_Handle* out);
+
+/**
+ * Builds a texture from raw pixels, skipping image decoding entirely.
+ *
+ * Pixels are 32-bit BGRA - blue, green, red, alpha - which is the ordinary
+ * Windows in-memory layout. Only that layout is accepted: the underlying
+ * creator takes a surface-format argument, but probing every value from 0 to 24
+ * produced an identical BGRA render, so no other layout can be honestly
+ * advertised. Convert other layouts before calling.
+ *
+ * @param pixels first byte of the top-left pixel. Copied by the call.
+ * @param width  in pixels.
+ * @param height in pixels.
+ * @param stride bytes per row; must be at least width*4, and may be larger.
+ * @param out    receives the handle; set to 0 on failure.
+ *
+ * The handle behaves exactly like one from BB_LoadTexture in every other way.
+ */
+BB_API BB_Result BB_CALL BB_LoadTexturePixels(const uint8_t* pixels, uint32_t width,
+                                              uint32_t height, int32_t stride,
+                                              BB_Handle* out);
 
 /**
  * Fills one Shape with a texture.
@@ -172,7 +224,14 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void);
  */
 BB_API uint32_t BB_CALL BB_GetLastError(char* buffer, uint32_t capacity);
 
-/** Packed version: (major << 16) | (minor << 8) | patch. */
+/**
+ * ABI version this DLL implements; compare against BB_ABI_VERSION.
+ * Unlike BB_GetVersion this is not a release number - it changes only when the
+ * exported surface stops being compatible.
+ */
+BB_API uint32_t BB_CALL BB_GetAbiVersion(void);
+
+/** Packed release version: (major << 16) | (minor << 8) | patch. */
 BB_API uint32_t BB_CALL BB_GetVersion(void);
 
 /**

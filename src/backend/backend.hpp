@@ -62,6 +62,7 @@ struct BackendCapabilities {
     bool cachedTexture = false;
     bool batchApply = false;
     bool pickUpFallback = false;
+    bool rawPixels = false;     ///< LoadTexturePixels is implemented
 };
 
 /**
@@ -85,6 +86,15 @@ public:
     /// Decodes @p bytes; on success writes a non-zero handle to @p out.
     virtual BackendResult LoadTexture(const std::uint8_t* bytes, std::size_t length,
                                       std::uint64_t* out) noexcept = 0;
+
+    /**
+     * Builds a texture from raw 32-bit BGRA pixels, skipping image decoding.
+     * @p stride is bytes per row and may exceed width*4.
+     */
+    virtual BackendResult LoadTexturePixels(const std::uint8_t* pixels,
+                                            std::uint32_t width, std::uint32_t height,
+                                            std::int32_t stride,
+                                            std::uint64_t* out) noexcept = 0;
 
     /// Fills the Shape behind @p shape, borrowed for this call only.
     virtual BackendResult ApplyTexture(void* shape, std::uint64_t texture) noexcept = 0;

@@ -60,6 +60,12 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes);
  */
 bool nativeTextureBackendAvailable() noexcept;
 long nativeTextureLoad(SAFEARRAY* bytes);
+/**
+ * Loads a texture from a raw 32-bit BGRA buffer instead of an encoded image.
+ * Same handles, same lifetime rules; only the decode is skipped.
+ */
+long nativeTextureLoadPixels(const void* pixels, unsigned long width,
+                             unsigned long height, long stride);
 void nativeTextureApply(IDispatch* fill, long handle);
 void nativeTextureRelease(long handle);
 void nativeTextureClear() noexcept;
@@ -80,3 +86,15 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
  * its own Shapes.
  */
 std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long iterations);
+
+/**
+ * Research: builds a cached image from raw pixels through the exported GFX
+ * raw-pixel creator and applies it. The surface-format value is a parameter
+ * because ARC::SurfaceFormat has no symbols; the harness probes it.
+ */
+std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long width,
+                                    long height, long stride, long surfaceFormat);
+
+/** Compares encoded-image loading against raw-pixel loading at one size. */
+std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long height,
+                                long iterations);

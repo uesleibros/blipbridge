@@ -224,6 +224,28 @@ using CreateCachedImageFromStream = CountedPointer*(__stdcall*)(
     CountedPointer* returnStorage, CountedPointer* imageInOut, IStream* stream,
     int copyInstruction, const void* uid, bool flag);
 
+constexpr char kCreateFromPixelsSymbol[] =
+    "?Create@ICachedImage@GEL@@SA?AV?$TCntPtr@UICachedImage@GEL@@@Ofc@@"
+    "AEAV?$TCntPtr@UIImage@GEL@@@4@PEBXIIHW4SurfaceFormat@ARC@@"
+    "AEBU?$TVector2@V?$TUnits@MU?$TUnitsRatioTag@UDevicePixels@Math@@UInches@2@"
+    "@Math@@@Math@@@Math@@@Z";
+
+/// ARC::SurfaceFormat value passed to the raw-pixel creator. Probing 0..24 gave
+/// an identical correct BGRA render for every value, so this is a fixed choice
+/// rather than a meaningful parameter; see docs/pixel_textures.md.
+constexpr int kSurfaceFormatBgra32 = 0;
+
+/// Math::TVector2<float> for the DPI argument: 96 dpi in both axes.
+struct Vector2 {
+    float x = 96.0f;
+    float y = 96.0f;
+};
+
+using CreateCachedImageFromPixelBuffer = CountedPointer*(__stdcall*)(
+    CountedPointer* returnStorage, CountedPointer* imageInOut, const void* pixels,
+    unsigned int width, unsigned int height, int stride, int surfaceFormat,
+    const Vector2* dpi);
+
 constexpr char kCreateFromStreamSymbol[] =
     "?Create@ICachedImage@GEL@@SA?AV?$TCntPtr@UICachedImage@GEL@@@Ofc@@"
     "AEAV?$TCntPtr@UIImage@GEL@@@4@PEAUIStream@@W4IStreamCopyInstruction@12@"
@@ -493,6 +515,38 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
     recordGuard.Destroy();
     stretchGuard.Destroy();
     if (sample) { sample(L"released"); }
+}
+
+CreatedImage CreateCachedImageFromPixels(const void* pixels, std::uint32_t width,
+                                         std::uint32_t height, std::int32_t stride) {
+    if (!pixels || width == 0 || height == 0) {
+        throw bb::Error(E_INVALIDARG, "Pixel buffer, width and height are required");
+    }
+    const HMODULE gfx = bb::oart::RequireSupportedModule(L"gfx.dll", "GFX");
+    const auto gfxBase = reinterpret_cast<std::uintptr_t>(gfx);
+    auto create = reinterpret_cast<CreateCachedImageFromPixelBuffer>(
+        reinterpret_cast<void*>(GetProcAddress(gfx, kCreateFromPixelsSymbol)));
+    if (!create) {
+        throw bb::Error(E_NOTIMPL, "GFX does not export the raw-pixel cached-image creator");
+    }
+
+    const Vector2 dpi;
+    CountedReference cached;
+    CountedReference image;
+    create(&cached.storage, &image.storage, pixels, width, height, stride,
+           kSurfaceFormatBgra32, &dpi);
+    if (!cached.storage.value) {
+        throw bb::Error(E_FAIL, "Creator returned no cached image for these pixels");
+    }
+    if (bb::oart::LoadPointer(cached.storage.value, 0) != gfxBase + kCachedImageVtableRva) {
+        cached.storage.value = nullptr;   // unknown layout: leak rather than corrupt
+        image.storage.value = nullptr;
+        throw bb::Error(E_NOTIMPL, "Cached image vtable does not match the validated layout");
+    }
+    CreatedImage created{cached.storage.value, image.storage.value};
+    cached.storage.value = nullptr;
+    image.storage.value = nullptr;
+    return created;
 }
 
 CreatedImage CreateCachedImageFromBytes(SAFEARRAY* bytes) {

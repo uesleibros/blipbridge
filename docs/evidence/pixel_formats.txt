@@ -1,0 +1,8 @@
+source colour R=F0 G=40 B=10, buffer order BGRA, 16x16, stride 64
+format 0 : rendered R=F0 G=40 B=10 A=FF -> BGRA-in-memory MATCH
+format 1 : rendered R=F0 G=40 B=10 A=FF -> BGRA-in-memory MATCH
+format 2 : rendered R=F0 G=40 B=10 A=FF -> BGRA-in-memory MATCH
+format 3 : rendered R=F0 G=40 B=10 A=FF -> BGRA-in-memory MATCH
+mapping/correct stride  : L=F04010 R=1040F0  (expect L=F04010 R=1040F0)
+mapping/stride +4       : L=1040F0 R=F04010  (must differ if stride is honoured)
+  stride changes the render, so width/stride land where intended.

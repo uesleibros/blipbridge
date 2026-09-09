@@ -1,4 +1,4 @@
-apply report: build=16.0.14334.20848;receiver=0x240d4eaea80;cached=0x240d52cea20;usedUserPicture=0;usedDonorShape=0;usedSourceFile=0;fromMemoryStream=1;create=1;install=2;transfer=3;transaction=4;apply=7;released=4;
+apply report: build=16.0.14334.20848;receiver=0x20f27136cb0;cached=0x20f3155b570;usedUserPicture=0;usedDonorShape=0;usedSourceFile=0;fromMemoryStream=1;create=1;install=2;transfer=3;transaction=4;apply=7;released=4;
 Shape identity, name, geometry, rotation and Z order unchanged.
 Fill.Type before=1 after=6 (6 is picture)
 Shape is still a normal AutoShape, not a Picture shape.

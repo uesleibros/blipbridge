@@ -5,4 +5,4 @@ LoadTexture issues a native handle in a disjoint range; release and stale checks
 SetImageBytes still explicitly rejects the unsupported backend.
 Deleted donor returns COM error; PowerPoint remains usable.
 Invalid image rejected; subsequent ordinary UserPicture succeeds after hook cleanup.
-Host PID=11868
+Host PID=12784

@@ -1,0 +1,78 @@
+name: windows
+
+# Builds and runs everything that does not need PowerPoint. The Office
+# integration suites under tools/ are deliberately NOT run here: hosted runners
+# have no PowerPoint, and a green tick that silently skipped them would be worse
+# than no tick at all. They run on a machine with the validated Office build, and
+# their transcripts are committed under docs/evidence/.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 UCRT toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-make
+
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build/${{ matrix.configuration }} -G "MinGW Makefiles" \
+                -DCMAKE_BUILD_TYPE=${{ matrix.configuration }}
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build/${{ matrix.configuration }} --parallel
+
+      - name: Test
+        shell: msys2 {0}
+        # com_contract and abi_contract both run without Office. The ABI suite in
+        # particular asserts the fail-closed behaviour, which is exactly what a
+        # runner with no PowerPoint exercises.
+        run: ctest --test-dir build/${{ matrix.configuration }} --output-on-failure
+
+      - name: Check the exported ABI surface
+        shell: msys2 {0}
+        # A missing or renamed export would break the VBA wrapper without failing
+        # any test, because the wrapper binds by name at run time.
+        run: |
+          set -e
+          for symbol in BB_Init BB_Shutdown BB_LoadTexture BB_LoadTexturePixels \
+                        BB_ApplyTexture BB_ApplyTextureBatch BB_ReleaseTexture \
+                        BB_ClearTextures BB_GetTextureCount BB_GetCapabilities \
+                        BB_GetLastError BB_GetVersion BB_GetVersionString \
+                        BB_GetAbiVersion; do
+            if ! objdump -p build/${{ matrix.configuration }}/BlipBridge.dll | grep -qw "$symbol"; then
+              echo "missing export: $symbol"
+              exit 1
+            fi
+          done
+          echo "all expected exports present and undecorated"
+
+      - name: Upload the build
+        if: matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlipBridge-windows-x64
+          path: |
+            build/Release/BlipBridge.dll
+            vba/BlipBridge.bas
+            include/blipbridge/blipbridge.h

@@ -11,6 +11,10 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::LoadCachedImageExperiment:
     case DispatchId::InspectTexture:
         return 1;
+    case DispatchId::PixelTextureExperiment:
+        return 6;
+    case DispatchId::BenchmarkPixelLoad:
+        return 4;
     case DispatchId::MemoryFillExperiment:
     case DispatchId::TraceCachedApply:
     case DispatchId::BenchmarkNativeTexture:
@@ -71,6 +75,23 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(benchmarkTextureBatch(target.obj(), arguments.At(1).integer(),
                                            arguments.At(2).integer())
                          .c_str());
+    case DispatchId::BenchmarkPixelLoad:
+        return Value(benchmarkPixelLoad(target.str(), arguments.At(1).integer(),
+                                        arguments.At(2).integer(),
+                                        arguments.At(3).integer())
+                         .c_str());
+    case DispatchId::PixelTextureExperiment: {
+        auto pixels = arguments.At(1);
+        if (pixels.v.vt != (VT_ARRAY | VT_UI1)) {
+            throw Error(E_INVALIDARG, "Expected Byte array of pixels");
+        }
+        return Value(pixelTextureExperiment(target.obj(), pixels.v.parray,
+                                            arguments.At(2).integer(),
+                                            arguments.At(3).integer(),
+                                            arguments.At(4).integer(),
+                                            arguments.At(5).integer())
+                         .c_str());
+    }
     case DispatchId::InspectFillReceiver:
         // Throws bb::Error naming the failed guard; Invoke reports it verbatim.
         return Value(inspectFillReceiver(target.obj()).c_str());

@@ -37,6 +37,14 @@ public:
         return Refuse();
     }
 
+    BackendResult LoadTexturePixels(const std::uint8_t*, std::uint32_t, std::uint32_t,
+                                    std::int32_t, std::uint64_t* out) noexcept override {
+        if (out) {
+            *out = 0;
+        }
+        return Refuse();
+    }
+
     BackendResult ApplyTexture(void*, std::uint64_t) noexcept override { return Refuse(); }
     BackendResult ReleaseTexture(std::uint64_t) noexcept override { return Refuse(); }
     void ClearTextures() noexcept override {}
