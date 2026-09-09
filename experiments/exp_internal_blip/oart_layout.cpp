@@ -33,6 +33,8 @@
 #include <psapi.h>
 
 #include <cstring>
+#include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -108,6 +110,75 @@ bool DecodeIdentityThunk(const std::uint8_t* code, std::size_t& innerOffset,
 
 } // namespace
 
+namespace {
+
+/**
+ * Caches what cannot change while a module stays loaded.
+ *
+ * Validating a module means reading its version resource off disk, and
+ * validating a wrapper vtable means decoding up to 48 thunks with a VirtualQuery
+ * apiece. Doing either per apply made the hot path several times more expensive
+ * than the work it guards, which the benchmark caught.
+ *
+ * What is safe to cache is exactly what is a property of the loaded image: the
+ * module's identity and base, the shape of a vtable at a given address, and the
+ * bytes at a function's RVA. The cache is keyed by the module handle and thrown
+ * away whenever that handle changes, so an unload/reload re-validates from
+ * scratch.
+ *
+ * What is deliberately **not** cached is anything derived from a document: the
+ * FillFormat, the control block and the receiver are re-read and re-checked on
+ * every single call, because a deleted Shape still passes every one of those
+ * checks and a stale receiver would be a use-after-free.
+ */
+class ValidationCache {
+public:
+    static ValidationCache& Instance() {
+        static ValidationCache cache;
+        return cache;
+    }
+
+    /// True when this exact module handle has already been version-checked.
+    bool IsModuleValidated(HMODULE module) const {
+        return validatedModules_.find(module) != validatedModules_.end();
+    }
+
+    void RememberModule(HMODULE module) { validatedModules_.insert(module); }
+
+    /// Looks up a previously validated vtable shape, keyed by its address.
+    const DelegatingWrapper* FindWrapper(std::uintptr_t vtable) const {
+        const auto found = wrappers_.find(vtable);
+        return found == wrappers_.end() ? nullptr : &found->second;
+    }
+
+    void RememberWrapper(std::uintptr_t vtable, const DelegatingWrapper& wrapper) {
+        wrappers_.emplace(vtable, wrapper);
+    }
+
+    /// Drops everything if any module of interest was unloaded or moved.
+    void SynchroniseWith(HMODULE oart, HMODULE ppcore, HMODULE gfx) {
+        if (oart == oart_ && ppcore == ppcore_ && gfx == gfx_) {
+            return;
+        }
+        validatedModules_.clear();
+        wrappers_.clear();
+        oart_ = oart;
+        ppcore_ = ppcore;
+        gfx_ = gfx;
+    }
+
+private:
+    ValidationCache() = default;
+
+    std::set<HMODULE> validatedModules_;
+    std::map<std::uintptr_t, DelegatingWrapper> wrappers_;
+    HMODULE oart_ = nullptr;
+    HMODULE ppcore_ = nullptr;
+    HMODULE gfx_ = nullptr;
+};
+
+} // namespace
+
 std::wstring ModuleVersionText(const wchar_t* moduleName) {
     HMODULE module = GetModuleHandleW(moduleName);
     if (!module) {
@@ -145,6 +216,12 @@ bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
     if (vtable < moduleBase || vtable >= moduleBase + moduleSize) {
         return false;
     }
+    if (const DelegatingWrapper* known = ValidationCache::Instance().FindWrapper(vtable)) {
+        // A vtable's shape is a property of the loaded image, not of any object,
+        // so one analysis per address is enough.
+        wrapper = *known;
+        return true;
+    }
     wrapper = DelegatingWrapper{};
     wrapper.vtableRva = vtable - moduleBase;
     if (!IsReadable(reinterpret_cast<const void*>(vtable),
@@ -181,7 +258,11 @@ bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
         haveOffset = true;
         ++wrapper.identityThunks;
     }
-    return haveOffset && wrapper.identityThunks >= kMinimumIdentityThunks;
+    if (!haveOffset || wrapper.identityThunks < kMinimumIdentityThunks) {
+        return false;   // not a wrapper; nothing worth remembering
+    }
+    ValidationCache::Instance().RememberWrapper(vtable, wrapper);
+    return true;
 }
 
 bool IsReadable(const void* address, std::size_t size) {
@@ -242,6 +323,7 @@ std::string DescribeAddress(std::uintptr_t address) {
     return out.str();
 }
 
+
 HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* description) {
     HMODULE module = GetModuleHandleW(moduleName);
     if (!module) {
@@ -249,6 +331,13 @@ HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* descriptio
                         std::string(description) +
                             " is not loaded; warm it with an ordinary picture fill first");
     }
+    ValidationCache& cache = ValidationCache::Instance();
+    cache.SynchroniseWith(GetModuleHandleW(L"oart.dll"), GetModuleHandleW(L"ppcore.dll"),
+                          GetModuleHandleW(L"gfx.dll"));
+    if (cache.IsModuleValidated(module)) {
+        return module;   // same loaded image; its version cannot have changed
+    }
+
     wchar_t modulePath[MAX_PATH * 4]{};
     if (!GetModuleFileNameW(module, modulePath, static_cast<DWORD>(std::size(modulePath)))) {
         throw bb::Error(E_NOTIMPL, std::string("Cannot resolve the ") + description + " path");
@@ -273,6 +362,7 @@ HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* descriptio
                         std::string(description) +
                             " is not Office 16.0.14334.20848; internal layouts are unvalidated");
     }
+    cache.RememberModule(module);
     return module;
 }
 

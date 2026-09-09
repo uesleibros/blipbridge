@@ -46,6 +46,7 @@
  */
 
 #include "../experiment_api.hpp"
+#include "native_apply.hpp"
 #include "oart_layout.hpp"
 
 #include <blipbridge/dispatch.hpp>
@@ -164,21 +165,21 @@ constexpr std::uint32_t kPictureFillIdentifier = 0xA042008E;
 /// Receiver vtable slot the handler calls with the finished transaction.
 constexpr std::size_t kApplyTransactionSlot = 0x78;
 
-// -- calling conventions ---------------------------------------------------
-// MinGW's x86-64 target already uses the Microsoft convention; __stdcall is
-// written out to document intent at each call site.
-using RecordConstructor = void(__stdcall*)(void* record);
-using ClearSlots = void(__stdcall*)(void* record);
-using ImageRecordConstructor = void(__stdcall*)(void* imageRecord);
-using InstallCachedImage = void(__stdcall*)(void* imageRecord, void* countedCachedImage);
-using TransferImageSlot = void*(__stdcall*)(void* destinationSlot, void* imageRecord);
-using TransactionConstructor = void*(__stdcall*)(void* transaction, const void* record,
-                                                 std::uint32_t flags, bool flag,
-                                                 std::uint32_t identifier);
+// The shared function-pointer types live in native_apply.hpp so the texture
+// store uses exactly the same declarations.
+using bb::oart::ApplyFunctions;
+using bb::oart::BuildStretchHolder;
+using bb::oart::ClearSlots;
+using bb::oart::Destructor;
+using bb::oart::ImageRecordConstructor;
+using bb::oart::InstallCachedImage;
+using bb::oart::RecordConstructor;
+using bb::oart::SetCountedSlot;
+using bb::oart::TransactionConstructor;
+using bb::oart::TransferImageSlot;
+
+/// The receiver method the handler calls with the finished transaction.
 using ApplyTransaction = void*(__stdcall*)(void* receiver, void* transaction);
-using Destructor = void(__stdcall*)(void* object);
-using BuildStretchHolder = void(__stdcall*)(void* holder, const void* sixteenBytes);
-using SetCountedSlot = void*(__stdcall*)(void* slot, void* holder);
 
 /**
  * The `{payload, descriptor}` pair `OART +0x158C40` fills in and `OART +0xB210`
@@ -356,27 +357,21 @@ private:
     std::vector<std::pair<std::wstring, std::uint32_t>> samples_;
 };
 
-/**
- * Every private entry point this file needs, resolved and byte-verified once.
- * Resolving through GuardedAddress means a signature mismatch aborts here,
- * before any Office object has been constructed.
- */
-struct ApplyFunctions {
-    RecordConstructor constructRecord = nullptr;
-    ClearSlots clearSlots = nullptr;
-    ImageRecordConstructor constructImageRecord = nullptr;
-    InstallCachedImage installCachedImage = nullptr;
-    TransferImageSlot transferImageSlot = nullptr;
-    BuildStretchHolder buildStretchHolder = nullptr;
-    SetCountedSlot setCountedSlot = nullptr;
-    TransactionConstructor constructTransaction = nullptr;
-    Destructor destroyRecord = nullptr;
-    Destructor destroyImageRecord = nullptr;
-    Destructor destroyTransaction = nullptr;
-    Destructor destroyHolder = nullptr;
-};
+} // namespace
+
+namespace bb::oart {
 
 ApplyFunctions ResolveApplyFunctions(std::uintptr_t oart) {
+    // Byte-verifying twelve entry points costs a VirtualQuery and a memcmp each.
+    // The bytes at a given RVA cannot change while the image stays loaded, so
+    // verify once per base address; a reloaded OART lands on a different base and
+    // is verified again. Nothing document-derived is cached here.
+    static std::uintptr_t verifiedBase = 0;
+    static ApplyFunctions verified;
+    if (verifiedBase == oart) {
+        return verified;
+    }
+
     ApplyFunctions functions;
     functions.constructRecord =
         reinterpret_cast<RecordConstructor>(bb::oart::GuardedAddress(oart, kRecordConstructor));
@@ -402,6 +397,8 @@ ApplyFunctions ResolveApplyFunctions(std::uintptr_t oart) {
         reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kTransactionDestructor));
     functions.destroyHolder =
         reinterpret_cast<Destructor>(bb::oart::GuardedAddress(oart, kHolderDestructor));
+    verified = functions;
+    verifiedBase = oart;
     return functions;
 }
 
@@ -415,7 +412,10 @@ ApplyFunctions ResolveApplyFunctions(std::uintptr_t oart) {
  * order the real handler uses.
  */
 void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
-                      CountedPointer* cached, CountTimeline& timeline) {
+                      void* cachedImage, const StageSampler& sample) {
+    CountedPointer cachedStorage;
+    cachedStorage.value = cachedImage;
+    CountedPointer* cached = &cachedStorage;
     alignas(16) std::uint8_t recordBuffer[kRecordBufferSize]{};
     alignas(16) std::uint8_t imageRecordBuffer[kImageRecordBufferSize]{};
     alignas(16) std::uint8_t transactionBuffer[kTransactionBufferSize]{};
@@ -440,7 +440,7 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
 
     // +0x8F94C AddRefs the cached image, so our own reference stays ours.
     functions.installCachedImage(imageRecord, cached);
-    timeline.Sample(L"install");
+    if (sample) { sample(L"install"); }
     if (bb::oart::LoadPointer(imageRecord, kCachedImageInSubRecordOffset) !=
         reinterpret_cast<std::uintptr_t>(cached->value)) {
         throw bb::Error(E_FAIL, "Cached image did not reach the image sub-record");
@@ -448,7 +448,7 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
 
     // Copies the sub-record into the record's image slot and AddRefs again.
     functions.transferImageSlot(recordBuffer + kImageSlotOffset, imageRecord);
-    timeline.Sample(L"transfer");
+    if (sample) { sample(L"transfer"); }
     if (bb::oart::LoadPointer(record,
                               kImageSubRecordOffset + kCachedImageInSubRecordOffset) !=
         reinterpret_cast<std::uintptr_t>(cached->value)) {
@@ -475,7 +475,7 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
     functions.constructTransaction(transaction, record, kTransactionFlags,
                                    target.handlerFlag != 0, kPictureFillIdentifier);
     ConstructedObject transactionGuard(transaction, functions.destroyTransaction);
-    timeline.Sample(L"transaction");
+    if (sample) { sample(L"transaction"); }
 
     // The apply itself: the same receiver vtable slot the handler calls.
     auto vtable = reinterpret_cast<void* const*>(bb::oart::LoadPointer(target.receiver, 0));
@@ -483,7 +483,7 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
         *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(vtable) +
                                         kApplyTransactionSlot));
     applyTransaction(target.receiver, transaction);
-    timeline.Sample(L"apply");
+    if (sample) { sample(L"apply"); }
 
     // Destroy in the handler's own reverse order, sampling after each step so an
     // unexplained delta is visible rather than averaged away. Each guard is
@@ -492,14 +492,12 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
     imageRecordGuard.Destroy();
     recordGuard.Destroy();
     stretchGuard.Destroy();
-    timeline.Sample(L"released");
+    if (sample) { sample(L"released"); }
 }
 
-/**
- * Creates one cached image from @p bytes, checking it against the recorded GFX
- * layout. The returned reference is owned by the caller.
- */
-void CreateCachedImage(SAFEARRAY* bytes, CountedReference& cached, CountedReference& image) {
+CreatedImage CreateCachedImageFromBytes(SAFEARRAY* bytes) {
+    CountedReference cached;
+    CountedReference image;
     const HMODULE gfx = bb::oart::RequireSupportedModule(L"gfx.dll", "GFX");
     const auto gfxBase = reinterpret_cast<std::uintptr_t>(gfx);
     auto createCachedImage = reinterpret_cast<CreateCachedImageFromStream>(
@@ -520,9 +518,14 @@ void CreateCachedImage(SAFEARRAY* bytes, CountedReference& cached, CountedRefere
         image.storage.value = nullptr;
         throw bb::Error(E_NOTIMPL, "Cached image vtable does not match the validated layout");
     }
+    // Ownership transfers to the caller: disarm the scope guards.
+    CreatedImage created{cached.storage.value, image.storage.value};
+    cached.storage.value = nullptr;
+    image.storage.value = nullptr;
+    return created;
 }
 
-} // namespace
+} // namespace bb::oart
 
 /**
  * Applies @p bytes as a picture fill on the Shape behind @p fill, natively.
@@ -536,15 +539,18 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes) {
     // Resolved immediately before use and never stored: a deleted Shape still
     // passes every check in this chain.
     const FillTarget target = bb::oart::ResolveFillTarget(fill);
-    const ApplyFunctions functions = ResolveApplyFunctions(target.oartBase);
+    const ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
 
+    const bb::oart::CreatedImage created = bb::oart::CreateCachedImageFromBytes(bytes);
     CountedReference cached;
     CountedReference image;
-    CreateCachedImage(bytes, cached, image);
+    cached.storage.value = created.cached;
+    image.storage.value = created.image;
 
     CountTimeline timeline(cached.storage.value);
     timeline.Sample(L"create");
-    ApplyCachedImage(functions, target, &cached.storage, timeline);
+    bb::oart::ApplyCachedImage(functions, target, cached.storage.value,
+                               [&](const wchar_t* label) { timeline.Sample(label); });
 
     std::wostringstream out;
     out << L"build=" << bb::oart::kSupportedVersionText << L';';
@@ -579,9 +585,11 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes) {
         throw bb::Error(E_INVALIDARG, "No FillFormats supplied");
     }
 
+    const bb::oart::CreatedImage created = bb::oart::CreateCachedImageFromBytes(bytes);
     CountedReference cached;
     CountedReference image;
-    CreateCachedImage(bytes, cached, image);
+    cached.storage.value = created.cached;
+    image.storage.value = created.image;
 
     CountTimeline timeline(cached.storage.value);
     timeline.Sample(L"create");
@@ -612,8 +620,9 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes) {
         }
         // Re-resolved per Shape; never cached across applies.
         const FillTarget target = bb::oart::ResolveFillTarget(element.obj());
-        const ApplyFunctions functions = ResolveApplyFunctions(target.oartBase);
-        ApplyCachedImage(functions, target, &cached.storage, timeline);
+        const ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
+        bb::oart::ApplyCachedImage(functions, target, cached.storage.value,
+                                   [&](const wchar_t* label) { timeline.Sample(label); });
         out << L"shape" << (index - lower) << L"Receiver=0x" << std::hex
             << reinterpret_cast<std::uintptr_t>(target.receiver) << std::dec << L';';
     }

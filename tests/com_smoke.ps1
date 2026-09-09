@@ -25,9 +25,20 @@ try{
  $engine.ClearTextures()
  if($engine.GetTextureCount() -ne 0){throw 'Clear count'}
  $results+='Handles are not recycled; ClearTextures releases registered entries.'
- $rejected=$false;try{$engine.LoadTexture($bytes)}catch{$rejected=$true}
- if(!$rejected){throw 'Unsupported normal byte loader claimed success'}
- $results+='Normal LoadTexture explicitly rejects unsupported backend.'
+ # LoadTexture now decodes bytes into a reusable native texture. Capabilities
+ # still report the backend as unvalidated, so this checks the API contract only:
+ # a handle is issued, it is disjoint from donor handles, and releasing works.
+ $native=$engine.LoadTexture($bytes)
+ if($native -lt 0x1000000){throw 'Native texture handle overlaps the donor handle space'}
+ if($engine.GetTextureCount() -ne 1){throw 'Native texture was not counted'}
+ $engine.ReleaseTexture($native)
+ if($engine.GetTextureCount() -ne 0){throw 'ReleaseTexture left the native texture behind'}
+ $stale=$false;try{$engine.ApplyTexture($target,$native)}catch{$stale=$true}
+ if(!$stale){throw 'Released native handle was still accepted'}
+ $results+='LoadTexture issues a native handle in a disjoint range; release and stale checks hold.'
+ $rejected=$false;try{$engine.SetImageBytes($target,$bytes)}catch{$rejected=$true}
+ if(!$rejected){throw 'SetImageBytes claimed success'}
+ $results+='SetImageBytes still explicitly rejects the unsupported backend.'
  $handle=$engine.RegisterTextureShape($donor)
  $donor.Delete()
  $rejected=$false;try{$engine.ApplyTexture($target,$handle)}catch{$rejected=$true}

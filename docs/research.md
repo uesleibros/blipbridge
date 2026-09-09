@@ -23,6 +23,54 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - reusable texture handles, and a benchmark that found a defect
+
+Productization of the native apply: LoadTexture, ApplyTexture, ReleaseTexture and
+ClearTextures over a store of GFX cached images.
+
+Ownership fell out of what the creator takes. `GEL::ICachedImage::Create` accepts
+an IStream and nothing else - no presentation, no slide, no Shape - so a cached
+image belongs to no document and a handle can own one reference independently of
+whatever is open. That is what makes a handle survive Presentation.Close, and it
+is why ClearTextures runs from both OnDisconnection and the Engine destructor,
+while GFX is still loaded. Native handles start at 0x1000000 so one ApplyTexture
+serves the donor fallback and the native path without confusing them. The
+receiver is still re-resolved per apply and never cached.
+
+The benchmark then earned its keep by failing. In process, over 500 iterations,
+ApplyTexture measured 2.35 ms against UserPicture's 0.91 ms - two and a half
+times *slower*. The cause was the guards: every apply re-read two module version
+resources off disk, decoded up to 48 vtable thunks with a VirtualQuery each, and
+byte-verified twelve signatures. All of that is a property of a loaded image
+rather than of any object, so it is now cached and keyed by module handle, vtable
+address and OART base, and thrown away if any of those change. What stayed
+uncached is everything document-derived: the FillFormat, its vtable, the control
+block, the receiver and its vtable, all re-checked every call, because those can
+dangle.
+
+After that: ApplyTexture 0.1845 ms mean against UserPicture 0.6692 ms, a 3.63x
+speed-up, with LoadTexture at 0.0495 ms recovered after a tenth of one apply. The
+PowerShell-driven round-robin dropped from 4289 ms to 439 ms for 1000 applies.
+
+Lifetime matrix all passing: one texture over six Shapes on two slides including
+a Freeform, 1000 round-robin applies with flat memory, three textures at once,
+release out of order, released and unknown handles rejected, Shape deletion,
+textures surviving Presentation.Close and applying in two other presentations,
+SaveAs and reopen with zero Picture shapes, and ClearTextures returning the count
+to zero. A separate shutdown test quits PowerPoint with five textures still
+loaded and it exits cleanly - that test runs a control host first, because the
+first attempt failed only because the harness itself held COM references.
+
+Two things still block the capability flags. Undo/Redo remains unproven, since
+ExecuteMso('Undo') fails in this harness after an ordinary UserPicture too. And
+the cached image's reference count settles at 60 after 1006 applies and stops
+there with flat memory - bounded, but the sixty owners are unattributed.
+
+Validation: Release and Debug builds, CTest both, COM smoke, fallback contract,
+receiver lookup, native apply and the memory experiment all pass. The contract
+test and COM smoke were updated where LoadTexture's behaviour intentionally
+changed.
+
 ## 2026-09-09 - stability, retention and an inconclusive Undo result
 
 Three checks the single apply could not cover.

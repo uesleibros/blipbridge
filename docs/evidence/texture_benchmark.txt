@@ -1,0 +1,2 @@
+iterations=500
+iterations=500;userPictureCalls=500;userPictureMeanMs=0.6692;userPictureMedianMs=0.6337;userPictureTotalMs=334.5793;loadTextureMs=0.0495;applyTextureCalls=500;applyTextureMeanMs=0.1845;applyTextureMedianMs=0.1706;applyTextureTotalMs=92.2599;meanSpeedup=3.6265;medianSpeedup=3.7145;loadAmortisedOverCalls=0.1021;textures=1;nextHandle=16777218;handle=16777217;cached=0x1d03f7b2110;cachedCount=44;bytes=11822;applies=500;

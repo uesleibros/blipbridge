@@ -27,7 +27,9 @@ enum class DispatchId : DISPID {
     InspectFillReceiver,
     LoadCachedImageExperiment,
     NativeApplyExperiment,
-    NativeApplyReuseExperiment
+    NativeApplyReuseExperiment,
+    InspectTexture,
+    BenchmarkNativeTexture
 };
 
 /**
@@ -83,9 +85,22 @@ private:
     Value DispatchResearch(DispatchId id, const AutomationArguments& arguments);
     /** Retains a normal picture-filled donor; never decodes source bytes. */
     long RegisterTextureShape(Value donor);
-    /** STA only. Preserves geometry but transfers the entire donor style. */
+    /**
+     * Decodes bytes once into a reusable native texture. The returned handle
+     * owns the decoded image and is independent of any presentation; release it
+     * before the Engine goes away. Handles never recycle.
+     */
+    long LoadTexture(Value bytes);
+    /**
+     * STA only. A native texture handle applies the decoded image directly and
+     * preserves everything but the fill; a donor handle takes the older whole-
+     * style transfer path, which preserves geometry but copies the donor style.
+     */
     void ApplyTexture(IDispatch* destination, long handle);
     void ReleaseTexture(long handle);
+    /** Releases donor references and native textures alike. */
+    void ClearTextures() noexcept;
+    long TextureCount() const;
     HRESULT ReportError(const Error& error, EXCEPINFO* exception) noexcept;
 
     std::atomic<ULONG> references_{1};

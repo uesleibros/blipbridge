@@ -2,6 +2,13 @@
 
 Current backend: **PickupApplyFallback**, experimental, whole-style transfer from an existing normal donor shape with a preloaded picture fill.
 
+A reusable native texture API now exists alongside it - LoadTexture, ApplyTexture,
+ReleaseTexture, ClearTextures - decoding bytes once into a GFX cached image and
+applying it with no file, no donor Shape and no UserPicture. Measured in process
+at 0.185 ms per apply against 0.669 ms for Fill.UserPicture, a 3.63x speed-up,
+with a one-off load cost of 0.0495 ms. Capabilities stay false: Undo/Redo is
+unproven and the bounded reference count is unattributed. See native_texture.md.
+
 2026-09-09 code-quality checkpoint: COM activation, dispatch, donor operations,
 and research routing are separated and documented. Named DISPIDs/HRESULTs and
 exception-string RAII are in place. Release/Debug builds and native COM contract

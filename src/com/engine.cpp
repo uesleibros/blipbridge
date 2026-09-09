@@ -35,7 +35,9 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"InspectFillReceiver", DispatchId::InspectFillReceiver},
     {L"LoadCachedImageExperiment", DispatchId::LoadCachedImageExperiment},
     {L"NativeApplyExperiment", DispatchId::NativeApplyExperiment},
-    {L"NativeApplyReuseExperiment", DispatchId::NativeApplyReuseExperiment}
+    {L"NativeApplyReuseExperiment", DispatchId::NativeApplyReuseExperiment},
+    {L"InspectTexture", DispatchId::InspectTexture},
+    {L"BenchmarkNativeTexture", DispatchId::BenchmarkNativeTexture}
 };
 
 /**
@@ -78,6 +80,10 @@ Engine::Engine() {
 }
 
 Engine::~Engine() {
+    // Last line of defence for texture lifetime. Office and GFX are still loaded
+    // here; an outstanding cached-image reference at process teardown would be a
+    // leak, so nothing is left to chance even if OnDisconnection never ran.
+    ClearTextures();
     --GetServerLifetime().objects;
 }
 
@@ -208,15 +214,17 @@ Value Engine::Dispatch(DispatchId id, const AutomationArguments& arguments) {
         return Value();
     case DispatchId::ClearTextures:
         arguments.RequireCount(0);
-        textures_.clear();
+        ClearTextures();
         return Value();
     case DispatchId::GetTextureCount:
         arguments.RequireCount(0);
-        return Value(static_cast<long>(textures_.size()));
+        return Value(TextureCount());
     case DispatchId::GetLastError:
         arguments.RequireCount(0);
         return Value(lastError_.c_str());
     case DispatchId::LoadTexture:
+        arguments.RequireCount(1);
+        return Value(LoadTexture(arguments.At(0)));
     case DispatchId::SetImageBytes:
         throw Error(E_NOTIMPL, kMemoryBackendUnavailableMessage);
     case DispatchId::GetHostProcessId:
@@ -258,7 +266,9 @@ HRESULT Engine::OnConnection(IDispatch*, long, IDispatch* addin, SAFEARRAY**) {
 }
 
 HRESULT Engine::OnDisconnection(long, SAFEARRAY**) {
-    textures_.clear();
+    // Bounds the texture lifetime: every decoded image is released while Office
+    // and GFX are still loaded, never left to process teardown.
+    ClearTextures();
     return S_OK;
 }
 

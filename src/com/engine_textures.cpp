@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "../../experiments/experiment_api.hpp"
 #include <blipbridge/errors.hpp>
 #include <climits>
 
@@ -31,20 +32,45 @@ long Engine::RegisterTextureShape(Value donor) {
     return handle;
 }
 
+long Engine::LoadTexture(Value bytes) {
+    if (bytes.v.vt != (VT_ARRAY | VT_UI1)) {
+        throw Error(E_INVALIDARG, "Expected a Byte array");
+    }
+    return nativeTextureLoad(bytes.v.parray);
+}
+
 void Engine::ApplyTexture(IDispatch* destination, long handle) {
+    RequireNormalShape(destination, "Target must be AutoShape or Freeform");
+    if (nativeTextureOwnsHandle(handle)) {
+        // The receiver behind this Fill is resolved inside, per apply, never cached.
+        nativeTextureApply(get(destination, L"Fill").obj(), handle);
+        return;
+    }
     const auto texture = textures_.find(handle);
     if (texture == textures_.end()) {
         throw Error(BB_E_TEXTURE_NOT_FOUND, kTextureNotFoundMessage);
     }
-    RequireNormalShape(destination, "Target must be AutoShape or Freeform");
     // Office's picked-up formatting is shared state: refresh it on every call.
     call(texture->second.obj(), L"PickUp");
     call(destination, L"Apply");
 }
 
 void Engine::ReleaseTexture(long handle) {
+    if (nativeTextureOwnsHandle(handle)) {
+        nativeTextureRelease(handle);
+        return;
+    }
     if (textures_.erase(handle) == 0) {
         throw Error(BB_E_TEXTURE_NOT_FOUND, kTextureNotFoundMessage);
     }
+}
+
+void Engine::ClearTextures() noexcept {
+    textures_.clear();
+    nativeTextureClear();
+}
+
+long Engine::TextureCount() const {
+    return static_cast<long>(textures_.size()) + nativeTextureCount();
 }
 } // namespace bb

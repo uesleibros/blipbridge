@@ -95,7 +95,11 @@ int wmain(int argc, wchar_t** argv) {
             Require(bb::call(engine.value, L"GetTextureCount").integer() == 0,
                     "New Engine must be empty");
             ExpectAutomationError(engine.value, 6, bb::BB_E_TEXTURE_NOT_FOUND);
-            ExpectAutomationError(engine.value, 10, E_NOTIMPL);
+            // LoadTexture (10) now decodes bytes into a native texture, so an
+            // integer argument is a type error rather than an unsupported
+            // backend. SetImageBytes (11) is still not implemented.
+            ExpectAutomationError(engine.value, 10, E_INVALIDARG);
+            ExpectAutomationError(engine.value, 11, E_NOTIMPL);
 
             // Covers the whole published surface, research members included.
             for (const wchar_t* name : {
@@ -106,7 +110,8 @@ int wmain(int argc, wchar_t** argv) {
                      L"GetHostProcessId", L"TraceUserPicture", L"RunFocusedBenchmarks",
                      L"MemoryFillExperiment", L"RunStress", L"TraceCachedApply",
                      L"InspectFillReceiver", L"LoadCachedImageExperiment",
-                     L"NativeApplyExperiment", L"NativeApplyReuseExperiment"}) {
+                     L"NativeApplyExperiment", L"NativeApplyReuseExperiment",
+                     L"InspectTexture", L"BenchmarkNativeTexture"}) {
                 ExpectNameReachableThroughInvoke(engine.value, name);
             }
 

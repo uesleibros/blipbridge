@@ -1,3 +1,26 @@
+# Benchmarks
+
+## Native texture against Fill.UserPicture
+
+Office 16.0.14334.20848 x64, measured in process by
+`experiments/exp_internal_blip/texture_benchmark.cpp`, 500 iterations on one
+Shape with one image. Driving the loop from PowerShell adds a cross-process COM
+round trip several times larger than the operation, so those numbers elsewhere in
+the repository are stability checks, not benchmarks.
+
+| | mean | median |
+|---|---:|---:|
+| `Fill.UserPicture(path)` | 0.6692 ms | 0.6337 ms |
+| `ApplyTexture(handle)` | 0.1845 ms | 0.1706 ms |
+| speed-up | 3.63x | 3.71x |
+
+`LoadTexture` costs 0.0495 ms once per texture and is recovered after a tenth of
+one apply.
+
+The gap is real work, not a trick: Office re-decodes the image on every
+`UserPicture` call, which a texture handle removes. Full context and the lifetime
+matrix are in `native_texture.md`.
+
 # Measured baseline
 
 Office 16.0.14334.20848 x64; GCC/UCRT64 Release. Native code executes in POWERPNT.EXE on the owning STA, through the explicitly connected research COM add-in.

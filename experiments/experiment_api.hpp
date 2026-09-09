@@ -43,3 +43,27 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes);
  * Reports the one cached-image address and the per-Shape reference timeline.
  */
 std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes);
+
+/**
+ * Reusable texture handles over GFX cached images. A texture owns one decoded
+ * image and is independent of any document; see native_texture.cpp for the
+ * ownership rules and docs/native_texture.md for the validation matrix.
+ *
+ * STA only. Handles never recycle, and live in a range disjoint from the donor
+ * fallback's so one ApplyTexture can serve both.
+ */
+long nativeTextureLoad(SAFEARRAY* bytes);
+void nativeTextureApply(IDispatch* fill, long handle);
+void nativeTextureRelease(long handle);
+void nativeTextureClear() noexcept;
+bool nativeTextureOwnsHandle(long handle);
+long nativeTextureCount();
+std::wstring nativeTextureReport(long handle);
+
+/**
+ * In-process comparison of Fill.UserPicture against LoadTexture once plus
+ * repeated ApplyTexture, on one Shape of the supplied Slide. Reports the load
+ * cost separately from the hot-path apply cost. Leaves the document as found.
+ */
+std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath,
+                                    long iterations);

@@ -1,0 +1,4 @@
+Control: a host that never loaded a texture exits cleanly.
+Loaded 5 textures and applied each; none released on purpose.
+PowerPoint exited cleanly with five textures still loaded.
+A fresh host starts with an empty store and works normally.
