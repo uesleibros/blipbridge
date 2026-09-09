@@ -1,5 +1,10 @@
 # UserPicture native pipeline
 
+The subsequent [transaction trace](fill_transaction.md) now follows that exact
+cached pointer into the UserPicture state transaction at +0x198, and resolves
+the receiver's preparation/application dispatch to OART +0x2290F0/+0x1B88B0.
+This narrows the binding path; it does not establish a callable image-only setter.
+
 Latest ownership investigation: [resource_lifetime.md](resource_lifetime.md)
 records the OART +0xF0 cached-reference transfer, later record copies and the
 phase-confirmed final release during presentation close. The earlier question

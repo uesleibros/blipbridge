@@ -7,6 +7,11 @@ try{
  $shape=$pres.Slides.Add(1,12).Shapes.AddShape(1,10,10,100,100)
  # Load decoder modules before taking the module snapshot in a fresh Office process.
  $shape.Fill.UserPicture((Join-Path $root 'artifacts/textures/texture_32_0.png'))
+ # The target remains the same normal AutoShape throughout the research call.
+ $shapeBefore = @(
+  $shape.Id, $shape.Name, $shape.Type, $shape.Left, $shape.Top,
+  $shape.Width, $shape.Height, $shape.Rotation, $shape.ZOrderPosition
+ ) -join '|'
  $process=Get-Process -Id $engine.GetHostProcessId()
  $m=$process.Modules | Where-Object ModuleName -eq mso20win32client.dll
  $moduleList = @($process.Modules | ForEach-Object {
@@ -27,6 +32,15 @@ try{
  }
  Set-Content "$root/artifacts/decoder_phase.txt" 'UserPicture'
  $engine.TraceUserPicture($shape.Fill,$root)
+ $shapeAfter = @(
+  $shape.Id, $shape.Name, $shape.Type, $shape.Left, $shape.Top,
+  $shape.Width, $shape.Height, $shape.Rotation, $shape.ZOrderPosition
+ ) -join '|'
+ if ($shapeAfter -ne $shapeBefore -or $shape.Fill.Type -ne 6) {
+  throw 'Trace changed target identity/geometry or failed to apply picture fill'
+ }
+ 'Trace preserved AutoShape identity, geometry, Z order and picture fill.' |
+  Set-Content "$root/artifacts/decoder_shape_validation.txt"
  Set-Content "$root/artifacts/decoder_phase.txt" 'SaveAs'
  $pres.SaveAs((Join-Path $root 'artifacts/decoder_lifetime.pptx'), 24)
  Set-Content "$root/artifacts/decoder_phase.txt" 'UserPicture-and-SaveAs-complete'

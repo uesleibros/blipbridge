@@ -1,0 +1,1 @@
+Trace preserved AutoShape identity, geometry, Z order and picture fill.

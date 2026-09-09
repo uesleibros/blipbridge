@@ -40,7 +40,14 @@ survives UserPicture and SaveAs; its last observed release occurs during Close.
 The ordinary traced deck saved/reopened with one normal image-filled AutoShape.
 See resource_lifetime.md for evidence and remaining ownership limits.
 
-Next experiment: trace the loaded-record transfer at OART +0x22BCF4 and the
-subsequent Shape-state transaction. Identify required serialization/resource
-members beyond the GFX pointer before attempting a memory-stream factory call.
-The internal cache-file write and donor-free fill binding remain unresolved.
+Latest transaction trace: the cached pointer propagates from loaded record
++0xF0 to wrapper +0xF8 and transaction +0x198. The subsequent receiver dispatch
+resolves through OART +0x21DEC0/+0x21BB20 to +0x2290F0 (preparation candidate)
+and +0x1B88B0 (application candidate). The latter receives a separate operation
+object with vtable +0x9E4BD0. Shape identity/geometry and saved-package checks
+passed during the repeated observation. See fill_transaction.md.
+
+Next experiment: identify the actual operation-construction branch and its
+Shape/document references, then follow execution and cleanup through +0x1B8F50.
+Required state beyond the image pointer remains unknown. Internal cache-file
+elimination and donor-free fill binding remain unresolved; no private call enabled.

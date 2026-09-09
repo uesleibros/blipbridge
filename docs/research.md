@@ -1,5 +1,29 @@
 # Research journal
 
+## 2026-09-09 - loaded record reaches the state transaction
+
+Hypothesis: the GFX cached reference is carried by the transaction used after
+UserPicture image loading. Added an isolated read-only GDB probe with named,
+version-specific signatures and bounded record observations. Captured source
+at OART +0x22BCF4, transaction call at +0x89CA6B and its return.
+
+Result: exact pointer equality at source+0xF0, destination-wrapper+0xF8 and
+transaction+0x198. A 0x100-byte initial observation was too small; constructor
+disassembly justified the later 0x510-byte transaction bound. Receiver vtable
++0x9F6658 slot +0x78 resolves to +0x21DEC0, which forwards to slot +0x50 at
++0x21BB20. Repeated live observations resolve preparation slot +0x60 to +0x2290F0
+and application slot +0x58 to +0x1B88B0. Application receives a separate operation
+object (vtable +0x9E4BD0), not the GFX image itself. No internal function called
+by the probe. Exact command semantics and captured document/Shape ownership remain
+unproven. Full observations, static corroboration and next experiment are in
+fill_transaction.md.
+
+Validation: repeated trace completed and all temporary breakpoints detached.
+AutoShape ID/name/type/bounds/rotation/Z order stayed equal; picture fill remained
+valid. Saved package has one normal picture-filled Shape, zero Picture shapes
+and one PNG. Native COM tests passed in Release/Debug and fallback-contract
+PowerPoint tests passed. Native implementation unchanged; no new benchmark claims.
+
 ## 2026-09-09 - OART consumer and resource retention
 
 Hypothesis: OART +0x8F94C retains the GFX cached object in state used beyond image
