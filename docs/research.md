@@ -1,5 +1,32 @@
 # Research journal
 
+## 2026-09-09 00:08 onward - incremental COM quality refactor
+
+Separated Engine declarations/Automation glue, donor operations, class factory,
+server lifetime and loader entry point. Research routing now lives under
+experiments with shared entry-point declarations. Added stable DispatchId enum,
+named custom HRESULTs, ownership/STA comments and formatting/contribution rules.
+No private Office calls or IAT behavior changed. Production memory capabilities
+remain false. Error-message allocation is now contained at the COM boundary;
+EXCEPINFO strings have scoped ownership. Successful public dispatch calls skip
+unused diagnostic-message allocation; no speedup is claimed without remeasurement.
+
+Validation: Release and Debug builds pass. Native COM contract tests pass in both
+configurations (wrong-thread guard, activation/lifetime, server locks, null
+outputs, error HRESULTs). Release PowerPoint fallback-contract, COM smoke and
+memory tests pass, including wrong shape types, stale/deleted donors, double
+release, missing arguments, repeated Clear, unchanged capabilities, editable
+freeforms and zero pixel differences before/after save/reopen. The 100,000-call
+stress run was not repeated for this structural change.
+
+The observational GFX probe now names the build-specific factory/stream RVAs,
+entry signatures, underlying-stream member and x64 stack argument offsets beside
+their evidence. Module snapshots include file versions and the probe rejects an
+unknown build before setting a breakpoint. A fresh factory entry/return trace
+reproduced the known result and detached successfully; UserPicture completed.
+Evidence: docs/evidence/cached_factory_refactor.txt. Older instrumentation and
+image-validation formatting remain scheduled for subsequent bounded refactors.
+
 ## 2026-09-08 — Initial discovery and baseline
 
 Office: PowerPoint x64 16.0.14334.20848, ProPlus2021Volume Click-to-Run.

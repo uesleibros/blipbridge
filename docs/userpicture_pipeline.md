@@ -1,5 +1,11 @@
 # UserPicture native pipeline
 
+Probe maintenance, 2026-09-09: the GFX decoder/factory script now uses named RVAs,
+layout offsets and signatures with local evidence comments, and checks the exact
+GFX file version from the module snapshot. A repeated factory trace after the COM
+refactor produced the same object-vtable/caller results. These remain observational
+breakpoints; no private function invocation or ownership guarantee is implied.
+
 Build: PowerPoint / OART 16.0.14334.20848 x64. Reproducible experiment: tools/trace_userpicture.ps1, experiments/exp_userpicture/trace.cpp. Raw stacks: artifacts/userpicture_trace.txt.
 
 Dynamic trace uses temporary validated IAT replacements for CreateFileW/ReadFile/CloseHandle in loaded Office modules. Only the uniquely named texture is recorded. All import slots were restored after the call. GDB is installed and was also attached/detached to sample the benchmark. Export-based debugger names such as PPMain are nearest-export labels, not reliable names for individual internal functions.

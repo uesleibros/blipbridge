@@ -9,3 +9,25 @@ The normal fallback has no byte-loading API implementation: the caller must prel
 No raw Office internal pointer is retained. Handles are per-engine positive integers and never reused during an engine lifetime. COM references own donor wrappers, not a guaranteed independently retained document resource. Release/Clear should precede presentation close. Cross-thread calls are rejected; C++ exceptions are translated at COM entry points.
 
 Research instrumentation is under experiments. IAT tracing validates loaded x64 PE imports and the exact existing imported function pointer, temporarily changes only matching Office import slots, captures stacks, and restores the slots. It is invoked explicitly, never by normal ApplyTexture. It does not patch Office files on disk.
+
+## COM refactor boundaries
+
+- `src/com/engine.hpp` declares the stable DispatchId enum, borrowed Automation
+  argument reader, add-in ABI, and apartment-bound Engine ownership.
+- `src/com/engine.cpp` implements Automation conversion, dispatch, and exception
+  translation. Texture operations are in `engine_textures.cpp`; the existing map
+  still owns donor COM wrappers and never recycles handles.
+- `src/com/class_factory.cpp` owns activation and process-wide server reference/
+  lock accounting. `src/dllmain.cpp` performs only loader-safe notification setup.
+- `experiments/automation_bridge.cpp` explicitly routes research methods. The
+  research build still links experimental code into the same DLL, as before;
+  this is source separation, not a claim of separate production/research binaries.
+- `include/blipbridge/errors.hpp` centralizes current custom HRESULTs. Shared
+  Automation Value and exception-string RAII remain in `dispatch.hpp`, used by
+  standalone tools as well as the DLL.
+
+The COM refactor preserves CLSID, ProgID, all 18 DISPIDs, return types, handle
+semantics, and donor PickUp/Apply ordering. Error reporting now contains allocation
+failures; invalid pointer arguments fail explicitly. Successful dispatch-helper
+calls no longer construct unused diagnostic strings. No new performance numbers
+are claimed from that small hot-path change.

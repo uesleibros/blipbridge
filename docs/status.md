@@ -2,6 +2,14 @@
 
 Current backend: **PickupApplyFallback**, experimental, whole-style transfer from an existing normal donor shape with a preloaded picture fill.
 
+2026-09-09 code-quality checkpoint: COM activation, dispatch, donor operations,
+and research routing are separated and documented. Named DISPIDs/HRESULTs and
+exception-string RAII are in place. Release/Debug builds and native COM contract
+tests pass; PowerPoint fallback, memory and smoke regressions pass. New coverage
+includes wrong-thread rejection, server unload/locks, invalid shape types,
+double release, missing arguments and unchanged capabilities. Further cleanup of
+the older image validator and IAT instrumentation remains incremental work.
+
 Milestone 1: GCC/UCRT64 x64 Release executable and Automation DLL built. Office exact build detected. Reproducible environment probe records loaded modules.
 
 Milestone 2: full visible-document in-process benchmark completed, including 100/1,000/10,000 distributions, surrounding operations and 130 pooled freeforms. Separate hidden-document dual-COM timings completed. External baseline is partial due to a rejected COM call.

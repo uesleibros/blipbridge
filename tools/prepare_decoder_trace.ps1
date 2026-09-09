@@ -9,7 +9,14 @@ try{
  $shape.Fill.UserPicture((Join-Path $root 'artifacts/textures/texture_32_0.png'))
  $process=Get-Process -Id $engine.GetHostProcessId()
  $m=$process.Modules | Where-Object ModuleName -eq mso20win32client.dll
- $moduleList=@($process.Modules | ForEach-Object {@{name=$_.ModuleName;base=$_.BaseAddress.ToInt64();size=$_.ModuleMemorySize}})
+ $moduleList = @($process.Modules | ForEach-Object {
+  @{
+   name = $_.ModuleName
+   base = $_.BaseAddress.ToInt64()
+   size = $_.ModuleMemorySize
+   version = $_.FileVersionInfo.FileVersion
+  }
+ })
  @{pid=$process.Id;readReturn=('0x{0:X}' -f ($m.BaseAddress.ToInt64()+0x7aede));sinkCall=('0x{0:X}' -f ($m.BaseAddress.ToInt64()+0x209fab));modules=$moduleList} | ConvertTo-Json -Depth 4 | Set-Content "$root/artifacts/decoder_target.json"
  'Ready for debugger trigger.'
  $trigger="$root/artifacts/decoder_go"
