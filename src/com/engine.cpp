@@ -1,6 +1,6 @@
 #include "engine.hpp"
 #include "server.hpp"
-#include "../../experiments/experiment_api.hpp"
+#include "../backend/windows_office/native_texture.hpp"
 #include <blipbridge/errors.hpp>
 #include <cstring>
 
@@ -44,7 +44,11 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"BenchmarkPixelLoad", DispatchId::BenchmarkPixelLoad},
     {L"ProfileFillStages", DispatchId::ProfileFillStages},
     {L"ProbeShapeCompatibility", DispatchId::ProbeShapeCompatibility},
-    {L"ApplyTextureUnrestricted", DispatchId::ApplyTextureUnrestricted}
+    {L"ApplyTextureUnrestricted", DispatchId::ApplyTextureUnrestricted},
+    {L"ApplyPicture", DispatchId::ApplyPicture},
+    {L"InvalidateShape", DispatchId::InvalidateShape},
+    {L"ClearPictureCache", DispatchId::ClearPictureCache},
+    {L"PictureCacheStats", DispatchId::PictureCacheStats}
 };
 
 /**

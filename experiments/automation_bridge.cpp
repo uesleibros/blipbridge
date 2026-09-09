@@ -6,8 +6,12 @@ namespace {
 /// Argument counts are part of the research ABI; keep them in one place.
 UINT ExpectedResearchArgumentCount(DispatchId id) {
     switch (id) {
+    case DispatchId::ClearPictureCache:
+    case DispatchId::PictureCacheStats:
+        return 0;
     case DispatchId::RunBenchmarks:
     case DispatchId::ProbeShapeCompatibility:
+    case DispatchId::InvalidateShape:
     case DispatchId::InspectFillReceiver:
     case DispatchId::LoadCachedImageExperiment:
     case DispatchId::InspectTexture:
@@ -45,6 +49,15 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         wchar_t executableName[] = L"bb";
         wchar_t* argv[] = {executableName, root.data()};
         return Value(static_cast<long>(runExperiment(2, argv)));
+    }
+
+    // Handled before the target is extracted: these take no arguments at all,
+    // and At(0) would throw for them.
+    if (id == DispatchId::ClearPictureCache) {
+        return Value(clearPictureCacheThroughAbi().c_str());
+    }
+    if (id == DispatchId::PictureCacheStats) {
+        return Value(pictureCacheStatsThroughAbi().c_str());
     }
 
     auto target = arguments.At(0);
@@ -102,6 +115,10 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         // Read-only classifier: never throws for an unsupported Shape class, so
         // the harness can put a row in the matrix instead of an exception.
         return Value(probeShapeCompatibility(target.obj()).c_str());
+    case DispatchId::ApplyPicture:
+        return Value(applyPictureThroughAbi(target.obj(), arguments.At(1).str()).c_str());
+    case DispatchId::InvalidateShape:
+        return Value(invalidateShapeThroughAbi(target.obj()).c_str());
     case DispatchId::ApplyTextureUnrestricted:
         return Value(applyTextureUnrestricted(target.obj(),
                                               arguments.At(1).integer())

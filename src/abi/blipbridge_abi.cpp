@@ -104,6 +104,9 @@ BB_Result CodeFor(bb::BackendStatus status) {
     case bb::BackendStatus::InvalidArgument: return BB_E_INVALID_ARG;
     case bb::BackendStatus::InvalidHandle:   return BB_E_INVALID_HANDLE;
     case bb::BackendStatus::InvalidShape:    return BB_E_INVALID_SHAPE;
+    case bb::BackendStatus::UnsupportedShapeClass: return BB_E_UNSUPPORTED_SHAPE;
+    case bb::BackendStatus::FileNotFound:    return BB_E_FILE_NOT_FOUND;
+    case bb::BackendStatus::FallbackFailed:  return BB_E_FALLBACK_FAILED;
     case bb::BackendStatus::DecodeFailed:    return BB_E_DECODE_FAILED;
     case bb::BackendStatus::ApplyFailed:     return BB_E_APPLY_FAILED;
     case bb::BackendStatus::OutOfMemory:     return BB_E_OUT_OF_MEMORY;
@@ -333,6 +336,75 @@ BB_API uint32_t BB_CALL BB_GetTextureCount(void) {
     }
 }
 
+BB_API BB_Result BB_CALL BB_ApplyPicture(void* shape, const uint16_t* path) {
+    try {
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        if (!shape) {
+            return Fail(BB_E_INVALID_ARG, "A Shape pointer is required");
+        }
+        if (!path || !*path) {
+            return Fail(BB_E_INVALID_ARG, "An image path is required");
+        }
+        return Translate(Library::Instance().Ensure().ApplyPicture(shape, path));
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_ApplyPicture");
+    }
+}
+
+BB_API BB_Result BB_CALL BB_InvalidateShape(void* shape) {
+    try {
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        if (!shape) {
+            return Fail(BB_E_INVALID_ARG, "A Shape pointer is required");
+        }
+        return Translate(Library::Instance().Ensure().InvalidateShape(shape));
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_InvalidateShape");
+    }
+}
+
+BB_API BB_Result BB_CALL BB_ClearPictureCache(void) {
+    try {
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        Library::Instance().Ensure().ClearPictureCache();
+        return BB_OK;
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_ClearPictureCache");
+    }
+}
+
+BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures, uint32_t* shapes,
+                                                 uint64_t* skipped) {
+    try {
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        std::size_t textureCount = 0;
+        std::size_t shapeCount = 0;
+        std::uint64_t skippedCount = 0;
+        Library::Instance().Ensure().PictureCacheStats(&textureCount, &shapeCount,
+                                                       &skippedCount);
+        if (textures) {
+            *textures = static_cast<uint32_t>(textureCount);
+        }
+        if (shapes) {
+            *shapes = static_cast<uint32_t>(shapeCount);
+        }
+        if (skipped) {
+            *skipped = skippedCount;
+        }
+        return BB_OK;
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_GetPictureCacheStats");
+    }
+}
+
 BB_API uint32_t BB_CALL BB_GetCapabilities(void) {
     try {
         const bb::BackendCapabilities capabilities =
@@ -344,6 +416,7 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void) {
         bits |= capabilities.batchApply ? BB_CAP_BATCH_APPLY : 0u;
         bits |= capabilities.pickUpFallback ? BB_CAP_PICKUP_FALLBACK : 0u;
         bits |= capabilities.rawPixels ? BB_CAP_RAW_PIXELS : 0u;
+        bits |= capabilities.applyPicture ? BB_CAP_APPLY_PICTURE : 0u;
         return bits;
     } catch (...) {
         return 0;

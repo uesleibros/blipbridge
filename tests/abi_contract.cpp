@@ -54,6 +54,10 @@ struct Api {
     BB_Result (*LoadTexturePixels)(const uint8_t*, uint32_t, uint32_t, int32_t,
                                    BB_Handle*) = nullptr;
     uint32_t (*GetVersionString)(char*, uint32_t) = nullptr;
+    BB_Result (*ApplyPicture)(void*, const uint16_t*) = nullptr;
+    BB_Result (*InvalidateShape)(void*) = nullptr;
+    BB_Result (*ClearPictureCache)(void) = nullptr;
+    BB_Result (*GetPictureCacheStats)(uint32_t*, uint32_t*, uint64_t*) = nullptr;
 
     ~Api() {
         if (module) {
@@ -108,6 +112,10 @@ int wmain(int argc, wchar_t** argv) {
     Resolve(api, api.GetAbiVersion, "BB_GetAbiVersion");
     Resolve(api, api.LoadTexturePixels, "BB_LoadTexturePixels");
     Resolve(api, api.GetVersionString, "BB_GetVersionString");
+    Resolve(api, api.ApplyPicture, "BB_ApplyPicture");
+    Resolve(api, api.InvalidateShape, "BB_InvalidateShape");
+    Resolve(api, api.ClearPictureCache, "BB_ClearPictureCache");
+    Resolve(api, api.GetPictureCacheStats, "BB_GetPictureCacheStats");
     if (g_failures) {
         return 1;
     }
@@ -140,6 +148,17 @@ int wmain(int argc, wchar_t** argv) {
           "ApplyTexture before Init reports BB_E_NOT_INITIALIZED");
     Check(api.ReleaseTexture(1) == BB_E_NOT_INITIALIZED,
           "ReleaseTexture before Init reports BB_E_NOT_INITIALIZED");
+    {
+        const uint16_t path[] = {L'x', 0};
+        Check(api.ApplyPicture(nullptr, path) == BB_E_NOT_INITIALIZED,
+              "ApplyPicture before Init reports BB_E_NOT_INITIALIZED");
+        Check(api.InvalidateShape(nullptr) == BB_E_NOT_INITIALIZED,
+              "InvalidateShape before Init reports BB_E_NOT_INITIALIZED");
+        Check(api.ClearPictureCache() == BB_E_NOT_INITIALIZED,
+              "ClearPictureCache before Init reports BB_E_NOT_INITIALIZED");
+        Check(api.GetPictureCacheStats(nullptr, nullptr, nullptr) == BB_E_NOT_INITIALIZED,
+              "GetPictureCacheStats before Init reports BB_E_NOT_INITIALIZED");
+    }
     Check(!LastError(api).empty(), "a failure leaves a readable message");
 
     // --- Init on an unsupported host -----------------------------------------
@@ -176,6 +195,29 @@ int wmain(int argc, wchar_t** argv) {
           "handle 0 is never valid");
     Check(api.ReleaseTexture(0) == BB_E_INVALID_HANDLE,
           "ReleaseTexture rejects handle 0");
+    {
+        const uint16_t path[] = {L'x', 0};
+        const uint16_t empty[] = {0};
+        Check(api.ApplyPicture(nullptr, path) == BB_E_INVALID_ARG,
+              "ApplyPicture rejects a null Shape");
+        Check(api.ApplyPicture(reinterpret_cast<void*>(&byte), nullptr) == BB_E_INVALID_ARG,
+              "ApplyPicture rejects a null path");
+        Check(api.ApplyPicture(reinterpret_cast<void*>(&byte), empty) == BB_E_INVALID_ARG,
+              "ApplyPicture rejects an empty path");
+        Check(api.InvalidateShape(nullptr) == BB_E_INVALID_ARG,
+              "InvalidateShape rejects a null Shape");
+
+        // Every out pointer is optional, so asking for nothing must still work.
+        Check(api.GetPictureCacheStats(nullptr, nullptr, nullptr) == BB_OK,
+              "GetPictureCacheStats accepts all-null outputs");
+        uint32_t textures = 99;
+        uint32_t shapes = 99;
+        uint64_t skipped = 99;
+        Check(api.GetPictureCacheStats(&textures, &shapes, &skipped) == BB_OK,
+              "GetPictureCacheStats succeeds");
+        Check(textures == 0 && shapes == 0 && skipped == 0,
+              "an untouched cache reports zeroes");
+    }
 
     // --- batch argument validation -------------------------------------------
     uint32_t applied = 99;

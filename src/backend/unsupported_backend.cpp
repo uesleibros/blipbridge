@@ -48,6 +48,24 @@ public:
     BackendResult ApplyTexture(void*, std::uint64_t) noexcept override { return Refuse(); }
     BackendResult ReleaseTexture(std::uint64_t) noexcept override { return Refuse(); }
     void ClearTextures() noexcept override {}
+
+    BackendResult ApplyPicture(void*, const std::uint16_t*) noexcept override {
+        return Refuse();
+    }
+    BackendResult InvalidateShape(void*) noexcept override { return Refuse(); }
+    void ClearPictureCache() noexcept override {}
+    void PictureCacheStats(std::size_t* textures, std::size_t* shapes,
+                           std::uint64_t* skipped) const noexcept override {
+        if (textures) {
+            *textures = 0;
+        }
+        if (shapes) {
+            *shapes = 0;
+        }
+        if (skipped) {
+            *skipped = 0;
+        }
+    }
     std::size_t TextureCount() const noexcept override { return 0; }
 
 private:

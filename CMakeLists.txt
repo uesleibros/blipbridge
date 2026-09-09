@@ -20,6 +20,7 @@ add_library(BlipBridge SHARED
     src/backend/windows_office/oart_layout.cpp
     src/backend/windows_office/native_apply.cpp
     src/backend/windows_office/native_texture.cpp
+    src/backend/windows_office/picture_cache.cpp
     src/dllmain.cpp
     src/com/class_factory.cpp
     src/com/engine.cpp
@@ -39,6 +40,7 @@ add_library(BlipBridge SHARED
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
     experiments/exp_internal_blip/shape_compatibility.cpp
+    experiments/exp_internal_blip/picture_cache_driver.cpp
 )
 target_compile_definitions(BlipBridge PRIVATE BB_DLL BLIPBRIDGE_BUILD)
 target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)

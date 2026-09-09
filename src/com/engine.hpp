@@ -35,7 +35,11 @@ enum class DispatchId : DISPID {
     BenchmarkPixelLoad,
     ProfileFillStages,
     ProbeShapeCompatibility,
-    ApplyTextureUnrestricted
+    ApplyTextureUnrestricted,
+    ApplyPicture,
+    InvalidateShape,
+    ClearPictureCache,
+    PictureCacheStats
 };
 
 /**

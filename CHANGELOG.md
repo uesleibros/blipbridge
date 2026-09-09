@@ -5,6 +5,36 @@ the test machine.
 
 ## [Unreleased]
 
+### Added
+
+- **`BB_ApplyPicture` / `UserPicture2`**: one call taking a Shape and a file
+  path, which chooses the accelerated path, Office's own `Fill.UserPicture`, or a
+  specific refusal, so a caller never has to know the Shape's class. With
+  `BB_InvalidateShape`, `BB_ClearPictureCache` and `BB_GetPictureCacheStats`, and
+  the capability bit `BB_CAP_APPLY_PICTURE`. See `docs/picture_cache.md`.
+- Two caches under it: **path to texture**, keyed on path plus size plus
+  last-write time so an edited file is never served stale, and **Shape to last
+  texture**, so repeating an image on a Shape does no Office work. Measured at
+  0.49 ms against 6.29 ms for a real apply through the same boundary - a gap
+  wider than the raw apply cost, because a real fill change also makes PowerPoint
+  repaint.
+- Specific error codes where a generic one used to do: `BB_E_UNSUPPORTED_SHAPE`,
+  `BB_E_FILE_NOT_FOUND`, `BB_E_FALLBACK_FAILED`.
+- **Ten Shape classes are natively supported**, up from two: AutoShape, Freeform,
+  TextBox, Placeholder, Callout, Group, group children, Picture, WordArt and
+  Media. Table, SmartArt and OLE fall back; Chart is unfillable either way.
+  `docs/shape_compatibility.md` has the matrix and what each class had to survive.
+
+### Fixed
+
+- **A native apply to a Connector terminated PowerPoint.** A Connector reports
+  `Shape.Type = 1` (msoAutoShape) and presents byte-identical internals to a
+  rectangle, so neither the type check nor the structural walk separated them.
+  Office's own `Fill.UserPicture` refuses one, from a check PPCORE performs before
+  the fill handler is reached; the native apply reproduces the handler and not
+  that pre-check. Connectors and lines are now refused by `Shape.Connector`, and a
+  Shape that will not answer the question is refused rather than assumed safe.
+
 ### Measured
 
 - **Stage-by-stage cost profile** (`docs/cost_profile.md`,

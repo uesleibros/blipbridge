@@ -37,6 +37,9 @@ enum class BackendStatus {
     InvalidArgument,
     InvalidHandle,
     InvalidShape,
+    UnsupportedShapeClass,  ///< the Shape's class has no picture-fill path at all
+    FileNotFound,           ///< the image path could not be read
+    FallbackFailed,         ///< Fill.UserPicture itself refused
     DecodeFailed,
     ApplyFailed,
     OutOfMemory,
@@ -57,6 +60,7 @@ struct BackendResult {
 
 /// Capability bits, mirroring the BB_CAP_* values in the public header.
 struct BackendCapabilities {
+    bool applyPicture = false;   ///< BB_ApplyPicture and its caches are usable
     bool nativeBackend = false;
     bool memoryImage = false;
     bool cachedTexture = false;
@@ -101,6 +105,20 @@ public:
 
     virtual BackendResult ReleaseTexture(std::uint64_t texture) noexcept = 0;
     virtual void ClearTextures() noexcept = 0;
+
+    /**
+     * One-call picture fill: native where the Shape's class has a validated
+     * path, ordinary host API where it does not, a specific refusal otherwise.
+     * @p path is UTF-16 because that is what the host's file APIs take.
+     */
+    virtual BackendResult ApplyPicture(void* shape, const std::uint16_t* path) noexcept = 0;
+    /// Forgets what was last applied to one Shape.
+    virtual BackendResult InvalidateShape(void* shape) noexcept = 0;
+    /// Releases every path-keyed texture and forgets every Shape.
+    virtual void ClearPictureCache() noexcept = 0;
+    /// Cached textures, remembered Shapes, and applies skipped since Init.
+    virtual void PictureCacheStats(std::size_t* textures, std::size_t* shapes,
+                                   std::uint64_t* skipped) const noexcept = 0;
     virtual std::size_t TextureCount() const noexcept = 0;
 };
 

@@ -87,6 +87,16 @@ std::wstring probeShapeCompatibility(IDispatch* shape);
 std::wstring applyTextureUnrestricted(IDispatch* shape, long handle);
 
 /**
+ * Research drivers for BB_ApplyPicture and its cache controls, forwarding to the
+ * real C ABI in process so the harness asserts shipping behaviour rather than a
+ * re-implementation. See picture_cache_driver.cpp.
+ */
+std::wstring applyPictureThroughAbi(IDispatch* shape, const std::wstring& path);
+std::wstring invalidateShapeThroughAbi(IDispatch* shape);
+std::wstring clearPictureCacheThroughAbi();
+std::wstring pictureCacheStatsThroughAbi();
+
+/**
  * Research: stage-by-stage attribution of the picture-fill path, across four
  * legs (reuse, new-same-bytes, new-distinct-content, and a pre-created pool).
  * Answers where the difference between applying an existing texture and

@@ -3,11 +3,18 @@
 Fast, reusable image textures for ordinary PowerPoint Shapes, callable from VBA.
 
 ```vb
-BlipBridge.Initialize
+BlipBridge.UserPicture2 shp, "C:\textures\brick.png"   ' that is the whole API
+```
+
+It decides the rest: the accelerated path for Shape classes that have one,
+Office's own `Fill.UserPicture` for classes that do not, the file read and
+decoded once, and no work at all when that Shape already carries that image. For
+full control the texture handles are still there:
+
+```vb
 tex = BlipBridge.LoadTexture(bytes)      ' decode once
 BlipBridge.ApplyTexture shp, tex         ' ~0.19 ms, no file, no donor Shape
 BlipBridge.ReleaseTexture tex
-BlipBridge.Shutdown
 ```
 
 No `regsvr32`. No ProgID. No `CreateObject`. No add-in installer. Put the DLL
@@ -149,23 +156,23 @@ BlipBridge.dll        <- next to the presentation
 
 ```vb
 Sub Demo()
-    Dim bytes() As Byte, tex As LongLong, shp As Shape
+    Dim shp As Shape
 
     If Not BlipBridge.IsAvailable Then
         MsgBox "BlipBridge: " & BlipBridge.Version   ' says why
         Exit Sub
     End If
 
-    bytes = LoadFileBytes("C:\textures\brick.png")
-    tex = BlipBridge.LoadTexture(bytes)
-
     For Each shp In ActivePresentation.Slides(1).Shapes
-        BlipBridge.ApplyTexture shp, tex
+        BlipBridge.UserPicture2 shp, "C:\textures\brick.png"
     Next shp
-
-    BlipBridge.ReleaseTexture tex
 End Sub
 ```
+
+The file is read and decoded once no matter how many Shapes get it, and a Shape
+that already carries that image is skipped entirely. If you change a Shape's fill
+by other means, call `BlipBridge.InvalidateShape shp` so the next call does real
+work - see [docs/picture_cache.md](docs/picture_cache.md).
 
 More in [examples/](examples/).
 
@@ -194,6 +201,7 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [native_texture.md](docs/native_texture.md) | reuse, lifetime, Undo, reference ownership |
 | [shape_compatibility.md](docs/shape_compatibility.md) | which Shape classes work, and the connector that crashes |
 | [capabilities.md](docs/capabilities.md) | what each capability flag claims and why |
+| [picture_cache.md](docs/picture_cache.md) | UserPicture2, the dispatch decision and both caches |
 | [c_abi.md](docs/c_abi.md) | the public interface, handle and lifecycle contracts |
 | [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |
 | [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |

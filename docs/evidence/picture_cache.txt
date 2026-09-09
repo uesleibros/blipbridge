@@ -1,0 +1,24 @@
+  ok   AutoShape gets a picture fill
+  ok   AutoShape keeps its type
+  ok   one texture cached after one file
+  ok   five more Shapes decode the file no further times
+  ok   each Shape is remembered
+  ok   repeating the same image on the same Shape is skipped
+  ok   a different image on the same Shape does real work
+  ok   the second file is cached too
+  ok   a fill replaced by a solid colour is re-applied, not skipped
+  ok   and the picture fill is back
+  ok   a rewritten file is not served from the cache
+  ok   and the superseded texture is released rather than accumulating
+  ok   InvalidateShape makes the next apply do real work
+  ok   a Table falls back to Fill.UserPicture and is filled
+  ok   and keeps its type
+  ok   a Connector is refused rather than filled
+  ok   and the refusal is specific, not generic
+  ok   and PowerPoint is still running
+  ok   a missing file reports itself as a missing file
+  ok   ClearPictureCache releases every texture
+  ok   and forgets every Shape
+  note skipped apply 1,4358 ms vs real apply 5,8389 ms (both include one COM round trip)
+  ok   a skipped apply is cheaper than a real one
+  ok   ordinary Fill.UserPicture still works afterwards

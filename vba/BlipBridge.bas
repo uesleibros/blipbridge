@@ -71,6 +71,13 @@ Private Declare PtrSafe Function BB_ApplyTextureBatch Lib "BlipBridge.dll" _
 Private Declare PtrSafe Function BB_ReleaseTexture Lib "BlipBridge.dll" _
     (ByVal texture As LongLong) As Long
 Private Declare PtrSafe Function BB_ClearTextures Lib "BlipBridge.dll" () As Long
+Private Declare PtrSafe Function BB_ApplyPicture Lib "BlipBridge.dll" _
+    (ByVal shape As LongPtr, ByVal path As LongPtr) As Long
+Private Declare PtrSafe Function BB_InvalidateShape Lib "BlipBridge.dll" _
+    (ByVal shape As LongPtr) As Long
+Private Declare PtrSafe Function BB_ClearPictureCache Lib "BlipBridge.dll" () As Long
+Private Declare PtrSafe Function BB_GetPictureCacheStats Lib "BlipBridge.dll" _
+    (ByRef textures As Long, ByRef shapes As Long, ByRef skipped As LongLong) As Long
 Private Declare PtrSafe Function BB_GetTextureCount Lib "BlipBridge.dll" () As Long
 Private Declare PtrSafe Function BB_GetCapabilities Lib "BlipBridge.dll" () As Long
 Private Declare PtrSafe Function BB_GetLastError Lib "BlipBridge.dll" _
@@ -210,6 +217,71 @@ Public Sub ApplyTexture(ByVal shp As Object, ByVal texture As LongLong)
     End If
     CheckResult BB_ApplyTexture(ObjPtr(shp), texture), "ApplyTexture"
 End Sub
+
+''' Fills a Shape from an image file - the drop-in for Fill.UserPicture.
+'''
+''' This is the entry point most code should use. It needs to know nothing about
+''' Shape classes, texture handles or lifetimes:
+'''
+'''     BlipBridge.UserPicture2 shp, "C:	exturesrick.png"
+'''
+''' Internally it takes the accelerated path for Shape classes that have a
+''' validated one, and Office's own Fill.UserPicture for classes that do not.
+''' The file is read and decoded once however many Shapes it is applied to, and
+''' applying the same image to the same Shape twice in a row does no work at all.
+'''
+''' It does **not** hide failures. An unsupported Office build, a deleted Shape
+''' or an unreadable file each raise with their own reason; only a Shape whose
+''' *class* has no native path is quietly routed to the slower route.
+'''
+''' If you change a Shape's fill by other means, call InvalidateShape on it so
+''' the next call here does real work rather than assuming its own last result
+''' still holds.
+Public Sub UserPicture2(ByVal shp As Object, ByVal path As String)
+    Initialize
+    If shp Is Nothing Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge", "UserPicture2 was given Nothing"
+    End If
+    If Len(path) = 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge", "UserPicture2 needs an image path"
+    End If
+    ' StrPtr hands over VBA's own UTF-16 buffer, which is exactly what the ABI
+    ' takes - no conversion, so nothing can be lost for a non-ASCII path.
+    CheckResult BB_ApplyPicture(ObjPtr(shp), StrPtr(path)), "UserPicture2"
+End Sub
+
+''' Forgets what UserPicture2 last applied to one Shape.
+'''
+''' Call it after changing that Shape's fill by any other means. Forgetting a
+''' Shape that was never cached is not an error.
+Public Sub InvalidateShape(ByVal shp As Object)
+    Initialize
+    If shp Is Nothing Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge", "InvalidateShape was given Nothing"
+    End If
+    CheckResult BB_InvalidateShape(ObjPtr(shp)), "InvalidateShape"
+End Sub
+
+''' Empties the picture cache: every file-keyed texture and every remembered Shape.
+'''
+''' Worth calling after closing or reloading a presentation, or when a batch of
+''' source images has been rewritten.
+Public Sub ClearPictureCache()
+    Initialize
+    CheckResult BB_ClearPictureCache(), "ClearPictureCache"
+End Sub
+
+''' Cache statistics, as "textures=N shapes=N skipped=N".
+'''
+''' `skipped` is how many applies UserPicture2 avoided entirely because the Shape
+''' already carried that image.
+Public Function PictureCacheStats() As String
+    Initialize
+    Dim textures As Long, shapes As Long, skipped As LongLong
+    CheckResult BB_GetPictureCacheStats(textures, shapes, skipped), "PictureCacheStats"
+    PictureCacheStats = "textures=" & textures & " shapes=" & shapes & _
+                        " skipped=" & skipped
+End Function
 
 ''' Fills many Shapes in one crossing into native code.
 '''

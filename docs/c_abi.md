@@ -10,6 +10,8 @@ compatibility layer - nothing in normal use needs `regsvr32`, a ProgID,
 
 ```c
 BB_Init / BB_Shutdown
+BB_ApplyPicture                                       <- what most callers want
+BB_InvalidateShape / BB_ClearPictureCache / BB_GetPictureCacheStats
 BB_LoadTexture / BB_LoadTexturePixels
 BB_ApplyTexture / BB_ApplyTextureBatch
 BB_ReleaseTexture / BB_ClearTextures / BB_GetTextureCount
@@ -114,7 +116,7 @@ The message describes the most recent failure **on the calling thread**.
 |---|---|
 | Encoded images | whatever Office decodes - PNG and JPEG are tested |
 | Raw pixels | BGRA32 only, stride >= width*4; see `pixel_textures.md` |
-| Shape types | AutoShape and Freeform; anything else is refused |
+| Shape types | ten classes natively; others fall back or are refused - see shape_compatibility.md |
 | Threading | the thread that called `BB_Init` |
 | Office | the validated build only; others return `BB_E_UNSUPPORTED_BUILD` |
 

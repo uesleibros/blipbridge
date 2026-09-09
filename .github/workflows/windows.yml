@@ -59,7 +59,7 @@ jobs:
                         BB_ApplyTexture BB_ApplyTextureBatch BB_ReleaseTexture \
                         BB_ClearTextures BB_GetTextureCount BB_GetCapabilities \
                         BB_GetLastError BB_GetVersion BB_GetVersionString \
-                        BB_GetAbiVersion; do
+                        BB_GetAbiVersion BB_ApplyPicture BB_InvalidateShape                         BB_ClearPictureCache BB_GetPictureCacheStats; do
             if ! objdump -p build/${{ matrix.configuration }}/BlipBridge.dll | grep -qw "$symbol"; then
               echo "missing export: $symbol"
               exit 1

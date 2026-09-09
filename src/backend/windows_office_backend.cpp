@@ -9,7 +9,7 @@
  * C ABI.
  *
  * The safety model is unchanged and lives one level down, in
- * `experiments/exp_internal_blip`: Office build checks, structural PPCORE
+ * `src/backend/windows_office`: Office build checks, structural PPCORE
  * wrapper validation, OART and GFX vtable checks, per-function signature bytes,
  * and receiver re-resolution on every apply with no cached receiver pointer. A
  * host this backend does not recognise fails closed, and the failure surfaces
@@ -25,6 +25,7 @@
 #include <blipbridge/errors.hpp>
 
 #include "windows_office/native_texture.hpp"
+#include "windows_office/picture_cache.hpp"
 
 #include <cstring>
 #include <new>
@@ -59,6 +60,15 @@ BackendStatus StatusFor(HRESULT hr) {
     if (hr == BB_E_TEXTURE_NOT_FOUND) {
         return BackendStatus::InvalidHandle;
     }
+    if (hr == BB_E_SHAPE_CLASS_UNSUPPORTED) {
+        return BackendStatus::UnsupportedShapeClass;
+    }
+    if (hr == BB_E_IMAGE_FILE_MISSING) {
+        return BackendStatus::FileNotFound;
+    }
+    if (hr == BB_E_FALLBACK_REFUSED) {
+        return BackendStatus::FallbackFailed;
+    }
     return BackendStatus::Internal;
 }
 
@@ -89,6 +99,33 @@ BackendResult Guarded(Body&& body) noexcept {
  * returning - the caller's own reference is what keeps the Shape alive for the
  * duration of the call.
  */
+/**
+ * Validates that @p shape is a live COM object, and nothing more.
+ *
+ * Split out from RequireFillableShape because the picture path needs the pointer
+ * checks without the class decision: a class the native path refuses may still
+ * be fillable through Office's own API, and that choice is made further in.
+ *
+ * The returned pointer carries a reference the caller must release.
+ */
+IDispatch* RequireDispatchShape(void* shape) {
+    if (!shape) {
+        throw Error(E_INVALIDARG, "Shape pointer is null");
+    }
+    MEMORY_BASIC_INFORMATION information{};
+    if (VirtualQuery(shape, &information, sizeof(information)) != sizeof(information) ||
+        information.State != MEM_COMMIT) {
+        throw Error(E_INVALIDARG, "Shape pointer does not address committed memory");
+    }
+    auto candidate = static_cast<IUnknown*>(shape);
+    IDispatch* dispatch = nullptr;
+    if (FAILED(candidate->QueryInterface(IID_IDispatch, reinterpret_cast<void**>(&dispatch))) ||
+        !dispatch) {
+        throw Error(E_INVALIDARG, "Shape pointer is not an IDispatch");
+    }
+    return dispatch;
+}
+
 IDispatch* RequireFillableShape(void* shape) {
     if (!shape) {
         throw Error(E_INVALIDARG, "Shape pointer is null");
@@ -155,6 +192,10 @@ public:
             return capabilities;
         }
         capabilities.pickUpFallback = true;
+        // The picture path works wherever PowerPoint does: on a build the native
+        // backend cannot serve, it still dispatches every Shape to Office's own
+        // Fill.UserPicture, which is a real capability rather than a stub.
+        capabilities.applyPicture = true;
         const bool available = nativeTextureBackendAvailable();
         capabilities.nativeBackend = available;
         capabilities.memoryImage = available;
@@ -233,6 +274,52 @@ public:
     }
 
     void ClearTextures() noexcept override { nativeTextureClear(); }
+
+    BackendResult ApplyPicture(void* shape, const std::uint16_t* path) noexcept override {
+        if (!path || !*path) {
+            return BackendResult::Failure(BackendStatus::InvalidArgument,
+                                          "An image path is required");
+        }
+        return Guarded([&] {
+            // The Shape is validated as a pointer here; which *classes* are
+            // acceptable is decided inside, because the picture path also has a
+            // fallback for classes the native path refuses.
+            IDispatch* dispatch = RequireDispatchShape(shape);
+            struct Release {
+                IDispatch* value;
+                ~Release() { value->Release(); }
+            } release{dispatch};
+            office::ApplyPictureCached(dispatch,
+                                       reinterpret_cast<const wchar_t*>(path));
+        });
+    }
+
+    BackendResult InvalidateShape(void* shape) noexcept override {
+        return Guarded([&] {
+            IDispatch* dispatch = RequireDispatchShape(shape);
+            struct Release {
+                IDispatch* value;
+                ~Release() { value->Release(); }
+            } release{dispatch};
+            office::InvalidateShapeCache(dispatch);
+        });
+    }
+
+    void ClearPictureCache() noexcept override { office::ClearPictureCache(); }
+
+    void PictureCacheStats(std::size_t* textures, std::size_t* shapes,
+                           std::uint64_t* skipped) const noexcept override {
+        const office::PictureCacheStats stats = office::GetPictureCacheStats();
+        if (textures) {
+            *textures = stats.textures;
+        }
+        if (shapes) {
+            *shapes = stats.shapes;
+        }
+        if (skipped) {
+            *skipped = stats.skipped;
+        }
+    }
 
     std::size_t TextureCount() const noexcept override {
         return static_cast<std::size_t>(nativeTextureCount());

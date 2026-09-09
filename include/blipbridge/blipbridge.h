@@ -113,6 +113,9 @@ typedef int32_t BB_Result;
 #define BB_E_DECODE_FAILED       -8   /* the image bytes could not be decoded   */
 #define BB_E_APPLY_FAILED        -9   /* the fill could not be applied          */
 #define BB_E_OUT_OF_MEMORY      -10   /* allocation failed                      */
+#define BB_E_UNSUPPORTED_SHAPE  -11   /* Shape class has no picture-fill path    */
+#define BB_E_FILE_NOT_FOUND     -12   /* the image path could not be read        */
+#define BB_E_FALLBACK_FAILED    -13   /* Fill.UserPicture itself refused         */
 #define BB_E_INTERNAL           -99   /* unexpected internal failure            */
 
 /** Capability bits returned by BB_GetCapabilities. */
@@ -122,6 +125,7 @@ typedef int32_t BB_Result;
 #define BB_CAP_BATCH_APPLY      0x0008u /* BB_ApplyTextureBatch is implemented  */
 #define BB_CAP_PICKUP_FALLBACK  0x0010u /* the donor COM fallback exists        */
 #define BB_CAP_RAW_PIXELS       0x0020u /* BB_LoadTexturePixels is implemented  */
+#define BB_CAP_APPLY_PICTURE    0x0040u /* BB_ApplyPicture and its caches exist */
 
 /**
  * Prepares the library on the calling thread and probes the host.
@@ -223,6 +227,81 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void);
  *         or @p capacity is 0; the result is always terminated otherwise.
  */
 BB_API uint32_t BB_CALL BB_GetLastError(char* buffer, uint32_t capacity);
+
+/**
+ * The one-call picture fill: give it a Shape and a file, and it decides.
+ *
+ * This is the `UserPicture2` the VBA wrapper exposes, and the entry point most
+ * callers should use. It removes the need to know anything about Shape classes:
+ *
+ *   - a Shape class with a validated native path gets the accelerated apply,
+ *     from a texture cached by file path so the file is read and decoded once;
+ *   - a class without one, but which ordinary `Fill.UserPicture` accepts, gets
+ *     that instead;
+ *   - anything else returns BB_E_UNSUPPORTED_SHAPE, naming the class.
+ *
+ * @p path is a **UTF-16, null-terminated** absolute path. VBA passes `StrPtr(s)`
+ * directly, with no conversion; UTF-16 is what Windows file APIs take and what
+ * VBA already holds, so nothing can be lost in translation.
+ *
+ * ## The fallback is for Shape classes, not for bugs
+ *
+ * Falling back happens only when the Shape's *class* has no native path. A
+ * native failure caused by an unvalidated Office build, a deleted Shape, or a
+ * corrupt image is returned as itself - BB_E_UNSUPPORTED_BUILD,
+ * BB_E_INVALID_SHAPE, BB_E_DECODE_FAILED - and never quietly papered over with a
+ * slower path that would hide it.
+ *
+ * ## Caching, and when it is skipped
+ *
+ * Two caches, both automatic:
+ *
+ *   - **path to texture.** The file is read and decoded once. The key includes
+ *     the file's size and last-write time, so editing the file on disk produces
+ *     a new texture rather than a stale one; that check costs about two
+ *     microseconds against roughly 190 for an apply.
+ *   - **Shape to last texture.** Applying the same image to the same Shape twice
+ *     in a row does no Office work at all. Before skipping, `Fill.Type` is
+ *     checked to still be a picture fill, so a Shape whose fill was replaced
+ *     elsewhere is re-applied rather than left wrong.
+ *
+ * The second cache cannot see every change. If something replaces the fill with
+ * a *different picture* outside this call, the skip will not notice, because
+ * detecting it would cost more than the apply it saves. Call
+ * BB_InvalidateShape after doing that, or BB_ClearPictureCache after anything
+ * wholesale. Both caches are dropped by BB_Shutdown.
+ *
+ * Returns BB_OK on success, or the specific reason it failed.
+ */
+BB_API BB_Result BB_CALL BB_ApplyPicture(void* shape, const uint16_t* path);
+
+/**
+ * Forgets what was last applied to @p shape, so the next BB_ApplyPicture on it
+ * does real work.
+ *
+ * Call it after changing a Shape's fill by any other means. Forgetting an
+ * unknown Shape is not an error.
+ */
+BB_API BB_Result BB_CALL BB_InvalidateShape(void* shape);
+
+/**
+ * Empties both caches: every path-keyed texture is released and every Shape's
+ * last-applied record is dropped.
+ *
+ * Reach for this after closing or reloading a presentation, or when a batch of
+ * source files has changed.
+ */
+BB_API BB_Result BB_CALL BB_ClearPictureCache(void);
+
+/**
+ * Cache statistics, for confirming the caches are doing what you think.
+ *
+ * @p textures receives the number of path-keyed textures held, @p shapes the
+ * number of Shapes with a remembered fill, @p skipped the running total of
+ * applies avoided since BB_Init. Any pointer may be NULL.
+ */
+BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures, uint32_t* shapes,
+                                                 uint64_t* skipped);
 
 /**
  * ABI version this DLL implements; compare against BB_ABI_VERSION.
