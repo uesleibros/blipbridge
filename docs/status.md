@@ -32,4 +32,15 @@ Latest continuation: Release/Debug builds and memory/COM regression tests passed
 
 Factory entry/return observation now captured distinct cached-image and image outputs (GFX vtables +0x409DC0/+0x4055C8), with private intrusive reference counts established statically. The existing factory returns to OART +0x8F554, which passes its result to +0x8F94C and releases a local reference.
 
-Next experiment: trace that consumer into document-resource/fill binding and verify balanced lifetime dynamically before attempting a native memory-stream factory. Determine whether the GFX object is only a rendering cache. A direct decoder-stream substitution alone would leave the earlier temporary PNG write intact. Production cache and VBA interpreter overhead remain open.
+2026-09-09 native progress: OART +0x8F94C stores the cached object in record +0xF0.
+Live counts show retention followed by release of the caller's local reference.
+Further AddRefs occur in OART record copying (+0x9848C), including the UserPicture
+transaction after image loading. Phase-tagged tracing proves the cached object
+survives UserPicture and SaveAs; its last observed release occurs during Close.
+The ordinary traced deck saved/reopened with one normal image-filled AutoShape.
+See resource_lifetime.md for evidence and remaining ownership limits.
+
+Next experiment: trace the loaded-record transfer at OART +0x22BCF4 and the
+subsequent Shape-state transaction. Identify required serialization/resource
+members beyond the GFX pointer before attempting a memory-stream factory call.
+The internal cache-file write and donor-free fill binding remain unresolved.

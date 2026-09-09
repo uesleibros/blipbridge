@@ -1,5 +1,7 @@
 """Run with GDB -batch -x after prepare_decoder_trace.ps1. No inferior calls.
-For factory entry/return mode, precede -x with -ex "python probe_mode='factory'".
+Precede -x with -ex "python probe_mode='factory'" for entry/return inspection.
+Use 'consumer' to inspect OART retention, or 'lifetime' to follow references until
+the first tracked final release. See docs/resource_lifetime.md for the protocol.
 """
 import gdb, json, pathlib, struct
 
@@ -23,6 +25,23 @@ POINTER_BYTES = 8
 # five (MD4UID pointer) and six (bool). Includes hidden return storage in RCX.
 FACTORY_UID_STACK_OFFSET = 0x28
 FACTORY_BOOL_STACK_OFFSET = 0x30
+
+# OART 16.0.14334.20848 x64 consumer observed directly after factory return.
+# The +0xF0 member is passed to a reference assignment helper; it is not yet
+# proven to be a document BLIP. The +8 count belongs to private GFX objects,
+# whose slot 0 increments and slot +8 decrements (NOT IUnknown layout).
+OART_CONSUMER_RVA = 0x8F94C
+OART_CONSUMER_SIGNATURE = bytes.fromhex('48 89 5c 24 20 56 57 41 56')
+OART_AFTER_LOCAL_RELEASE_RVA = 0x8F575
+OART_AFTER_LOCAL_RELEASE_SIGNATURE = bytes.fromhex('48 8d 4d df e8')
+OART_CACHE_MEMBER_OFFSET = 0xF0
+GFX_REFERENCE_COUNT_OFFSET = 8
+GFX_CACHED_RELEASE_RVA = 0xA1A0
+GFX_IMAGE_RELEASE_RVA = 0xA170
+GFX_RELEASE_SIGNATURE = bytes.fromhex('83 c8 ff f0 0f c1 41 08')
+# Shared intrusive increment entry, observed on both returned GFX interfaces.
+GFX_ADD_REFERENCE_RVA = 0x90AA0
+GFX_ADD_REFERENCE_SIGNATURE = bytes.fromhex('f0 ff 41 08 c3')
 
 root = pathlib.Path.cwd()
 target = json.loads((root/'artifacts/decoder_target.json').read_text(encoding='utf-8-sig'))
@@ -69,6 +88,123 @@ class FactoryReturn(gdb.Breakpoint):
             if value:
                 describe(value)
         gdb.execute('bt 12')
+        if globals().get('probe_mode') in ['consumer', 'lifetime']:
+            self.enabled = False
+            observation = ConsumerObservation(ptr(self.storage), ptr(self.image_out))
+            observation.install()
+            return False
+        return True
+
+
+class ConsumerObservation:
+    """Borrows addresses only while stopped; never calls AddRef/Release itself."""
+
+    def __init__(self, cached_image, image):
+        self.cached_image = cached_image
+        self.image = image
+        self.owner = None
+        self.thread_id = gdb.selected_thread().ptid
+
+    def report(self, stage):
+        gdb.write('\nCONSUMER ' + stage + '\n')
+        for label, address in [('cached', self.cached_image), ('image', self.image)]:
+            count = struct.unpack('<I', read(address + GFX_REFERENCE_COUNT_OFFSET, 4))[0]
+            gdb.write('%s object=%#x count=%d\n' % (label, address, count))
+        if self.owner is not None:
+            member = self.owner + OART_CACHE_MEMBER_OFFSET
+            gdb.write('OART record=%#x first-qword=%s member+0xF0=%s\n' % (
+                self.owner, location(ptr(self.owner)), read(member, 32).hex()))
+
+    def install(self):
+        gfx = next(module for module in target['modules'] if module['name'].lower() == 'gfx.dll')
+        oart = next(module for module in target['modules'] if module['name'].lower() == 'oart.dll')
+        if oart.get('version') != OFFICE_BUILD:
+            raise RuntimeError('Unsupported OART build')
+        profiles = [
+            (oart, OART_CONSUMER_RVA, OART_CONSUMER_SIGNATURE),
+            (oart, OART_AFTER_LOCAL_RELEASE_RVA, OART_AFTER_LOCAL_RELEASE_SIGNATURE),
+            (gfx, GFX_CACHED_RELEASE_RVA, GFX_RELEASE_SIGNATURE),
+            (gfx, GFX_IMAGE_RELEASE_RVA, GFX_RELEASE_SIGNATURE),
+            (gfx, GFX_ADD_REFERENCE_RVA, GFX_ADD_REFERENCE_SIGNATURE),
+        ]
+        for module, rva, signature in profiles:
+            if read(module['base'] + rva, len(signature)) != signature:
+                raise RuntimeError('Consumer/release signature mismatch')
+        ConsumerEntry(oart['base'] + OART_CONSUMER_RVA, self)
+        ConsumerComplete(oart['base'] + OART_AFTER_LOCAL_RELEASE_RVA, self)
+        for rva in [GFX_CACHED_RELEASE_RVA, GFX_IMAGE_RELEASE_RVA]:
+            ObservedRelease(gfx['base'] + rva, self)
+        ObservedAddReference(gfx['base'] + GFX_ADD_REFERENCE_RVA, self)
+        self.report('factory return')
+
+
+class ConsumerEntry(gdb.Breakpoint):
+    def __init__(self, address, observation):
+        super().__init__('*' + hex(address), internal=True)
+        self.observation = observation
+
+    def stop(self):
+        if gdb.selected_thread().ptid != self.observation.thread_id:
+            return False
+        self.observation.owner = int(gdb.parse_and_eval('$rcx'))
+        self.observation.report('before OART consumer')
+        self.enabled = False
+        return False
+
+
+class ObservedRelease(gdb.Breakpoint):
+    def __init__(self, address, observation):
+        super().__init__('*' + hex(address), internal=True)
+        self.observation = observation
+
+    def stop(self):
+        address = int(gdb.parse_and_eval('$rcx'))
+        if address in [self.observation.cached_image, self.observation.image]:
+            count = struct.unpack('<I', read(address + GFX_REFERENCE_COUNT_OFFSET, 4))[0]
+            gdb.write('RELEASE entry object=%#x count-before=%d caller=%s\n' % (
+                address, count, location(ptr(int(gdb.parse_and_eval('$rsp'))))))
+            phase_file = root / 'artifacts/decoder_phase.txt'
+            if phase_file.exists():
+                gdb.write('Harness phase: ' + phase_file.read_text().strip() + '\n')
+            # Never continue to read a tracked object after its last release.
+            if count == 1:
+                gdb.write('Last release observed; stopping before potential destruction\n')
+                gdb.execute('bt 24')
+                return True
+        return False
+
+
+class ObservedAddReference(gdb.Breakpoint):
+    """Capture a bounded set of cached-resource retention callers, read-only."""
+
+    def __init__(self, address, observation):
+        super().__init__('*' + hex(address), internal=True)
+        self.observation = observation
+        self.remaining_stacks = 12
+
+    def stop(self):
+        address = int(gdb.parse_and_eval('$rcx'))
+        if address != self.observation.cached_image or self.remaining_stacks == 0:
+            return False
+        self.remaining_stacks -= 1
+        count = struct.unpack('<I', read(address + GFX_REFERENCE_COUNT_OFFSET, 4))[0]
+        gdb.write('\nCACHED ADDREF count-before=%d\n' % count)
+        gdb.execute('bt 10')
+        return False
+
+
+class ConsumerComplete(gdb.Breakpoint):
+    def __init__(self, address, observation):
+        super().__init__('*' + hex(address), internal=True)
+        self.observation = observation
+
+    def stop(self):
+        if gdb.selected_thread().ptid != self.observation.thread_id:
+            return False
+        self.observation.report('after OART consumer and local cached release')
+        if globals().get('probe_mode') == 'lifetime':
+            self.enabled = False
+            return False
         return True
 class FactoryEntry(gdb.Breakpoint):
     def stop(self):
@@ -86,7 +222,7 @@ try:
     gfx=next(m for m in target['modules'] if m['name'].lower()=='gfx.dll')
     if gfx.get('version') != OFFICE_BUILD:
         raise RuntimeError('Unsupported GFX build or missing module version')
-    factory=globals().get('probe_mode')=='factory'
+    factory=globals().get('probe_mode') in ['factory', 'consumer', 'lifetime']
     address=gfx['base']+(CACHED_IMAGE_CREATE_RVA if factory else STREAM_READ_RVA)
     signature=CACHED_IMAGE_CREATE_SIGNATURE if factory else STREAM_READ_SIGNATURE
     if read(address,len(signature))!=signature:

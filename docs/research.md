@@ -1,5 +1,36 @@
 # Research journal
 
+## 2026-09-09 - OART consumer and resource retention
+
+Hypothesis: OART +0x8F94C retains the GFX cached object in state used beyond image
+loading. Added named/signature-checked consumer, AddRef and Release observations
+to the existing GDB probe. No inferior function calls or memory writes beyond
+temporary debugger breakpoints. Stop before any tracked count-1 release to avoid
+observing freed storage.
+
+Results: record +0xF0 changes from null to the exact cached pointer. Cached count
+is 1 at factory return, reaches 2 before the caller's local release, and remains
+1 afterward. Subsequent copy-path AddRefs return via OART +0x9848C; static code
+copies record +0xF0 and increments that interface. Dynamic stacks connect these
+copies to UserPicture after its loader (+0x89CA06/+0x89CA4D).
+
+An initial lifetime run lacked phase markers, so close-time destruction could
+not be attributed confidently. Repeated with explicit UserPicture/SaveAs/Close
+markers: final cached Release count-before 1 occurs during Presentation.Close,
+via OART +0x3DBB1. Thus the resource is not merely discarded when loading returns.
+Which references belong to undo versus active document state is still unresolved.
+The separate image's final destruction was not followed after this stopping point.
+
+The traced ordinary UserPicture presentation saved/reopened as one normal
+picture-filled AutoShape, one media PNG and no Picture shapes. No optimized
+backend, direct GFX call or speedup is claimed. Findings/RVAs and next binding
+experiment are in resource_lifetime.md; raw phase and retention stacks archived.
+
+Post-experiment validation: Release/Debug builds and native COM contract tests
+passed, as did the public fallback regression suite. Native backend code was not
+changed in this investigation. The debugger detached and presentation close
+completed after each successful observation.
+
 ## 2026-09-09 00:08 onward - incremental COM quality refactor
 
 Separated Engine declarations/Automation glue, donor operations, class factory,

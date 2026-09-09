@@ -1,5 +1,11 @@
 # UserPicture native pipeline
 
+Latest ownership investigation: [resource_lifetime.md](resource_lifetime.md)
+records the OART +0xF0 cached-reference transfer, later record copies and the
+phase-confirmed final release during presentation close. The earlier question
+whether the cached object survives the loader is now answered affirmatively for
+this experiment; a standalone fill-binding ABI remains unidentified.
+
 Probe maintenance, 2026-09-09: the GFX decoder/factory script now uses named RVAs,
 layout offsets and signatures with local evidence comments, and checks the exact
 GFX file version from the module snapshot. A repeated factory trace after the COM

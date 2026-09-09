@@ -25,6 +25,15 @@ try{
   if((Get-Date) -gt $deadline){throw 'Debugger trigger timed out'}
   Start-Sleep -Milliseconds 200
  }
+ Set-Content "$root/artifacts/decoder_phase.txt" 'UserPicture'
  $engine.TraceUserPicture($shape.Fill,$root)
+ Set-Content "$root/artifacts/decoder_phase.txt" 'SaveAs'
+ $pres.SaveAs((Join-Path $root 'artifacts/decoder_lifetime.pptx'), 24)
+ Set-Content "$root/artifacts/decoder_phase.txt" 'UserPicture-and-SaveAs-complete'
  'Decoder trace call completed.'
-}finally{$pres.Saved=-1;$pres.Close()}
+} finally {
+ Set-Content "$root/artifacts/decoder_phase.txt" 'Presentation.Close'
+ $pres.Saved = -1
+ $pres.Close()
+ Set-Content "$root/artifacts/decoder_phase.txt" 'Presentation.Close-complete'
+}
