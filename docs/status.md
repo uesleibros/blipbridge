@@ -127,8 +127,35 @@ watching Office, now reproduced from our own call. Invalid bytes are rejected
 without a crash and ordinary UserPicture still works afterwards. Nothing is
 retained, so this is not yet a texture handle and there is no performance claim.
 
-Next experiment: establish the property record and image sub-record sizes and
-destructor requirements, then validate the OART private functions' ABI before
-any of them is called. Capabilities stay false: the apply half does not exist. Internal cache-file elimination and donor-free
+Native apply works. NativeApplyExperiment applies image bytes to an existing
+normal Shape with no UserPicture on the target, no donor Shape, no PickUp/Apply
+and no source file: the bytes reach Office through a memory IStream, become a
+cached image through the GFX export, and are committed through Office's own
+record, transaction and receiver. Measured on an AutoShape and a Freeform:
+Fill.Type 1 -> 6, Shape id/name/geometry/rotation/Z order unchanged, still a
+normal AutoShape with zero Picture shapes, Freeform kept three editable nodes,
+SaveAs and reopen both preserved the fill, and sampled pixels are identical both
+to an ordinary UserPicture fill and after reopen.
+
+Getting there needed one correction found by measurement: with the counted slot
+at record+0x2A0 left unset the apply produced Fill.Type 4 (textured) instead of 6
+(picture). That slot is exactly what separates the two - the FillFormat vtable's
+next entry OART +0x8A1530 (UserTextured) calls the same handler +0x89C860 and
+differs only in building this argument with +0x239950 instead of +0x158C40.
+
+Thirteen private OART entry points are now called, each byte-verified at its RVA
+before use, with sizes, ownership and destructor pairing recorded in oart_abi.md.
+Record 0x4E8, image sub-record 0x200, transaction 0x510. The receiver is
+re-resolved before every apply and never cached.
+
+Open and blocking productionization: the apply takes one more reference than
+UserPicture does at the same point (+3 against +2). The differing starting count
+is explained - the experiment holds its own Create reference for the whole call
+to sample counts - but the differing delta is not, and the two runs are not
+comparable because one replaced a picture fill and the other a solid fill.
+
+Capabilities stay false. The experiment retains nothing, so there is still no
+texture handle and no performance claim; reuse of one cached image across
+several Shapes is the next milestone. Internal cache-file elimination and donor-free
 fill binding remain unresolved; no private call is enabled, and no capability
 flipped.

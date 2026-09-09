@@ -31,3 +31,9 @@ std::wstring inspectFillReceiver(IDispatch* fill);
  * Throws bb::Error naming the check that failed.
  */
 std::wstring loadCachedImageExperiment(SAFEARRAY* bytes);
+/**
+ * Applies bytes as a picture fill on the Shape behind a FillFormat, natively:
+ * memory IStream to cached image to OART record to transaction to the receiver.
+ * No UserPicture, no donor Shape and no source file. Retains nothing.
+ */
+std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes);

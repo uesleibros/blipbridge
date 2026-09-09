@@ -23,6 +23,48 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - first native picture-fill apply, without UserPicture
+
+Hypothesis: with the receiver reachable, the record recipe mapped and every
+private function's ABI derived, a minimal apply can be assembled from Office's
+own constructors.
+
+Prerequisites completed first. Sizes came from constructor write ranges and one
+heap allocation site: property record 0x4E8 (+0x14110 writes through +0x4E4, and
+the operation's own fields resume at +0x550 with the record embedded at +0x68),
+image sub-record 0x200 (allocated at OART +0xD9A62), transaction 0x510.
+Destructor pairing came from the handler's own cleanup at +0x89CAA3..+0x89CABF:
+transaction +0x8C388, sub-record +0x3D870, record +0xAF80, in that order.
+Ownership came from +0x8FB30, which AddRefs through slot 0 before storing, so
++0x8F94C retains its own reference and the caller keeps one. Every entry point is
+byte-verified at its RVA before being called; the table is in oart_abi.md.
+
+First run: no crash, and the fill changed - to Fill.Type 4, textured, not 6,
+picture. The cause was the one slot deliberately left unset. Checking the
+FillFormat vtable's next entry settled it immediately: OART +0x8A1530
+(UserTextured) calls the *same* handler +0x89C860 and differs only in building
+the third argument with +0x239950 rather than +0x158C40. So record+0x2A0 is
+precisely the stretch-versus-tile property, and the record's default is tile.
+
+With that slot set the apply is correct. AutoShape and Freeform both keep
+identity, name, geometry, rotation and Z order; the Shape stays a normal
+AutoShape with zero Picture shapes on the slide; the Freeform keeps three
+editable nodes; SaveAs and reopen preserve the fill; and sampled pixels are
+identical both to an ordinary UserPicture fill and to the reopened Shape.
+
+Reference timeline, all sampled in one call: create 1, install 2, transfer 3,
+transaction 4, apply 7, transaction destroyed 6, sub-record destroyed 5, record
+destroyed 4, then our own release leaves 3 held by the document.
+
+Not settled: the apply's +3 against UserPicture's +2 at the same point. The
+different starting count is explained by the experiment holding its own Create
+reference to sample counts, but the different delta is not, and the two runs
+replaced different existing fills. Recorded as blocking productionization.
+
+Validation: Release and Debug builds, CTest both, COM smoke, fallback contract,
+receiver lookup, cached image load and the memory experiment all pass.
+Capabilities unchanged.
+
 ## 2026-09-09 - first native call: file-free decode into a cached image
 
 Hypothesis: the stream-based GFX creator is an export whose ABI is fully

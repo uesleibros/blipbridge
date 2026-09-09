@@ -25,6 +25,8 @@ add_library(BlipBridge SHARED
     experiments/exp_pickup_apply/stress.cpp
     experiments/exp_internal_blip/receiver_inspect.cpp
     experiments/exp_internal_blip/cached_image_load.cpp
+    experiments/exp_internal_blip/oart_layout.cpp
+    experiments/exp_internal_blip/native_apply.cpp
 )
 target_compile_definitions(BlipBridge PRIVATE BB_DLL)
 target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)

@@ -25,7 +25,8 @@ enum class DispatchId : DISPID {
     RunStress,
     TraceCachedApply,
     InspectFillReceiver,
-    LoadCachedImageExperiment
+    LoadCachedImageExperiment,
+    NativeApplyExperiment
 };
 
 /**

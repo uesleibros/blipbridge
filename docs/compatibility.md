@@ -27,4 +27,12 @@ mangled name. It is still guarded by the exact GFX version and by checking the
 returned objects' vtables before touching them, and an unrecognised vtable causes
 the pointer to be dropped rather than released. No private OART offset is called.
 
+The native apply experiment additionally calls thirteen private OART entry
+points. Each is guarded three ways: oart.dll, ppcore.dll and gfx.dll must all be
+16.0.14334.20848; the sixteen bytes at each function's RVA must match the ones
+recorded when its ABI was derived; and every object walked to must present its
+recorded vtable. Any single mismatch aborts before an object is constructed. The
+full table, with ownership and destructor pairing, is in docs/oart_abi.md. This
+remains research-only: no capability is enabled by it.
+
 Research build: GCC 16.2.0, MinGW-w64 UCRT, CMake 4.4.2. Microsoft SDK and Visual Studio are installed but not required for the main build. No MSVC ABI-dependent internal calls have been attempted.
