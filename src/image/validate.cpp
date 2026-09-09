@@ -1,4 +1,5 @@
 #include <blipbridge/image_validation.hpp>
+#include <blipbridge/errors.hpp>
 #include <wincodec.h>
 #include <objbase.h>
 #include <vector>
@@ -7,7 +8,7 @@
 namespace bb {
 template<class T>struct Com {T* p=nullptr;~Com(){if(p)p->Release();}T** out(){return &p;}};
 HRESULT validateImage(const BYTE* data,size_t size){
- constexpr HRESULT invalid=HRESULT(0x80040202);
+ constexpr HRESULT invalid = BB_E_INVALID_IMAGE;
  const BYTE png[]={137,80,78,71,13,10,26,10};
  bool isPng=size>=8&&!memcmp(data,png,8);bool isJpeg=size>=3&&data[0]==0xff&&data[1]==0xd8&&data[2]==0xff;
  if(!isPng&&!isJpeg)return invalid;

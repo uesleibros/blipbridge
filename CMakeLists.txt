@@ -11,7 +11,19 @@ include_directories(include)
 add_executable(bb_experiment experiments/main.cpp)
 target_link_libraries(bb_experiment PRIVATE ole32 oleaut32 uuid psapi)
 target_link_options(bb_experiment PRIVATE -municode -static-libgcc -static-libstdc++)
-add_library(BlipBridge SHARED src/com/engine.cpp src/image/validate.cpp experiments/main.cpp experiments/exp_userpicture/trace.cpp experiments/exp_pickup_apply/focused.cpp experiments/exp_pickup_apply/stress.cpp)
+add_library(BlipBridge SHARED
+    src/dllmain.cpp
+    src/com/class_factory.cpp
+    src/com/engine.cpp
+    src/com/engine_textures.cpp
+    src/image/validate.cpp
+    # Explicit research entry points; never selected by the normal texture API.
+    experiments/automation_bridge.cpp
+    experiments/main.cpp
+    experiments/exp_userpicture/trace.cpp
+    experiments/exp_pickup_apply/focused.cpp
+    experiments/exp_pickup_apply/stress.cpp
+)
 target_compile_definitions(BlipBridge PRIVATE BB_DLL)
 target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
 target_link_options(BlipBridge PRIVATE -static -static-libgcc -static-libstdc++)
@@ -28,3 +40,11 @@ target_link_libraries(bb_interfaces PRIVATE ole32 oleaut32 uuid)
 target_link_options(bb_interfaces PRIVATE -municode -static -static-libgcc -static-libstdc++)
 add_executable(bb_peanchors tools/pe_anchors.cpp)
 target_link_options(bb_peanchors PRIVATE -municode -static -static-libgcc -static-libstdc++)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(bb_com_contract tests/com_contract.cpp)
+    target_link_libraries(bb_com_contract PRIVATE ole32 oleaut32 uuid)
+    target_link_options(bb_com_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
+    add_test(NAME com_contract COMMAND bb_com_contract $<TARGET_FILE:BlipBridge>)
+endif()
