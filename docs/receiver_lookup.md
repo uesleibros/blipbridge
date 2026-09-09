@@ -123,6 +123,62 @@ Each lookup re-evaluates `shape.Fill`, so the stability is a property of the
 Shape rather than of one COM wrapper instance. PowerPoint returns the same
 `publicFill` pointer each time as well.
 
+## The PPCORE vtable is validated structurally, not by address
+
+The first version of this guard compared `*Shape.Fill` against one PPCORE RVA,
+`+0x1464478`. That was too narrow, and a report of it rejecting a build turned
+out to be the guard working correctly on the wrong object: the reported
+`ppcore.dll+0x146EA20` is the **`Shape`** vtable, not `FillFormat`. Reading
+`Shape+0x08` as an OART FillFormat would have been a wild pointer, so the
+rejection was right - but the message did not say why.
+
+Two things came out of investigating it.
+
+**PPCORE has a family of these wrappers, not one class.** Scanning `.rdata` for
+vtables whose slots are identity thunks found eleven, including `Shape.Fill`
+(+0x1464478), `Shape.Line` (+0x1464338) and `Shape.TextFrame` (+0x14656A0). Each
+delegates through `this+0x08` to its own OART counterpart. Pinning one RVA
+therefore rejects legitimate siblings and would break on any build that moves the
+table.
+
+**The delegating shape is a stronger check than the address.** A wrapper's slot N
+is a thunk of exactly this form:
+
+```text
+48 83 ec ??             sub  $imm8,%rsp          (optional)
+48 8b 49 XX             mov  XX(%rcx),%rcx       inner = this->at_XX
+48 8b 01                mov  (%rcx),%rax         its vtable
+48 8b 80 YY YY YY YY    mov  YY(%rax),%rax       the slot  (or 48 8b 40 YY)
+ff 15 ...               call *disp32(%rip)
+```
+
+`DescribeDelegatingWrapper` decodes those thunks, requires at least six of them
+to map slot N onto inner vtable offset `N*8`, and requires every one to agree on
+the same inner offset. So `innerOffset` is **read out of the code** rather than
+assumed to be 8. The inner object then still has to present the exact OART
+FillFormat vtable `+0xAF60B8` - which is what separates a Fill from the
+identically shaped Line and TextFrame wrappers.
+
+Measured, with the structural guard in place:
+
+| Object | Result |
+|---|---|
+| `Shape.Fill` | accepted, wrapper +0x1464478, inner offset 0x8, 31 thunks |
+| `ShapeRange.Fill` | accepted |
+| `Shape` | rejected: vtable +0x146EA20 has no delegating thunks |
+| `Shape.Line` | rejected: delegates to oart+0xAF4E38, not the FillFormat vtable |
+| `Shape.TextFrame` | rejected: delegates to oart+0xAF5F48 |
+| `Slide` | rejected: no delegating thunks |
+
+Unknown layouts stay fail-closed; the difference is that the failure now names
+the actual vtable, the inner offset it found, and what it expected.
+
+`InspectFillReceiver` reports the environment alongside every result and attaches
+it to every failure: expected build, the live `oart.dll`, `ppcore.dll` and
+`gfx.dll` versions, the expected OART vtable RVAs, the PPCORE vtable actually
+found, the derived inner offset and the thunk count. Build drift should be
+readable straight off the failure message.
+
 ## Hazards
 
 **A deleted Shape still resolves.** After `Shape.Delete()`, the walk still

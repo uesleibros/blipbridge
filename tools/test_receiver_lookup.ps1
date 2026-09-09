@@ -74,6 +74,36 @@ try {
     }
     $results.Add('Receiver survives an ordinary UserPicture unchanged.')
 
+    # Object-kind matrix: the structural guard must accept every genuine Fill
+    # wrapper and reject everything else with a diagnosis rather than a walk.
+    $range = $first.Shapes.Range(1)
+    $kinds = [ordered]@{
+        'Shape.Fill'      = $shapeA.Fill
+        'ShapeRange.Fill' = $range.Fill
+        'Shape'           = $shapeA
+        'Shape.Line'      = $shapeA.Line
+        'Shape.TextFrame' = $shapeA.TextFrame
+        'Slide'           = $first
+    }
+    foreach ($kind in $kinds.Keys) {
+        try {
+            $null = $engine.InspectFillReceiver($kinds[$kind])
+            $results.Add("$kind -> accepted")
+        } catch {
+            $first_line = $_.Exception.Message.Split([Environment]::NewLine)[0]
+            $results.Add("$kind -> rejected: $($first_line.Split('|')[0].Trim())")
+        }
+    }
+    foreach ($mustWork in 'Shape.Fill', 'ShapeRange.Fill') {
+        $null = $engine.InspectFillReceiver($kinds[$mustWork])
+    }
+    foreach ($mustFail in 'Shape', 'Shape.Line', 'Shape.TextFrame', 'Slide') {
+        $rejected = $false
+        try { $null = $engine.InspectFillReceiver($kinds[$mustFail]) } catch { $rejected = $true }
+        if (-not $rejected) { throw "$mustFail was accepted but is not a FillFormat" }
+    }
+    $results.Add('Both Fill wrappers accepted; Shape, Line, TextFrame and Slide all rejected.')
+
     # A Shape deleted through public COM must not leave a usable lookup.
     $doomed = $first.Shapes.AddShape(1, 270, 10, 60, 60)
     $doomedFill = $doomed.Fill

@@ -17,6 +17,7 @@
 
 #include <blipbridge/dispatch.hpp>
 
+#include <cstring>
 #include <sstream>
 
 namespace {
@@ -34,10 +35,35 @@ void AppendPointer(std::wostringstream& out, const wchar_t* label, std::uintptr_
 } // namespace
 
 std::wstring inspectFillReceiver(IDispatch* fill) {
-    const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill);
+    // Report the environment before walking, so a failure downstream still tells
+    // the reader which build they are on and what the walk expected to find.
+    std::wostringstream environment;
+    environment << L"expectedBuild=" << bb::oart::kSupportedVersionText
+                << L";oartVersion=" << bb::oart::ModuleVersionText(L"oart.dll")
+                << L";ppcoreVersion=" << bb::oart::ModuleVersionText(L"ppcore.dll")
+                << L";gfxVersion=" << bb::oart::ModuleVersionText(L"gfx.dll")
+                << L";expectedOartFillFormatVtable=oart.dll+0xAF60B8"
+                << L";expectedOartReceiverVtable=oart.dll+0x9F6658"
+                << L";observedPpcoreFillFormatVtable=ppcore.dll+0x1464478"
+                << L";ppcoreVtableIsStructural=1;";
+
+    bb::oart::FillTarget target;
+    try {
+        target = bb::oart::ResolveFillTarget(fill);
+    } catch (const bb::Error& error) {
+        // Re-throw with the environment attached: the guard message alone does
+        // not say which build drifted or what the walk expected.
+        const std::wstring wide = environment.str();
+        throw bb::Error(error.hr, std::string(error.what()) + " | " +
+                                      std::string(wide.begin(), wide.end()));
+    }
 
     std::wostringstream out;
+    out << environment.str();
     out << L"build=" << bb::oart::kSupportedVersionText << L';';
+    out << L"ppcoreFillFormatVtable=ppcore.dll+0x" << std::hex << target.wrapper.vtableRva
+        << std::dec << L";wrapperInnerOffset=0x" << std::hex << target.wrapper.innerOffset
+        << std::dec << L";wrapperThunks=" << target.wrapper.identityThunks << L';';
     AppendPointer(out, L"oart", target.oartBase);
     AppendPointer(out, L"publicFill", reinterpret_cast<std::uintptr_t>(target.publicFill));
     AppendPointer(out, L"handler", reinterpret_cast<std::uintptr_t>(target.handler));

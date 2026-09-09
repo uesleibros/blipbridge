@@ -51,17 +51,44 @@ constexpr GuardedFunction MakeGuarded(std::uintptr_t rva, const char* name,
     return GuardedFunction{rva, name, signature, N};
 }
 
+/**
+ * What a PPCORE automation wrapper's vtable proved to be.
+ *
+ * PowerPoint's `Shape.Fill` is a thin PPCORE object whose vtable is almost
+ * entirely identity thunks: slot N loads `this + innerOffset` and calls that
+ * object's vtable at N*8. That shape is what makes the walk safe, and it is what
+ * gets verified - rather than one hard-coded vtable RVA, which changes between
+ * sibling classes and could change between builds.
+ */
+struct DelegatingWrapper {
+    std::size_t innerOffset = 0;      ///< read out of the thunks, not assumed
+    unsigned identityThunks = 0;      ///< how many slots delegate that way
+    std::uintptr_t vtableRva = 0;     ///< for diagnostics only
+};
+
 /// Borrowed Office objects for one Shape. Valid only for the current call.
 struct FillTarget {
     std::uintptr_t oartBase = 0;
     std::uintptr_t ppcoreBase = 0;
     void* publicFill = nullptr;   ///< PPCORE FillFormat, the argument itself
-    void* handler = nullptr;      ///< OART FillFormat at publicFill+0x08
+    void* handler = nullptr;      ///< OART FillFormat at publicFill + wrapper.innerOffset
     void* token = nullptr;        ///< control block at handler+0x58
     void* receiver = nullptr;     ///< OART receiver at token+0x10
     std::uint32_t tokenStrong = 0;
     std::uint8_t handlerFlag = 0; ///< handler+0x60, the transaction's bool argument
+    DelegatingWrapper wrapper;    ///< how the public object was recognised
 };
+
+/// Version text of a loaded module, or "not loaded"/"unreadable" - diagnostics only.
+std::wstring ModuleVersionText(const wchar_t* moduleName);
+
+/**
+ * Examines the vtable of @p object and reports the delegating shape it has, if
+ * any. Returns false when the object is not a delegating wrapper at all, which
+ * is the normal answer for, say, a Shape passed where a FillFormat was meant.
+ */
+bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
+                               std::size_t moduleSize, DelegatingWrapper& wrapper);
 
 /// True when every page spanning [address, address+size) is committed and readable.
 bool IsReadable(const void* address, std::size_t size);
