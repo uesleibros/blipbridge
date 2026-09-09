@@ -199,8 +199,8 @@ record + 0x40   unidentified non-polymorphic pointer
 record + 0x88   image-slot discriminator: 2 = empty, 1 = set
 record + 0x90   image sub-record
 record + 0x180  cached GFX image (sub-record + 0xF0)
-record + 0x4D8  flag byte set to 1 just before the commit
-record + 0x4D8..+0x4DC  read-modify-write of `(value & ~6) | 1`
+record + 0x4D8  dword given `(value & ~6) | 1` just before the commit
+record + 0x4DC  flag byte set to 1 just before the commit
 ```
 
 The transfer at `OART +0x22BCF4` is called with `rbp+8`, which is `record+0x88`:
