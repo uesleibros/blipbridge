@@ -8,6 +8,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     switch (id) {
     case DispatchId::RunBenchmarks:
     case DispatchId::InspectFillReceiver:
+    case DispatchId::LoadCachedImageExperiment:
         return 1;
     case DispatchId::MemoryFillExperiment:
     case DispatchId::TraceCachedApply:
@@ -60,6 +61,12 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     case DispatchId::InspectFillReceiver:
         // Throws bb::Error naming the failed guard; Invoke reports it verbatim.
         return Value(inspectFillReceiver(target.obj()).c_str());
+    case DispatchId::LoadCachedImageExperiment: {
+        if (target.v.vt != (VT_ARRAY | VT_UI1)) {
+            throw Error(E_INVALIDARG, "Expected Byte array");
+        }
+        return Value(loadCachedImageExperiment(target.v.parray).c_str());
+    }
     case DispatchId::TraceCachedApply: {
         auto destination = arguments.At(1);
         check(traceCachedApply(target.obj(), destination.obj(), arguments.At(2).str()),

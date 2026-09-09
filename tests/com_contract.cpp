@@ -105,7 +105,7 @@ int wmain(int argc, wchar_t** argv) {
                      L"LoadTexture", L"SetImageBytes", L"RunBenchmarks",
                      L"GetHostProcessId", L"TraceUserPicture", L"RunFocusedBenchmarks",
                      L"MemoryFillExperiment", L"RunStress", L"TraceCachedApply",
-                     L"InspectFillReceiver"}) {
+                     L"InspectFillReceiver", L"LoadCachedImageExperiment"}) {
                 ExpectNameReachableThroughInvoke(engine.value, name);
             }
 

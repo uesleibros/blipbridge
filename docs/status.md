@@ -117,8 +117,18 @@ Measured for the performance goal: the cached GFX image differed on all four
 observed UserPicture calls, including two on the same Shape with the same file.
 Office builds a new cached image per call and reuses nothing.
 
+First native call made, and it is the load half only. LoadCachedImageExperiment
+calls the exported GFX ICachedImage::Create by name and releases what it creates.
+It touches no Shape, slide, presentation or property record. PNG and JPEG bytes
+decode from memory with no file on disk and no UserPicture. Every observed field
+matched the static prediction: cached count 1, image count 2, vtables GFX
++0x409DC0 and +0x4055C8 - the same numbers resource_lifetime.md recorded by
+watching Office, now reproduced from our own call. Invalid bytes are rejected
+without a crash and ordinary UserPicture still works afterwards. Nothing is
+retained, so this is not yet a texture handle and there is no performance claim.
+
 Next experiment: establish the property record and image sub-record sizes and
-destructor requirements, then validate each private function's ABI dynamically
-before any of them is called. Internal cache-file elimination and donor-free
+destructor requirements, then validate the OART private functions' ABI before
+any of them is called. Capabilities stay false: the apply half does not exist. Internal cache-file elimination and donor-free
 fill binding remain unresolved; no private call is enabled, and no capability
 flipped.

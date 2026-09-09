@@ -1,0 +1,9 @@
+texture_64_1.png (11822 bytes): cached=0x1d3403af670;cachedCount=1;image=0x1d3401d66b0;imageCount=2;imageVtableMatches=1;fileFree=1;
+texture_64_1.png (11822 bytes): cached=0x1d3403af230;cachedCount=1;image=0x1d3401d66b0;imageCount=2;imageVtableMatches=1;fileFree=1;
+texture_64_1.png (11822 bytes): cached=0x1d3403af170;cachedCount=1;image=0x1d3401d66b0;imageCount=2;imageVtableMatches=1;fileFree=1;
+texture_256_1.png (203682 bytes): cached=0x1d3403aecf0;cachedCount=1;image=0x1d3401d62f0;imageCount=2;imageVtableMatches=1;fileFree=1;
+texture_64_0.jpg (2265 bytes): cached=0x1d3403aeff0;cachedCount=1;image=0x1d32b964710;imageCount=2;imageVtableMatches=1;fileFree=1;
+Distinct cached addresses observed: 5 of 5
+Decoded PNG and JPEG bytes from memory with no source file.
+Invalid bytes rejected without a crash.
+Ordinary UserPicture still works after the native calls.

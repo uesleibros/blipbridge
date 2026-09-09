@@ -25,3 +25,9 @@ HRESULT traceCachedApply(IDispatch* donor, IDispatch* target, const std::wstring
  * caller runs inside Engine::Invoke's handler, which converts it to EXCEPINFO.
  */
 std::wstring inspectFillReceiver(IDispatch* fill);
+/**
+ * Decodes bytes already in memory into an Office cached image through the
+ * exported GFX stream creator, then releases it. Touches no document state.
+ * Throws bb::Error naming the check that failed.
+ */
+std::wstring loadCachedImageExperiment(SAFEARRAY* bytes);

@@ -21,4 +21,10 @@ depend on (image sub-record +0x90/+0xF0, operation size 0x570, constructor
 +0x10244, intrusive count at object+8) are documented in fill_transaction.md and
 must be re-derived per build before any of them is used for anything but reading.
 
+The one Office function BlipBridge now calls is an export, not an offset:
+`GEL::ICachedImage::Create` from GFX.DLL, resolved with GetProcAddress from its
+mangled name. It is still guarded by the exact GFX version and by checking the
+returned objects' vtables before touching them, and an unrecognised vtable causes
+the pointer to be dropped rather than released. No private OART offset is called.
+
 Research build: GCC 16.2.0, MinGW-w64 UCRT, CMake 4.4.2. Microsoft SDK and Visual Studio are installed but not required for the main build. No MSVC ABI-dependent internal calls have been attempted.

@@ -23,6 +23,42 @@ transaction, commit - but that is an outline, not a plan. The record is roughly
 are mapped, and reaching the handler from a PowerPoint Shape is still unsolved.
 Recorded so the next session does not re-derive it. No code changed.
 
+## 2026-09-09 - first native call: file-free decode into a cached image
+
+Hypothesis: the stream-based GFX creator is an export whose ABI is fully
+determined by its mangled name plus its prologue, so calling it is a smaller and
+better-gated step than anything involving OART's private offsets.
+
+The gate was met specifically for this one function. It is exported by name, so
+no hard-coded RVA is involved; the mangling gives the parameter list; the
+prologue confirms RCX is the hidden sret pointer; Office's own call site at OART
++0x8F54E gives the argument values it uses; and the wrapper moves rather than
+AddRefs its result, which settles ownership. The experiment also touches no
+document object at all, so the worst case is a failed call rather than a damaged
+presentation.
+
+Result: it works, and every observable matched the prediction. Cached count 1,
+image count 2, vtables GFX +0x409DC0 and +0x4055C8 - the same values
+resource_lifetime.md recorded by watching Office build them, now produced by our
+own call. PNG and JPEG both decode from a CreateStreamOnHGlobal stream with no
+file on disk and no UserPicture. Invalid bytes are rejected without a crash and
+an ordinary picture fill still works afterwards.
+
+Care taken: both references are released before returning, so nothing is
+retained; a vtable that does not match causes the pointer to be dropped rather
+than released, so an unknown layout leaks instead of corrupting; and the module
+must already be loaded rather than being loaded by us.
+
+Not claimed: this is not a texture handle, because nothing is safe to retain
+across a document lifetime yet, and it is not a performance result, because no
+apply exists to measure. The identical PNG decoded three times reported the same
+image address, but each had been released first, so that is address reuse and not
+evidence of content caching.
+
+Validation: Release and Debug builds, CTest for both, COM smoke, fallback
+contract, receiver lookup and the memory experiment all pass. Capabilities
+unchanged.
+
 ## 2026-09-09 - receiver reachable from public COM; record recipe mapped
 
 Two results, one dynamic and one static.

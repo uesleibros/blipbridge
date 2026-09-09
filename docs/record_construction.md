@@ -136,9 +136,58 @@ the worker's result is *moved* into the return storage (`*rax` is read then
 zeroed) rather than AddRef'd, so the returned pointer carries one reference the
 caller must release through vtable slot +8.
 
-Because this is an export, a native loader would resolve it with
-`GetProcAddress`, not with a hard-coded RVA. Every other function in the table
-above is a private offset and would need its own validation and guard.
+Because this is an export, a native loader resolves it with `GetProcAddress`,
+not with a hard-coded RVA. Every other function in the table above is a private
+offset and would need its own validation and guard.
+
+Office's own call site, `OART +0x8F54E`, supplies these arguments:
+
+```text
+rcx        = &TCntPtr<ICachedImage>   (return storage)
+rdx        = &TCntPtr<IImage>         (in/out, empty on entry)
+r8         = IStream*
+r9d        = 0                        (IStreamCopyInstruction)
+[rsp+0x20] = const MD4UID*            (a 16-byte local)
+[rsp+0x28] = false                    (bool)
+```
+
+and hands the result straight to `OART +0x8F94C(record, &cached)`.
+
+## This half is implemented and validated
+
+`experiments/exp_internal_blip/cached_image_load.cpp` calls exactly that export
+and releases what it creates. It touches no Shape, slide, presentation or
+property record, so it cannot damage a document. `tools/test_cached_image_load.ps1`
+exercises it.
+
+Measured, and matching the static prediction in every field:
+
+```text
+texture_64_1.png  (11822 b): cachedCount=1 image=... imageCount=2 imageVtableMatches=1
+texture_64_1.png  (11822 b): cachedCount=1 image=... imageCount=2 imageVtableMatches=1
+texture_64_1.png  (11822 b): cachedCount=1 image=... imageCount=2 imageVtableMatches=1
+texture_256_1.png (203682 b): cachedCount=1 image=... imageCount=2 imageVtableMatches=1
+texture_64_0.jpg   (2265 b): cachedCount=1 image=... imageCount=2 imageVtableMatches=1
+```
+
+The cached image's vtable is `GFX +0x409DC0` and the image's is `GFX +0x4055C8`,
+as the debugger observed. The counts 1 and 2 are exactly the factory-return row
+in `resource_lifetime.md`, now reproduced from our own call rather than by
+watching Office make it. Invalid bytes are rejected without a crash, and an
+ordinary `Fill.UserPicture` still works afterwards.
+
+PNG and JPEG bytes both decode with **no file on disk and no `UserPicture`**.
+This is the "load once" half of the target architecture working.
+
+Two things it is not. It is not a texture handle: both references are released
+before the call returns, because nothing is yet safe to retain across a document
+lifetime. And it is not a performance result: no apply exists to measure.
+
+The identical PNG decoded three times reported the same *image* address each
+time, but each had been released before the next call, so that is address reuse
+after free and is not evidence that GFX caches by content.
+
+## Remaining work for the apply half
 
 ## Measured: Office does not reuse cached images
 
@@ -152,9 +201,8 @@ skip work that Office currently repeats per call. It is not yet a performance
 claim - nothing has been measured against a native apply, because no native
 apply exists.
 
-## What is still missing before any private call
-
-Per the project's own gating rules, all of these remain open:
+Per the project's own gating rules, all of these remain open before any of the
+private OART functions above is called:
 
 * The exact size of the property record and of the image sub-record.
 * What `+0x14110` and `+0x14580` leave behind, and what their destructors require.
@@ -162,9 +210,10 @@ Per the project's own gating rules, all of these remain open:
   the disassembly.
 * Whether a record built outside the handler survives undo, save and reopen.
 
-No private Office function is called anywhere in the current code. The only
-Office-internal reads that ship are the guarded, read-only lookups in
-`experiments/exp_internal_blip/receiver_inspect.cpp`.
+No private Office *offset* is called anywhere in the current code. What ships is
+one exported GFX function, resolved by name and validated above, plus the
+guarded read-only lookups in `experiments/exp_internal_blip/receiver_inspect.cpp`.
+Every OART function in the table above remains uncalled.
 
 Evidence: `docs/evidence/receiver_identity.txt`,
 `docs/evidence/gfx_stream_exports.txt`, `docs/fill_transaction.md`.

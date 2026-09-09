@@ -32,7 +32,8 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"MemoryFillExperiment", DispatchId::MemoryFillExperiment},
     {L"RunStress", DispatchId::RunStress},
     {L"TraceCachedApply", DispatchId::TraceCachedApply},
-    {L"InspectFillReceiver", DispatchId::InspectFillReceiver}
+    {L"InspectFillReceiver", DispatchId::InspectFillReceiver},
+    {L"LoadCachedImageExperiment", DispatchId::LoadCachedImageExperiment}
 };
 
 /**
