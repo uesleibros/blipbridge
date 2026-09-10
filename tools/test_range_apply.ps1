@@ -23,6 +23,9 @@ So this asserts, in order:
               one that was applied
   skipping    the per-Shape record is updated for every member, so a later
               ApplyTextureIfChanged on any of them skips
+  classes     one range mixing AutoShape, TextBox, WordArt, Freeform and Callout
+  groups      a group in the range is filled, and never skipped afterwards
+  slides      a ShapeRange cannot span slides, so this path is per slide
 
 Everything runs in PowerPoint through the research surface, which drives the
 same private path the C ABI does.
@@ -177,6 +180,64 @@ try {
     $app.CommandBars.ExecuteMso('Undo')
     Assert ($control.Fill.Type -ne 6) 'and one Undo reverts it, so the undo stack is working'
     $control.Delete()
+
+    # --- mixed classes --------------------------------------------------------
+    # Every class with a validated native path, in one range. WordArt and the
+    # Freeform are the ones worth having here: WordArt reports msoAutoShape, the
+    # same type a Connector reports, and a Freeform reports a ShapeRange as its
+    # parent - both have caught something before.
+    $mixedNames = @()
+    $auto = $slide.Shapes.AddShape(1, 20, 440, 50, 50); $auto.Name = 'MixAuto'
+    $mixedNames += $auto.Name
+    $box = $slide.Shapes.AddTextbox(1, 90, 440, 60, 40); $box.Name = 'MixBox'
+    $mixedNames += $box.Name
+    $art = $slide.Shapes.AddTextEffect(0, 'Bb', 'Arial', 20, $msoFalse, $msoFalse, 170, 440)
+    $art.Name = 'MixArt'; $mixedNames += $art.Name
+    $builder = $slide.Shapes.BuildFreeform(1, 260, 440)
+    $null = $builder.AddNodes(0, 0, 320, 440)
+    $null = $builder.AddNodes(0, 0, 320, 490)
+    $null = $builder.AddNodes(0, 0, 260, 440)
+    $curve = $builder.ConvertToShape(); $curve.Name = 'MixFree'
+    $mixedNames += $curve.Name
+    $callout = $slide.Shapes.AddShape(106, 340, 440, 50, 50); $callout.Name = 'MixCallout'
+    $mixedNames += $callout.Name
+
+    $null = $engine.ApplyTextureToRange($slide.Shapes.Range($mixedNames), $handleA, 1)
+    Assert ((Count-Filled $slide $mixedNames) -eq $mixedNames.Count) `
+        "a range mixing AutoShape, TextBox, WordArt, Freeform and Callout fills all $($mixedNames.Count)"
+
+    # Alternating images through the range, which is what a caller animating a
+    # whole slide would do.
+    $null = $engine.ApplyTextureToRange($slide.Shapes.Range($mixedNames), $handleB, 1)
+    Assert ((Count-Filled $slide $mixedNames) -eq $mixedNames.Count) 'and again with a second image'
+    Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('MixArt'), $handleB)) 'skipped') -eq '1') `
+        'the second image is what the record names'
+
+    # --- a group in the range -------------------------------------------------
+    # msoGroup has a validated native path, so a group is filled rather than
+    # refused - and filling one changes what its children render, which is why
+    # neither a group nor anything inside one is ever keyed for skipping.
+    $g1 = $slide.Shapes.AddShape(1, 420, 440, 40, 40); $g1.Name = 'G1'
+    $g2 = $slide.Shapes.AddShape(1, 470, 440, 40, 40); $g2.Name = 'G2'
+    $group = $slide.Shapes.Range(@('G1', 'G2')).Group()
+    $group.Name = 'MixGroup'
+    $withGroup = $engine.ApplyTextureToRange($slide.Shapes.Range(@('MixAuto', 'MixGroup')), $handleA, 1)
+    Assert ($null -ne $withGroup) 'a range containing a group is accepted, not refused'
+    Assert ($slide.Shapes.Item('MixGroup').Fill.Type -eq 6) 'and the group gets the picture fill'
+    Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('MixGroup'), $handleA)) 'skipped') -eq '0') `
+        'a group is never skipped, because its fill and its children are entangled'
+    $slide.Shapes.Item('MixGroup').Delete()
+
+    # --- a range cannot span slides -------------------------------------------
+    # Shapes.Range is a member of one Slide's Shapes collection, so there is no
+    # cross-slide ShapeRange to hand this path. A caller filling several slides
+    # makes one call per slide, and the per-call fixed cost is paid per slide.
+    $second = $presentation.Slides.Add($presentation.Slides.Count + 1, $ppLayoutBlank)
+    $far = $second.Shapes.AddShape(1, 20, 20, 50, 50); $far.Name = 'FarShape'
+    $crossFailed = $false
+    try { $null = $slide.Shapes.Range(@('MixAuto', 'FarShape')) } catch { $crossFailed = $true }
+    Assert $crossFailed 'a ShapeRange cannot be built across two slides, so this path is per slide'
+    $second.Delete()
 
     # --- persistence ----------------------------------------------------------
     $presentation.SaveAs($saved, $ppSaveAsDefault)

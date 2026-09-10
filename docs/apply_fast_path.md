@@ -234,6 +234,22 @@ proves the refusal happens *before* the private apply using the apply-entry
 counter, for a Connector, a Line and a Table, and proves the other members are
 left as they were rather than half-filled.
 
+### What a range may hold
+
+One range mixing AutoShape, TextBox, WordArt, Freeform and Callout fills all
+five. The two worth naming are WordArt, which reports `msoAutoShape` - the same
+type a Connector reports - and the Freeform, which reports a ShapeRange as its
+parent; both have caught something before.
+
+A group in the range is **filled, not refused**: `msoGroup` has a validated
+native path. It is never skipped afterwards, because filling a group changes what
+its children render and filling a child changes what the group shows, so neither
+is ever keyed.
+
+A ShapeRange belongs to one slide's `Shapes` collection, so there is no
+cross-slide range to hand this path. Filling several slides means one call per
+slide, and the ~0.12 ms fixed cost is paid once per slide.
+
 ### Undo takes one step per member
 
 Counted rather than guessed at: a marker Shape goes on the undo stack first, then
@@ -306,6 +322,16 @@ Two ways forward, in order of appeal:
    one entry, so the scope exists and is opened above the receiver. If it can be
    opened around a native range apply, the path becomes equivalent to Office's
    own and can ship as `BB_ApplyTextureToRange`.
+
+   A first pass through the receiver's commit did not find it, and is recorded
+   here so the next attempt does not repeat it. The commit (`oart.dll+0x1B88B0`)
+   gates its journalling on the receiver's own `vtable[+0x48]`
+   (`oart.dll+0x1B87D0`), which begins with a *global* test - `cmpq $0,
+   [oart+0xD4AEA8]` - rather than anything per receiver, and the branch taken
+   when it fails leads to an assertion helper, not to an alternative recording.
+   So the coalescing is not a flag on this path; it is a scope opened above it,
+   and finding it means following PPCORE rather than OART. That is a research
+   thread of its own size, not a loose end.
 2. Ship it as an explicitly separate API whose documented weaker semantics are
    the undo granularity, per the rule that such a difference may not be silent.
    A caller filling a whole slide every frame may not care; one editing a deck
