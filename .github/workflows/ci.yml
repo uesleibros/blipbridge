@@ -18,11 +18,12 @@ jobs:
     strategy:
       fail-fast: false
 
+      # Every combination is spelled out in `include`, with no base matrix keys.
+      # That is deliberate: an `include` entry setting a key the base matrix
+      # already defines *overwrites* matching combinations instead of adding new
+      # ones. With a base `configuration` list these four entries collapsed into
+      # two jobs, and x64 silently stopped being built at all.
       matrix:
-        configuration:
-          - Release
-          - Debug
-
         include:
           - arch: x64
             msystem: UCRT64
