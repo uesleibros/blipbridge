@@ -80,6 +80,18 @@ std::wstring applyPictureThroughAbi(IDispatch* shape, const std::wstring& path) 
     return L"applied=1;";
 }
 
+std::wstring applyTextureIfChangedThroughAbi(IDispatch* shape, long handle) {
+    RequireInitialised();
+    std::int32_t skipped = 0;
+    RequireOk(BB_ApplyTextureIfChanged(shape, static_cast<BB_Handle>(handle), &skipped),
+              "BB_ApplyTextureIfChanged");
+    // Whether Office was touched is the whole answer here, so it is what the
+    // harness gets to assert on.
+    std::wostringstream out;
+    out << L"skipped=" << skipped << L';';
+    return out.str();
+}
+
 std::wstring invalidateShapeThroughAbi(IDispatch* shape) {
     RequireInitialised();
     RequireOk(BB_InvalidateShape(shape), "BB_InvalidateShape");

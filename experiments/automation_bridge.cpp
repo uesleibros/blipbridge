@@ -93,6 +93,9 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(benchmarkTextureBatch(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
                          .c_str());
+    case DispatchId::ApplyTextureIfChanged:
+        return Value(
+            applyTextureIfChangedThroughAbi(target.obj(), arguments.At(1).integer()).c_str());
     case DispatchId::ProfileResolveStages:
         return Value(profileResolveStages(target.obj(), arguments.At(1).integer()).c_str());
     case DispatchId::MeasureApplyCostFactors:

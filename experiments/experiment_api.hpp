@@ -132,6 +132,7 @@ std::wstring applyTextureUnrestricted(IDispatch* shape, long handle);
  * re-implementation. See picture_cache_driver.cpp.
  */
 std::wstring applyPictureThroughAbi(IDispatch* shape, const std::wstring& path);
+std::wstring applyTextureIfChangedThroughAbi(IDispatch* shape, long handle);
 std::wstring invalidateShapeThroughAbi(IDispatch* shape);
 std::wstring clearPictureCacheThroughAbi();
 std::wstring pictureCacheStatsThroughAbi();

@@ -36,6 +36,7 @@ enum class DispatchId : DISPID {
     BenchmarkApplySkip,
     MeasureApplyCostFactors,
     ProfileResolveStages,
+    ApplyTextureIfChanged,
     PixelTextureExperiment,
     BenchmarkPixelLoad,
     ProfileFillStages,

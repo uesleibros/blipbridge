@@ -17,6 +17,23 @@
 #include <string>
 
 namespace bb::office {
+namespace {
+
+/// A slide's own id, or 0 if this object is not a slide or will not say.
+long TryReadSlideId(IDispatch* candidate) noexcept {
+    if (!candidate) {
+        return 0;
+    }
+    try {
+        const bb::Value id = bb::get(candidate, L"SlideID");
+        return id.v.vt == VT_EMPTY || id.v.vt == VT_NULL ? 0 : id.integer();
+    } catch (...) {
+        // A ShapeRange has no SlideID. That is an answer, not a failure.
+        return 0;
+    }
+}
+
+} // namespace
 
 ShapeKey DescribeShape(IDispatch* shape, long shapeType) noexcept {
     ShapeKey key;
@@ -45,10 +62,39 @@ ShapeKey DescribeShape(IDispatch* shape, long shapeType) noexcept {
         if (parent.v.vt != VT_DISPATCH || !parent.obj()) {
             return key;
         }
-        // Shape.Parent is the Slide. Anything that does not report a SlideID
-        // goes uncached rather than being given a key that means something else.
-        key.slide = bb::get(parent.obj(), L"SlideID").integer();
-        bb::Value presentation = bb::get(parent.obj(), L"Parent");
+
+        /*
+         * Shape.Parent is usually the Slide - but not always.
+         *
+         * A Shape returned by FreeformBuilder.ConvertToShape reports a
+         * *ShapeRange* as its parent, and keeps reporting one when it is fetched
+         * back out of the Shapes collection by name. Measured on this build: the
+         * object answers Count = 1 and no SlideID, and its own Parent is the
+         * Slide. So one level up is tried before giving up, and Freeforms - a
+         * class with a validated native path - stop being permanently uncacheable
+         * for a reason that has nothing to do with them.
+         *
+         * A slide that will not name itself is left uncached rather than given
+         * a key that means something else. SlideIDs start at 256, so zero is
+         * always failure and never an answer: two Shapes keyed to slide 0 in
+         * different slides could share an Id, and that is a wrong picture.
+         */
+        bb::Value slide = parent;
+        long slideId = TryReadSlideId(slide.obj());
+        if (slideId == 0) {
+            bb::Value above = bb::get(slide.obj(), L"Parent");
+            if (above.v.vt != VT_DISPATCH || !above.obj()) {
+                return key;
+            }
+            slideId = TryReadSlideId(above.obj());
+            slide = above;
+        }
+        if (slideId == 0) {
+            return key;
+        }
+        key.slide = slideId;
+
+        bb::Value presentation = bb::get(slide.obj(), L"Parent");
         if (presentation.v.vt != VT_DISPATCH || !presentation.obj()) {
             return key;
         }
