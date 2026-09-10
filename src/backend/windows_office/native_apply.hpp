@@ -79,15 +79,62 @@ ApplyFunctions ResolveApplyFunctions(std::uintptr_t oartBase);
 using StageSampler = std::function<void(const wchar_t*)>;
 
 /**
+ * Which of the receiver's entry points the finished transaction goes through.
+ *
+ * The two are not alternatives in the sense of being interchangeable choices:
+ * `Combined` is what Office itself calls, and `Split` is that same call taken
+ * apart into the two steps it makes internally. Reading the handler on build
+ * 16.0.14334.20848, receiver slot +0x78 is a thunk to slot +0x50, and slot +0x50
+ * does exactly this:
+ *
+ *     stamp the transaction's +0x14 word
+ *     if a feature flag is off:
+ *         slot +0x60 (receiver, transaction, &produced)   <- computes the change
+ *         slot +0x58 (receiver, produced)                 <- commits it
+ *         produced->vtable[+0xA8](produced, 1)            <- releases it
+ *
+ * `Split` exists to find out which of those two steps the cost is in. Measured
+ * over 2000 rounds: computing costs 5 microseconds and committing costs 144 -
+ * and a change that is computed and never committed does nothing at all, which
+ * is how the naming above was settled. It is research only: it reproduces a code
+ * path rather than calling it, so it can diverge from what Office does if that
+ * feature flag is on, and the way to know is to compare the document and the
+ * timings against `Combined`.
+ */
+enum class ApplyRoute {
+    /// The receiver's own entry point. What production always uses.
+    Combined,
+    /// The same work, driven step by step. Research only; never shipped behind
+    /// an API a caller can reach.
+    Split,
+    /**
+     * Computes the change and drops it without committing it.
+     *
+     * Kept because the answer is worth keeping: it costs 0.013 ms against 0.166,
+     * and it **does nothing**. A clean Shape put through it stays at Fill.Type 1
+     * and renders byte-identically, measured in tools/test_change_only.ps1. So
+     * the 144 microseconds are not bookkeeping wrapped around a cheap edit that
+     * could be skipped - they are the edit.
+     *
+     * Research only, and kept so that negative result stays reproducible.
+     */
+    ChangeOnly,
+};
+
+/**
  * Builds the property record, commits it through @p target's receiver, and
  * destroys every temporary in the reverse order the real handler uses.
  *
  * @p cachedImage is borrowed; the caller keeps its own reference.
+ *
+ * With `ApplyRoute::Split` the sampler additionally sees `change` and `record`
+ * between `transaction` and `apply`, so the two halves can be timed apart.
  */
 void ApplyCachedImage(const ApplyFunctions& functions,
                       const FillTarget& target,
                       void* cachedImage,
-                      const StageSampler& sample = {});
+                      const StageSampler& sample = {},
+                      ApplyRoute route = ApplyRoute::Combined);
 
 /**
  * How many times ApplyCachedImage has been entered this process.

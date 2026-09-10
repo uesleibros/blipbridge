@@ -26,6 +26,9 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::BenchmarkNativeTexture:
     case DispatchId::BenchmarkTextureBatch:
     case DispatchId::BenchmarkApplySkip:
+    case DispatchId::SplitTransactionApply:
+    case DispatchId::ApplyCachedImageToFill:
+    case DispatchId::ApplyTextureToRange:
     case DispatchId::ProfileFillStages:
     case DispatchId::ProfileApplyStages:
         return 3;
@@ -91,6 +94,20 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
                 .c_str());
     case DispatchId::BenchmarkTextureBatch:
         return Value(benchmarkTextureBatch(
+                         target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
+                         .c_str());
+    case DispatchId::ApplyTextureToRange:
+        return Value(applyTextureToRange(
+                         target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
+                         .c_str());
+    case DispatchId::ApplyCachedImageToFill:
+        return Value(applyCachedImageToFill(
+                         target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
+                         .c_str());
+    case DispatchId::ApplyChangeOnly:
+        return Value(applyChangeOnly(target.obj(), arguments.At(1).integer()).c_str());
+    case DispatchId::SplitTransactionApply:
+        return Value(splitTransactionApply(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
                          .c_str());
     case DispatchId::ApplyTextureIfChanged:

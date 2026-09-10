@@ -152,6 +152,22 @@ constexpr std::uint32_t kPictureFillIdentifier = 0xA042008E;
 /// Receiver vtable slot the handler calls with the finished transaction.
 constexpr std::size_t kApplyTransactionSlot = 0x78;
 
+/*
+ * The steps behind that slot, for the research route only. Verified by reading
+ * OART 16.0.14334.20848: slot +0x78 (RVA 0x21DEC0) is a three-instruction thunk
+ * to slot +0x50 (RVA 0x21BB20), and that function stamps the transaction, tests
+ * a feature flag, and on the off branch calls slot +0x60 (RVA 0x2290F0) to
+ * compute the change, slot +0x58 (RVA 0x1B88B0) to commit it, and the produced
+ * object's own vtable +0xA8 to release it. Which of the two does the work was
+ * settled by measuring, not by reading: see ApplyRoute.
+ */
+constexpr std::size_t kComputeChangeSlot = 0x60;
+constexpr std::size_t kCommitChangeSlot = 0x58;
+constexpr std::size_t kProducedReleaseSlot = 0xA8;
+/// The word slot +0x50 writes into the transaction before performing anything.
+constexpr std::size_t kTransactionStateOffset = 0x14;
+constexpr std::uint16_t kTransactionStateApplied = 0x100;
+
 // The shared function-pointer types live in native_apply.hpp so the texture
 // store uses exactly the same declarations.
 using bb::oart::ApplyFunctions;
@@ -167,6 +183,20 @@ using bb::oart::TransferImageSlot;
 
 /// The receiver method the handler calls with the finished transaction.
 using ApplyTransaction = void*(__stdcall*)(void* receiver, void* transaction);
+/// Computes the change and hands back an object describing it. Changes nothing.
+using ComputeChange = bool(__stdcall*)(void* receiver, void* transaction, void** produced);
+/// Commits a computed change into the document. This is where the cost is.
+using CommitChange = void(__stdcall*)(void* receiver, void* produced);
+/// The produced object's own release, which takes a count.
+using ReleaseProduced = void(__stdcall*)(void* produced, int count);
+
+/// One slot out of an object's vtable, as a function of the given type.
+template <typename Function>
+Function VtableSlot(const void* object, std::size_t slot) {
+    const auto vtable = reinterpret_cast<void* const*>(bb::oart::LoadPointer(object, 0));
+    return reinterpret_cast<Function>(
+        *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(vtable) + slot));
+}
 
 /**
  * The `{payload, descriptor}` pair `OART +0x158C40` fills in and `OART +0xB210`
@@ -428,7 +458,8 @@ unsigned long NativeApplyEntryCount() noexcept {
 void ApplyCachedImage(const ApplyFunctions& functions,
                       const FillTarget& target,
                       void* cachedImage,
-                      const StageSampler& sample) {
+                      const StageSampler& sample,
+                      ApplyRoute route) {
     // Counted at the top: entering at all is what the test is asking about.
     ++g_applyEntries;
     CountedPointer cachedStorage;
@@ -512,13 +543,49 @@ void ApplyCachedImage(const ApplyFunctions& functions,
         sample(L"transaction");
     }
 
-    // The apply itself: the same receiver vtable slot the handler calls.
-    auto vtable = reinterpret_cast<void* const*>(bb::oart::LoadPointer(target.receiver, 0));
-    auto applyTransaction = reinterpret_cast<ApplyTransaction>(*reinterpret_cast<void* const*>(
-        reinterpret_cast<const std::uint8_t*>(vtable) + kApplyTransactionSlot));
-    applyTransaction(target.receiver, transaction);
-    if (sample) {
-        sample(L"apply");
+    if (route == ApplyRoute::Combined) {
+        // The apply itself: the same receiver vtable slot the handler calls.
+        auto applyTransaction =
+            VtableSlot<ApplyTransaction>(target.receiver, kApplyTransactionSlot);
+        applyTransaction(target.receiver, transaction);
+        if (sample) {
+            sample(L"apply");
+        }
+    } else {
+        /*
+         * The same thing, driven step by step, so the two halves can be timed
+         * apart. Research only - see ApplyRoute.
+         *
+         * The stamp comes first because slot +0x50 writes it before doing
+         * anything else, and the produced object is released whatever happens:
+         * leaking it would leak a document-sized allocation per apply and make
+         * any measurement taken afterwards meaningless.
+         */
+        const std::uint16_t state = kTransactionStateApplied;
+        std::memcpy(transactionBuffer + kTransactionStateOffset, &state, sizeof(state));
+
+        void* produced = nullptr;
+        auto computeChange = VtableSlot<ComputeChange>(target.receiver, kComputeChangeSlot);
+        const bool computed = computeChange(target.receiver, transaction, &produced);
+        if (sample) {
+            sample(L"change");
+        }
+        if (!computed || !produced) {
+            throw bb::Error(E_FAIL, "The receiver refused to compute the change");
+        }
+
+        if (route == ApplyRoute::Split) {
+            auto commitChange = VtableSlot<CommitChange>(target.receiver, kCommitChangeSlot);
+            commitChange(target.receiver, produced);
+        }
+        if (sample) {
+            sample(L"record");
+        }
+
+        VtableSlot<ReleaseProduced>(produced, kProducedReleaseSlot)(produced, 1);
+        if (sample) {
+            sample(L"apply");
+        }
     }
 
     // Destroy in the handler's own reverse order, sampling after each step so an

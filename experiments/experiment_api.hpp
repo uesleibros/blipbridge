@@ -87,6 +87,34 @@ std::wstring measureApplyCostFactors(IDispatch* presentation, long iterations);
 std::wstring profileResolveStages(IDispatch* fill, long iterations);
 
 /**
+ * Research: the private apply run both through the receiver's own entry point
+ * and through the two steps it takes internally, to find out which half costs
+ * the 0.15 ms - which is what decides whether a multi-Shape batch could exist
+ * at all. See transaction_split.cpp.
+ */
+std::wstring splitTransactionApply(IDispatch* shape, long handle, long iterations);
+
+/**
+ * Research: one apply that performs the change and does not record it, so a
+ * harness can find out what the recording was buying. See transaction_split.cpp.
+ */
+std::wstring applyChangeOnly(IDispatch* shape, long handle);
+
+/**
+ * Research: applies a cached image straight to a FillFormat, so a ShapeRange's
+ * fill can be asked whether one private apply fills every Shape in it. Skips the
+ * semantic gate by construction; see transaction_split.cpp.
+ */
+std::wstring applyCachedImageToFill(IDispatch* fill, long handle, long iterations);
+
+/**
+ * Research: fills every Shape in a ShapeRange with one private apply, after
+ * classifying every member. The multi-Shape batch that does exist; see
+ * range_apply.cpp for why the transaction-level one cannot.
+ */
+std::wstring applyTextureToRange(IDispatch* range, long handle, long iterations);
+
+/**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.
