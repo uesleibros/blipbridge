@@ -1,4 +1,6 @@
 #pragma once
+#include <windows.h>
+#include <winnls.h>
 #include <atomic>
 #include <blipbridge/dispatch.hpp>
 #include <map>
