@@ -20,6 +20,8 @@
 #include "windows_office/native_texture.hpp"
 #include "windows_office/picture_cache.hpp"
 #include "windows_office/shape_policy.hpp"
+
+#include "../image/resample.hpp"
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
 #include <cstring>
@@ -209,6 +211,7 @@ class WindowsOfficeBackend final : public Backend {
         capabilities.cachedTexture = available;
         capabilities.batchApply = available;
         capabilities.rawPixels = available;
+        capabilities.scaledPixels = available;
         return capabilities;
     }
 
@@ -285,6 +288,43 @@ class WindowsOfficeBackend final : public Backend {
 
     void ClearTextures() noexcept override {
         nativeTextureClear();
+    }
+
+    BackendResult LoadTexturePixelsScaled(const std::uint8_t* pixels,
+                                          std::uint32_t width,
+                                          std::uint32_t height,
+                                          std::int32_t stride,
+                                          std::uint32_t targetWidth,
+                                          std::uint32_t targetHeight,
+                                          std::uint32_t filter,
+                                          std::uint64_t* out) noexcept override {
+        if (out) {
+            *out = 0;
+        }
+        if (!out) {
+            return BackendResult::Failure(BackendStatus::InvalidArgument,
+                                          "An output handle is required");
+        }
+        // Every argument is checked by the resampler, which reports precisely
+        // which one was wrong; repeating those checks here would only let the
+        // two disagree.
+        std::vector<std::uint8_t> scaled;
+        const image::ResampleStatus status =
+            image::Resample(pixels, width, height, stride, targetWidth, targetHeight,
+                            static_cast<image::ScaleFilter>(filter), scaled);
+        if (status != image::ResampleStatus::Ok) {
+            const BackendStatus code = status == image::ResampleStatus::OutOfMemory
+                                           ? BackendStatus::OutOfMemory
+                                           : BackendStatus::InvalidArgument;
+            return BackendResult::Failure(code, image::DescribeStatus(status));
+        }
+        return Guarded([&] {
+            // The resampled buffer is tightly packed, so its stride is exactly
+            // one row of BGRA.
+            *out = static_cast<std::uint64_t>(
+                nativeTextureLoadPixels(scaled.data(), targetWidth, targetHeight,
+                                        static_cast<long>(targetWidth) * 4));
+        });
     }
 
     BackendResult ApplyPicture(void* shape, const std::uint16_t* path) noexcept override {

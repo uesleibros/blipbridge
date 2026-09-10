@@ -39,13 +39,11 @@ $root = Split-Path $PSScriptRoot -Parent
 if (-not $BuildDir) { $BuildDir = Join-Path $root "build/$Configuration" }
 
 $dllName = "BlipBridge-$Architecture.dll"
+# The build emits the architecture-suffixed name directly, so the package and a
+# local build refer to the same file.
 $dll = Join-Path $BuildDir $dllName
-# Older CMake revisions emit the unsuffixed DLL. Normalize only the package name.
 if (-not (Test-Path $dll)) {
-    $dll = Join-Path $BuildDir 'BlipBridge.dll'
-}
-if (-not (Test-Path $dll)) {
-    throw "$dllName or BlipBridge.dll not found in $BuildDir - build $Configuration for $Architecture first"
+    throw "$dllName not found in $BuildDir - build $Configuration for $Architecture first"
 }
 
 # The version the header declares is the single source of truth for the release

@@ -67,6 +67,7 @@ struct BackendResult {
 /// Capability bits, mirroring the BB_CAP_* values in the public header.
 struct BackendCapabilities {
     bool applyPicture = false; ///< BB_ApplyPicture and its caches are usable
+    bool scaledPixels = false; ///< LoadTexturePixelsScaled is implemented
     bool nativeBackend = false;
     bool memoryImage = false;
     bool cachedTexture = false;
@@ -119,6 +120,21 @@ class Backend {
      * @p path is UTF-16 because that is what the host's file APIs take.
      */
     virtual BackendResult ApplyPicture(void* shape, const std::uint16_t* path) noexcept = 0;
+    /**
+     * Resamples BGRA32 pixels to a chosen size, then loads them as a texture.
+     *
+     * @p filter is a BB_SCALE_* value. Separate from LoadTexturePixels so that
+     * neither entry point has ambiguous behaviour.
+     */
+    virtual BackendResult LoadTexturePixelsScaled(const std::uint8_t* pixels,
+                                                  std::uint32_t width,
+                                                  std::uint32_t height,
+                                                  std::int32_t stride,
+                                                  std::uint32_t targetWidth,
+                                                  std::uint32_t targetHeight,
+                                                  std::uint32_t filter,
+                                                  std::uint64_t* out) noexcept = 0;
+
     /// Forgets what was last applied to one Shape.
     virtual BackendResult InvalidateShape(void* shape) noexcept = 0;
     /// Releases every path-keyed texture and forgets every Shape.

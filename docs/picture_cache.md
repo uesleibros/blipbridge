@@ -49,6 +49,55 @@ unsupported" into "everything is mysteriously slow", and would hide precisely th
 problems worth knowing about. `BB_GetLastError` carries the sentence-long reason
 in every case.
 
+## Who owns what
+
+This was a real defect, and the model exists because of it.
+
+A public texture handle is an **external token that references an image**, not
+the image itself. Two owners can hold the same image, independently:
+
+```text
+public handle   ->  image
+picture cache   ->  image
+```
+
+| Call | Drops |
+|---|---:|
+| `BB_ReleaseTexture` | that one handle's reference |
+| `BB_ClearTextures` | every handle's reference |
+| `BB_ClearPictureCache` | the cache's own images and Shape skip state |
+| `BB_Shutdown` | both, because it is the only call that should |
+
+An image survives until the last owner lets go, so `ClearTextures()` cannot break
+`UserPicture2`, and `ClearPictureCache()` cannot break a handle the caller still
+holds.
+
+**Released handles stay released.** Handles increment forever and are never
+recycled, so a released one is permanently stale and can never silently resolve
+to a different image - even when the image behind it is still alive in the
+picture cache.
+
+### What went wrong before
+
+The texture store owned each image outright and handed callers a `long` handle
+into its map. The picture cache took one of those handles like any other caller,
+so this happened:
+
+```text
+UserPicture2 shp, path     ' cache takes handle 16777216
+ClearTextures              ' the map is cleared - the image is destroyed
+UserPicture2 shp, path     ' -> "Texture handle 16777216 is not valid
+                           '     (it was released; handles are never recycled)"
+```
+
+Handle 16777216 is the first ever issued, which is exactly what the cache took on
+its first call.
+
+The fix was the ownership model, not a retry: nothing catches
+`BB_E_INVALID_HANDLE` and tries again, and no handle is ever reused.
+`tools/test_cache_ownership.ps1` holds all of it in place, including the reverse
+direction and the Shutdown-then-Init cycle.
+
 ## Two caches
 
 ### Path to texture

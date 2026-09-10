@@ -25,10 +25,26 @@ decoded once, and no work at all when that Shape already carries that image. For
 full control the texture handles are still there:
 
 ```vb
-tex = BlipBridge.LoadTexture(bytes)      ' decode once
-BlipBridge.ApplyTexture shp, tex         ' ~0.19 ms, no file, no donor Shape
-BlipBridge.ReleaseTexture tex
+Dim texture As BlipBridgeTexture
+Dim shp As PowerPoint.Shape
+
+texture = BlipBridge.LoadTexture(bytes)   ' decode once
+BlipBridge.ApplyTexture shp, texture      ' ~0.19 ms, no file, no donor Shape
+BlipBridge.ReleaseTexture texture
 ```
+
+The public API is strongly typed on both architectures: `PowerPoint.Shape` for
+Shapes and `BlipBridgeTexture` for handles, with no `Object`, no `Variant` and no
+`LongLong` in any public signature. Raw BGRA pixels can also be resampled on the
+way in, with an explicit filter:
+
+```vb
+texture = BlipBridge.LoadTexturePixelsScaled( _
+    pixels, srcW, srcH, srcStride, dstW, dstH, BBScaleBicubic)
+```
+
+That chooses how BlipBridge resamples the image **before** Office receives it. It
+does not change how Office draws it - see [docs/resampling.md](docs/resampling.md).
 
 No `regsvr32`. No ProgID. No `CreateObject`. No add-in installer. Put the DLL
 next to your presentation and import one `.bas` module.
@@ -266,7 +282,8 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [safety_model.md](docs/safety_model.md) | structural against semantic validation, and why both are needed |
 | [shape_compatibility.md](docs/shape_compatibility.md) | which Shape classes work, and the connector that crashes |
 | [capabilities.md](docs/capabilities.md) | what each capability flag claims and why |
-| [picture_cache.md](docs/picture_cache.md) | UserPicture2, the dispatch decision and both caches |
+| [picture_cache.md](docs/picture_cache.md) | UserPicture2, the ownership model and both caches |
+| [resampling.md](docs/resampling.md) | the scaling filters, their semantics and their cost |
 | [c_abi.md](docs/c_abi.md) | the public interface, handle and lifecycle contracts |
 | [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |
 | [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |

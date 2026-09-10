@@ -4,10 +4,14 @@ Attribute VB_Name = "BlipBridge"
 ' * @description Registration-free VBA wrapper for the BlipBridge C ABI. The module
 ' * automatically selects BlipBridge-x64.dll on 64-bit PowerPoint and
 ' * BlipBridge-x86.dll on 32-bit PowerPoint, while exposing one architecture-neutral
-' * VBA API for cached textures, raw BGRA images, semantic Shape-safe picture fills,
-' * batching, cache invalidation, capability discovery, and lifecycle management.
+' * VBA API for cached textures, raw BGRA images, software resampling filters,
+' * semantic Shape-safe picture fills, batching, cache invalidation, capability
+' * discovery, and lifecycle management.
+' *
+' * Shapes are PowerPoint.Shape and texture handles are BlipBridgeTexture on both
+' * architectures - no Object, no Variant, and no LongLong in any public signature.
 ' * @author UesleiDev
-' * @version ABI 2
+' * @version ABI 3
 ' * @remarks The architecture is selected from the PowerPoint process, not Windows.
 ' * Both native DLLs may safely live beside the same presentation.
 ' */
@@ -78,8 +82,11 @@ Public Const BB_CAP_RAW_PIXELS As Long = &H20
 '/** @description Capability flag indicating the high-level UserPicture2 path. */
 Public Const BB_CAP_APPLY_PICTURE As Long = &H40
 
+'/** @description LoadTexturePixelsScaled and its filters are available. */
+Public Const BB_CAP_SCALED_PIXELS As Long = &H80
+
 '/** @description Public ABI version required by this VBA wrapper. */
-Private Const BB_EXPECTED_ABI As Long = 2
+Private Const BB_EXPECTED_ABI As Long = 3
 
 '/** @description Base VBA error number used when translating native failures. */
 Private Const BB_ERROR_BASE As Long = vbObjectError + 500
@@ -105,17 +112,49 @@ Private Const BB_NATIVE_STRING_VERSION As Long = 2
 
     '/** @description Opposite-architecture library name used only for diagnostics. */
     Private Const BB_OTHER_DLL_NAME As String = "BlipBridge-x64.dll"
-
-    '/**
-    ' * @type BBHandle
-    ' * @brief Binary representation of one opaque 64-bit texture handle in 32-bit VBA.
-    ' * @remarks Low and High map directly to the little-endian uint64_t ABI layout.
-    ' */
-    Private Type BBHandle
-        Low As Long
-        High As Long
-    End Type
 #End If
+
+'/**
+' * @type BlipBridgeTexture
+' * @brief An opaque texture handle, identical on 32-bit and 64-bit PowerPoint.
+' * @description
+' *   The native handle is an opaque 64-bit token. It is not a pointer and no
+' *   arithmetic on it means anything; the only guarantees are that zero is never
+' *   valid and that a released value is never reissued.
+' *
+' *   It is a pair of Longs because that is the one 64-bit shape both VBA
+' *   architectures can express. LongLong exists only in 64-bit Office, so a
+' *   public API using it would not compile on 32-bit at all, and a Double would
+' *   silently lose precision above 2^53. Two Longs are exact everywhere and lay
+' *   out exactly as the ABI's uint64_t does, so the same type serves both.
+' *
+' *   Treat it as opaque: obtain it from LoadTexture and hand it back unchanged.
+' * @remarks Marshalling to the native call is private and differs per architecture.
+' */
+Public Type BlipBridgeTexture
+    Low As Long
+    High As Long
+End Type
+
+'/**
+' * @enum BlipBridgeScaleFilter
+' * @brief Resampling filter for LoadTexturePixelsScaled.
+' * @description
+' *   Every value here is implemented and tested. A filter is not named until it
+' *   works, so there is nothing here to discover as a placeholder at run time.
+' *
+' *   These choose how BlipBridge resamples pixels **before** Office receives
+' *   them. They do not change how Office then draws the image: Shape scaling,
+' *   slideshow scaling, zoom and DPI are all downstream and unaffected.
+' */
+Public Enum BlipBridgeScaleFilter
+    '/** @description Exact point sampling. The chosen source pixel is copied unchanged. */
+    BBScaleNearest = 0
+    '/** @description 2x2 interpolation between the four surrounding source pixels. */
+    BBScaleBilinear = 1
+    '/** @description Catmull-Rom cubic over a 4x4 neighbourhood. */
+    BBScaleBicubic = 2
+End Enum
 
 '/** @description Native loader reference held by this wrapper. */
 Private mModule As LongPtr
@@ -154,7 +193,7 @@ Private Declare PtrSafe Function BB_GetAbiVersion Lib "BlipBridge-x64.dll" () As
 Private Declare PtrSafe Function BB_LoadTexture Lib "BlipBridge-x64.dll" ( _
     ByVal bytesPtr As LongPtr, _
     ByVal length As Long, _
-    ByRef outHandle As LongLong _
+    ByRef outHandle As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_LoadTexturePixels Lib "BlipBridge-x64.dll" ( _
@@ -162,7 +201,18 @@ Private Declare PtrSafe Function BB_LoadTexturePixels Lib "BlipBridge-x64.dll" (
     ByVal width As Long, _
     ByVal height As Long, _
     ByVal stride As Long, _
-    ByRef outHandle As LongLong _
+    ByRef outHandle As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadTexturePixelsScaled Lib "BlipBridge-x64.dll" ( _
+    ByVal pixelsPtr As LongPtr, _
+    ByVal width As Long, _
+    ByVal height As Long, _
+    ByVal stride As Long, _
+    ByVal targetWidth As Long, _
+    ByVal targetHeight As Long, _
+    ByVal filter As Long, _
+    ByRef outHandle As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_ApplyTexture Lib "BlipBridge-x64.dll" ( _
@@ -197,7 +247,7 @@ Private Declare PtrSafe Function BB_ClearPictureCache Lib "BlipBridge-x64.dll" (
 Private Declare PtrSafe Function BB_GetPictureCacheStats Lib "BlipBridge-x64.dll" ( _
     ByRef textures As Long, _
     ByRef shapes As Long, _
-    ByRef skipped As LongLong _
+    ByRef skipped As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_GetTextureCount Lib "BlipBridge-x64.dll" () As Long
@@ -222,7 +272,7 @@ Private Declare PtrSafe Function BB_GetAbiVersion Lib "BlipBridge-x86.dll" () As
 Private Declare PtrSafe Function BB_LoadTexture Lib "BlipBridge-x86.dll" ( _
     ByVal bytesPtr As LongPtr, _
     ByVal length As Long, _
-    ByRef outHandle As BBHandle _
+    ByRef outHandle As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_LoadTexturePixels Lib "BlipBridge-x86.dll" ( _
@@ -230,7 +280,18 @@ Private Declare PtrSafe Function BB_LoadTexturePixels Lib "BlipBridge-x86.dll" (
     ByVal width As Long, _
     ByVal height As Long, _
     ByVal stride As Long, _
-    ByRef outHandle As BBHandle _
+    ByRef outHandle As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadTexturePixelsScaled Lib "BlipBridge-x86.dll" ( _
+    ByVal pixelsPtr As LongPtr, _
+    ByVal width As Long, _
+    ByVal height As Long, _
+    ByVal stride As Long, _
+    ByVal targetWidth As Long, _
+    ByVal targetHeight As Long, _
+    ByVal filter As Long, _
+    ByRef outHandle As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_ApplyTexture Lib "BlipBridge-x86.dll" ( _
@@ -267,7 +328,7 @@ Private Declare PtrSafe Function BB_ClearPictureCache Lib "BlipBridge-x86.dll" (
 Private Declare PtrSafe Function BB_GetPictureCacheStats Lib "BlipBridge-x86.dll" ( _
     ByRef textures As Long, _
     ByRef shapes As Long, _
-    ByRef skipped As BBHandle _
+    ByRef skipped As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_GetTextureCount Lib "BlipBridge-x86.dll" () As Long
@@ -385,7 +446,7 @@ End Sub
 ' * @remarks The native side copies or retains everything it needs before returning; the VBA array
 ' * may be reused immediately. A zero-length or unallocated array is rejected before the ABI call.
 ' */
-Public Function LoadTexture(ByRef bytes() As Byte) As Variant
+Public Function LoadTexture(ByRef bytes() As Byte) As BlipBridgeTexture
     Initialize
 
     Dim length As Long
@@ -396,15 +457,11 @@ Public Function LoadTexture(ByRef bytes() As Byte) As Variant
                   "LoadTexture requires a non-empty byte array."
     End If
 
-#If Win64 Then
-    Dim handle As LongLong
-    CheckResult BB_LoadTexture(VarPtr(bytes(LBound(bytes))), length, handle), "LoadTexture"
-    LoadTexture = handle
-#Else
-    Dim parts As BBHandle
-    CheckResult BB_LoadTexture(VarPtr(bytes(LBound(bytes))), length, parts), "LoadTexture"
-    LoadTexture = HandleToVariant(parts)
-#End If
+    ' The out-parameter is the public type on both architectures: two Longs lay
+    ' out exactly as the ABI's uint64_t, so no conversion is needed here at all.
+    Dim texture As BlipBridgeTexture
+    CheckResult BB_LoadTexture(VarPtr(bytes(LBound(bytes))), length, texture), "LoadTexture"
+    LoadTexture = texture
 End Function
 
 '/**
@@ -422,7 +479,7 @@ Public Function LoadTexturePixels( _
     ByVal width As Long, _
     ByVal height As Long, _
     Optional ByVal stride As Long = 0 _
-) As Variant
+) As BlipBridgeTexture
     Initialize
 
     If width <= 0 Then
@@ -465,17 +522,182 @@ Public Function LoadTexturePixels( _
                   "The pixel array is smaller than stride * height."
     End If
 
+    Dim texture As BlipBridgeTexture
+    CheckResult BB_LoadTexturePixels(VarPtr(pixels(LBound(pixels))), width, height, _
+                                     stride, texture), "LoadTexturePixels"
+    LoadTexturePixels = texture
+End Function
+
+'/**
+' * @function TextureToNative
+' * @brief Converts a public texture handle into the by-value form this architecture passes.
+' * @param texture Handle obtained from LoadTexture, LoadTexturePixels or LoadTexturePixelsScaled.
+' * @return 64-bit value on x64; the x86 path uses TextureLow/TextureHigh instead.
+' * @remarks Kept private: the public type is identical on both architectures, and only the
+' * transport differs. A UDT cannot be passed ByVal to a Declare, which is why x64 needs this
+' * conversion at all and x86 passes the two words directly.
+' */
 #If Win64 Then
-    Dim handle As LongLong
-    CheckResult BB_LoadTexturePixels(VarPtr(pixels(LBound(pixels))), width, height, _
-                                     stride, handle), "LoadTexturePixels"
-    LoadTexturePixels = handle
-#Else
-    Dim parts As BBHandle
-    CheckResult BB_LoadTexturePixels(VarPtr(pixels(LBound(pixels))), width, height, _
-                                     stride, parts), "LoadTexturePixels"
-    LoadTexturePixels = HandleToVariant(parts)
+Private Function TextureToNative(ByRef texture As BlipBridgeTexture) As LongLong
+    Dim low As LongLong
+    ' The low word is a signed Long; masking restores the unsigned 32-bit value
+    ' before it is combined, or a handle above 0x7FFFFFFF would sign-extend.
+    low = CLngLng(texture.Low) And &HFFFFFFFF^
+    TextureToNative = (CLngLng(texture.High) * &H100000000^) Or low
+End Function
 #End If
+
+'/**
+' * @function LoadTexturePixelsScaled
+' * @brief Creates a texture from BGRA32 pixels resampled to a chosen size.
+' * @param pixels Contiguous BGRA32 pixel bytes ordered blue, green, red, alpha.
+' * @param width Source pixel width.
+' * @param height Source pixel height.
+' * @param stride Bytes between consecutive source rows. Zero selects width * 4.
+' * @param targetWidth Destination pixel width.
+' * @param targetHeight Destination pixel height.
+' * @param filter Resampling filter; see BlipBridgeScaleFilter.
+' * @return Opaque texture handle for the resampled image.
+' * @description
+' *   Both upscaling and downscaling are supported at arbitrary ratios, the source
+' *   stride may be padded, and alpha is interpolated correctly - the interpolating
+' *   filters work in premultiplied alpha internally, so a transparent edge does not
+' *   bleed dark colour into its visible neighbours.
+' *
+' *   When the source and target sizes match, the rows are copied and no filter runs,
+' *   so the result is identical whichever filter was named.
+' * @remarks
+' *   This chooses how BlipBridge resamples the pixels **before** Office receives
+' *   them. It does not change how Office then draws the image: Shape scaling,
+' *   slideshow scaling, zoom and DPI are all downstream and unaffected.
+' */
+Public Function LoadTexturePixelsScaled( _
+    ByRef pixels() As Byte, _
+    ByVal width As Long, _
+    ByVal height As Long, _
+    ByVal stride As Long, _
+    ByVal targetWidth As Long, _
+    ByVal targetHeight As Long, _
+    ByVal filter As BlipBridgeScaleFilter _
+) As BlipBridgeTexture
+    Initialize
+
+    If width <= 0 Or height <= 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTexturePixelsScaled", _
+                  "Source width and height must both be greater than zero."
+    End If
+
+    If targetWidth <= 0 Or targetHeight <= 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTexturePixelsScaled", _
+                  "Target width and height must both be greater than zero."
+    End If
+
+    If stride = 0 Then
+        If CDbl(width) * 4# > 2147483647# Then
+            Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTexturePixelsScaled", _
+                      "width is too large for a VBA Long stride."
+        End If
+
+        stride = width * 4
+    End If
+
+    If stride < width * 4 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTexturePixelsScaled", _
+                  "stride must be at least width * 4 for BGRA32 pixels."
+    End If
+
+    Dim available As Long
+    available = ByteArrayLength(pixels)
+
+    If available <= 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTexturePixelsScaled", _
+                  "LoadTexturePixelsScaled requires a non-empty pixel array."
+    End If
+
+    ' Checked in Double so a large stride and height cannot overflow a Long and
+    ' let a short array through.
+    If CDbl(stride) * CDbl(height) > CDbl(available) Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTexturePixelsScaled", _
+                  "The pixel array is smaller than stride * height."
+    End If
+
+    Dim texture As BlipBridgeTexture
+    CheckResult BB_LoadTexturePixelsScaled(VarPtr(pixels(LBound(pixels))), width, height, _
+                                           stride, targetWidth, targetHeight, _
+                                           CLng(filter), texture), "LoadTexturePixelsScaled"
+    LoadTexturePixelsScaled = texture
+End Function
+
+'/**
+' * @function LoadTexturePixelsNearest
+' * @brief LoadTexturePixelsScaled with exact point sampling.
+' * @param pixels Contiguous BGRA32 pixel bytes.
+' * @param width Source pixel width.
+' * @param height Source pixel height.
+' * @param stride Bytes per source row. Zero selects width * 4.
+' * @param targetWidth Destination pixel width.
+' * @param targetHeight Destination pixel height.
+' * @return Opaque texture handle.
+' * @remarks Convenience only - the same native implementation, with the filter chosen for you.
+' */
+Public Function LoadTexturePixelsNearest( _
+    ByRef pixels() As Byte, _
+    ByVal width As Long, _
+    ByVal height As Long, _
+    ByVal stride As Long, _
+    ByVal targetWidth As Long, _
+    ByVal targetHeight As Long _
+) As BlipBridgeTexture
+    LoadTexturePixelsNearest = LoadTexturePixelsScaled(pixels, width, height, stride, _
+                                                       targetWidth, targetHeight, BBScaleNearest)
+End Function
+
+'/**
+' * @function LoadTexturePixelsBilinear
+' * @brief LoadTexturePixelsScaled with 2x2 interpolation.
+' * @param pixels Contiguous BGRA32 pixel bytes.
+' * @param width Source pixel width.
+' * @param height Source pixel height.
+' * @param stride Bytes per source row. Zero selects width * 4.
+' * @param targetWidth Destination pixel width.
+' * @param targetHeight Destination pixel height.
+' * @return Opaque texture handle.
+' * @remarks Convenience only - the same native implementation.
+' */
+Public Function LoadTexturePixelsBilinear( _
+    ByRef pixels() As Byte, _
+    ByVal width As Long, _
+    ByVal height As Long, _
+    ByVal stride As Long, _
+    ByVal targetWidth As Long, _
+    ByVal targetHeight As Long _
+) As BlipBridgeTexture
+    LoadTexturePixelsBilinear = LoadTexturePixelsScaled(pixels, width, height, stride, _
+                                                        targetWidth, targetHeight, BBScaleBilinear)
+End Function
+
+'/**
+' * @function LoadTexturePixelsBicubic
+' * @brief LoadTexturePixelsScaled with Catmull-Rom cubic interpolation.
+' * @param pixels Contiguous BGRA32 pixel bytes.
+' * @param width Source pixel width.
+' * @param height Source pixel height.
+' * @param stride Bytes per source row. Zero selects width * 4.
+' * @param targetWidth Destination pixel width.
+' * @param targetHeight Destination pixel height.
+' * @return Opaque texture handle.
+' * @remarks Convenience only - the same native implementation.
+' */
+Public Function LoadTexturePixelsBicubic( _
+    ByRef pixels() As Byte, _
+    ByVal width As Long, _
+    ByVal height As Long, _
+    ByVal stride As Long, _
+    ByVal targetWidth As Long, _
+    ByVal targetHeight As Long _
+) As BlipBridgeTexture
+    LoadTexturePixelsBicubic = LoadTexturePixelsScaled(pixels, width, height, stride, _
+                                                       targetWidth, targetHeight, BBScaleBicubic)
 End Function
 
 '/**
@@ -486,7 +708,7 @@ End Function
 ' * @remarks The Shape pointer is never retained by BlipBridge. Native structural and semantic
 ' * eligibility validation still runs before the private Office transaction is allowed.
 ' */
-Public Sub ApplyTexture(ByVal shp As Object, ByVal texture As Variant)
+Public Sub ApplyTexture(ByVal shp As PowerPoint.Shape, ByRef texture As BlipBridgeTexture)
     Initialize
 
     If shp Is Nothing Then
@@ -495,11 +717,9 @@ Public Sub ApplyTexture(ByVal shp As Object, ByVal texture As Variant)
     End If
 
 #If Win64 Then
-    CheckResult BB_ApplyTexture(ObjPtr(shp), CLngLng(texture)), "ApplyTexture"
+    CheckResult BB_ApplyTexture(ObjPtr(shp), TextureToNative(texture)), "ApplyTexture"
 #Else
-    Dim parts As BBHandle
-    parts = HandleParts(texture)
-    CheckResult BB_ApplyTexture(ObjPtr(shp), parts.Low, parts.High), "ApplyTexture"
+    CheckResult BB_ApplyTexture(ObjPtr(shp), texture.Low, texture.High), "ApplyTexture"
 #End If
 End Sub
 
@@ -514,7 +734,7 @@ End Sub
 ' * @remarks The native picture cache also skips a redundant apply when it can prove that the same
 ' * image is already the last BlipBridge-managed picture on the same cache-safe Shape.
 ' */
-Public Sub UserPicture2(ByVal shp As Object, ByVal imagePath As String)
+Public Sub UserPicture2(ByVal shp As PowerPoint.Shape, ByVal imagePath As String)
     Initialize
 
     If shp Is Nothing Then
@@ -537,7 +757,7 @@ End Sub
 ' * @description Call after changing the Shape's fill through another API so a later UserPicture2
 ' * invocation cannot incorrectly skip a required native transaction.
 ' */
-Public Sub InvalidateShape(ByVal shp As Object)
+Public Sub InvalidateShape(ByVal shp As PowerPoint.Shape)
     Initialize
 
     If shp Is Nothing Then
@@ -574,12 +794,14 @@ Public Function PictureCacheStats() As String
     CheckResult BB_GetPictureCacheStats(textureCountValue, shapeCountValue, skipped), _
                 "PictureCacheStats"
 #Else
-    Dim skippedParts As BBHandle
+    Dim skippedParts As BlipBridgeTexture
     CheckResult BB_GetPictureCacheStats(textureCountValue, shapeCountValue, skippedParts), _
                 "PictureCacheStats"
 
-    Dim skipped As Variant
-    skipped = HandleToVariant(skippedParts)
+    ' A count rather than a handle, so a Double is the natural VBA carrier here:
+    ' exact below 2^53, which no skip count will reach.
+    Dim skipped As Double
+    skipped = TextureToDouble(skippedParts)
 #End If
 
     PictureCacheStats = "textures=" & CStr(textureCountValue) & _
@@ -597,8 +819,8 @@ End Function
 ' * speed advantage over individual applies because the Office transaction dominates each Shape.
 ' */
 Public Function ApplyTextureBatch( _
-    ByRef shapes() As Object, _
-    ByRef textures() As Variant _
+    ByRef shapes() As PowerPoint.Shape, _
+    ByRef textures() As BlipBridgeTexture _
 ) As Long
     Initialize
 
@@ -607,8 +829,8 @@ Public Function ApplyTextureBatch( _
     Dim count As Long
     Dim textureCountValue As Long
 
-    count = ObjectArrayCount(shapes, shapeLower)
-    textureCountValue = VariantArrayCount(textures, textureLower)
+    count = ShapeArrayCount(shapes, shapeLower)
+    textureCountValue = TextureArrayCount(textures, textureLower)
 
     If count <= 0 Then Exit Function
 
@@ -634,29 +856,18 @@ Public Function ApplyTextureBatch( _
     Dim applied As Long
     Dim status As Long
 
-#If Win64 Then
-    Dim rawHandles() As LongLong
-    ReDim rawHandles(0 To count - 1)
-
-    For index = 0 To count - 1
-        rawHandles(index) = CLngLng(textures(textureLower + index))
-    Next index
-
-    status = BB_ApplyTextureBatch(VarPtr(pointers(0)), VarPtr(rawHandles(0)), count, applied)
-#Else
+    ' The ABI wants a contiguous array of 64-bit handles. Building one from
+    ' Long pairs is identical on both architectures - the public type already has
+    ' the ABI's layout - so this needs no per-architecture branch at all.
     Dim rawHandles() As Long
     ReDim rawHandles(0 To count * 2 - 1)
 
-    Dim parts As BBHandle
-
     For index = 0 To count - 1
-        parts = HandleParts(textures(textureLower + index))
-        rawHandles(index * 2) = parts.Low
-        rawHandles(index * 2 + 1) = parts.High
+        rawHandles(index * 2) = textures(textureLower + index).Low
+        rawHandles(index * 2 + 1) = textures(textureLower + index).High
     Next index
 
     status = BB_ApplyTextureBatch(VarPtr(pointers(0)), VarPtr(rawHandles(0)), count, applied)
-#End If
 
     ApplyTextureBatch = applied
     CheckResult status, "ApplyTextureBatch"
@@ -670,17 +881,17 @@ End Function
 ' * @return Number of Shape entries successfully applied.
 ' */
 Public Function ApplyTextureToAll( _
-    ByRef shapes() As Object, _
-    ByVal texture As Variant _
+    ByRef shapes() As PowerPoint.Shape, _
+    ByRef texture As BlipBridgeTexture _
 ) As Long
     Dim lower As Long
     Dim count As Long
 
-    count = ObjectArrayCount(shapes, lower)
+    count = ShapeArrayCount(shapes, lower)
 
     If count <= 0 Then Exit Function
 
-    Dim textures() As Variant
+    Dim textures() As BlipBridgeTexture
     ReDim textures(0 To count - 1)
 
     Dim index As Long
@@ -699,15 +910,13 @@ End Function
 ' * @remarks The released handle must never be used again. Office may independently retain its own
 ' * references for Shape state, document ownership, Undo/Redo, or rendering.
 ' */
-Public Sub ReleaseTexture(ByVal texture As Variant)
+Public Sub ReleaseTexture(ByRef texture As BlipBridgeTexture)
     If Not mReady Then Exit Sub
 
 #If Win64 Then
-    CheckResult BB_ReleaseTexture(CLngLng(texture)), "ReleaseTexture"
+    CheckResult BB_ReleaseTexture(TextureToNative(texture)), "ReleaseTexture"
 #Else
-    Dim parts As BBHandle
-    parts = HandleParts(texture)
-    CheckResult BB_ReleaseTexture(parts.Low, parts.High), "ReleaseTexture"
+    CheckResult BB_ReleaseTexture(texture.Low, texture.High), "ReleaseTexture"
 #End If
 End Sub
 
@@ -1001,39 +1210,39 @@ EmptyArray:
 End Function
 
 '/**
-' * @function ObjectArrayCount
-' * @brief Safely measures a dynamic Object array and returns its lower bound.
-' * @param values Object array to inspect.
+' * @function ShapeArrayCount
+' * @brief Safely measures a dynamic Shape array and returns its lower bound.
+' * @param values Shape array to inspect.
 ' * @param lower Receives the array's lower bound when allocated.
 ' * @return Element count, or zero when the array is unallocated.
 ' */
-Private Function ObjectArrayCount(ByRef values() As Object, ByRef lower As Long) As Long
+Private Function ShapeArrayCount(ByRef values() As PowerPoint.Shape, ByRef lower As Long) As Long
     On Error GoTo EmptyArray
     lower = LBound(values)
-    ObjectArrayCount = UBound(values) - lower + 1
+    ShapeArrayCount = UBound(values) - lower + 1
     Exit Function
 
 EmptyArray:
     lower = 0
-    ObjectArrayCount = 0
+    ShapeArrayCount = 0
 End Function
 
 '/**
-' * @function VariantArrayCount
-' * @brief Safely measures a dynamic Variant array and returns its lower bound.
-' * @param values Variant array to inspect.
+' * @function TextureArrayCount
+' * @brief Safely measures a dynamic texture-handle array and returns its lower bound.
+' * @param values Texture handle array to inspect.
 ' * @param lower Receives the array's lower bound when allocated.
 ' * @return Element count, or zero when the array is unallocated.
 ' */
-Private Function VariantArrayCount(ByRef values() As Variant, ByRef lower As Long) As Long
+Private Function TextureArrayCount(ByRef values() As BlipBridgeTexture, ByRef lower As Long) As Long
     On Error GoTo EmptyArray
     lower = LBound(values)
-    VariantArrayCount = UBound(values) - lower + 1
+    TextureArrayCount = UBound(values) - lower + 1
     Exit Function
 
 EmptyArray:
     lower = 0
-    VariantArrayCount = 0
+    TextureArrayCount = 0
 End Function
 
 '/**
@@ -1161,64 +1370,24 @@ Private Function Utf8ToString(ByRef bytes() As Byte, ByVal byteCount As Long) As
 #End If
 End Function
 
-#If Win64 Then
-#Else
-
 '/**
-' * @function HandleParts
-' * @brief Converts the 32-bit VBA Variant representation into exact low/high uint64_t words.
-' * @param handle Caller-visible texture handle represented as an exact integral Double.
-' * @return BBHandle containing the native low and high 32-bit words.
-' * @remarks Values above 2^53 are rejected because 32-bit VBA Double can no longer represent every
-' * consecutive integer exactly beyond that point.
+' * @function TextureToDouble
+' * @brief Reads a 64-bit ABI word pair as an exact Double.
+' * @param parts Native low and high 32-bit words.
+' * @return The value as a Double.
+' * @remarks Used only for plain counters such as the picture cache's skip total, never for a
+' * texture handle: handles stay in their exact two-Long form end to end, and a Double would
+' * silently lose precision above 2^53. Counters do not approach that.
 ' */
-Private Function HandleParts(ByVal handle As Variant) As BBHandle
-    Dim value As Double
-    value = CDbl(handle)
-
-    If value < 0# Then
-        Err.Raise BB_ERROR_BASE, "BlipBridge.HandleParts", _
-                  "Texture handle cannot be negative."
-    End If
-
-    If value <> Fix(value) Then
-        Err.Raise BB_ERROR_BASE, "BlipBridge.HandleParts", _
-                  "Texture handle must be an exact integer returned by BlipBridge."
-    End If
-
-    If value > 9007199254740992# Then
-        Err.Raise BB_ERROR_BASE, "BlipBridge.HandleParts", _
-                  "Texture handle exceeds the exact integer range supported by 32-bit VBA."
-    End If
-
-    Dim highValue As Double
-    Dim lowValue As Double
-
-    highValue = Fix(value / 4294967296#)
-    lowValue = value - highValue * 4294967296#
-
-    If lowValue >= 2147483648# Then
-        HandleParts.Low = CLng(lowValue - 4294967296#)
-    Else
-        HandleParts.Low = CLng(lowValue)
-    End If
-
-    HandleParts.High = CLng(highValue)
-End Function
-
-'/**
-' * @function HandleToVariant
-' * @brief Converts native low/high uint64_t words into the exact 32-bit VBA Variant representation.
-' * @param parts Native 64-bit handle words.
-' * @return Variant containing an integral Double suitable for the public architecture-neutral API.
-' */
-Private Function HandleToVariant(ByRef parts As BBHandle) As Variant
+Private Function TextureToDouble(ByRef parts As BlipBridgeTexture) As Double
     Dim lowValue As Double
     Dim highValue As Double
 
     lowValue = parts.Low
     highValue = parts.High
 
+    ' Longs are signed, so the upper half of the 32-bit range reads negative.
+    ' Adding 2^32 restores the unsigned value the ABI actually wrote.
     If lowValue < 0# Then
         lowValue = lowValue + 4294967296#
     End If
@@ -1227,7 +1396,5 @@ Private Function HandleToVariant(ByRef parts As BBHandle) As Variant
         highValue = highValue + 4294967296#
     End If
 
-    HandleToVariant = highValue * 4294967296# + lowValue
+    TextureToDouble = highValue * 4294967296# + lowValue
 End Function
-
-#End If

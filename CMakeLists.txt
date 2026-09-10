@@ -75,6 +75,9 @@ include_directories(include)
 set(BB_SOURCES
     src/abi/blipbridge_abi.cpp
     src/image/validate.cpp
+    # Software resampling: ordinary portable image maths, no Office, so it is
+    # built and tested on every architecture.
+    src/image/resample.cpp
     src/dllmain.cpp
 )
 
@@ -117,7 +120,15 @@ endif()
 add_library(BlipBridge SHARED ${BB_SOURCES})
 target_compile_definitions(BlipBridge PRIVATE BB_DLL BLIPBRIDGE_BUILD)
 target_link_options(BlipBridge PRIVATE -static -static-libgcc -static-libstdc++)
-set_target_properties(BlipBridge PROPERTIES PREFIX "")
+#[[
+    The DLL carries its architecture in its name, so both can sit beside the same
+    presentation and BlipBridge.bas can load the one matching the PowerPoint
+    process. Naming it here rather than only at packaging time means a local
+    build is the same file the wrapper looks for.
+]]
+set_target_properties(BlipBridge PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "BlipBridge-${BB_ARCH}")
 if(BB_ARCH STREQUAL "x86")
     #[[
         x86 exports are stdcall, because VBA's Declare can call nothing else.
@@ -144,6 +155,20 @@ if(BUILD_TESTING)
         closed with a readable reason - which is precisely what an x86 build is
         supposed to do today.
     ]]
+    #[[
+        The resampling filters are pure image maths, so this runs everywhere and
+        is the only suite that can catch a filter regression - nothing
+        downstream would notice a wrong pixel.
+    ]]
+    add_executable(bb_resample_contract tests/resample_contract.cpp src/image/resample.cpp)
+    target_link_options(bb_resample_contract PRIVATE -static -static-libgcc -static-libstdc++)
+    add_test(NAME resample_contract COMMAND bb_resample_contract)
+
+    # A timing run, not an assertion: built so it cannot rot, but never added as
+    # a test, because a busy runner must not turn a measurement into a failure.
+    add_executable(bb_resample_benchmark tests/resample_benchmark.cpp src/image/resample.cpp)
+    target_link_options(bb_resample_benchmark PRIVATE -static -static-libgcc -static-libstdc++)
+
     add_executable(bb_abi_contract tests/abi_contract.cpp)
     target_link_options(bb_abi_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
     add_test(NAME abi_contract COMMAND bb_abi_contract $<TARGET_FILE:BlipBridge>)

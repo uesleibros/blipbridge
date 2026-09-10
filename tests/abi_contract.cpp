@@ -67,6 +67,14 @@ struct Api {
     BB_Result(BB_CALL* InvalidateShape)(void*) = nullptr;
     BB_Result(BB_CALL* ClearPictureCache)(void) = nullptr;
     BB_Result(BB_CALL* GetPictureCacheStats)(uint32_t*, uint32_t*, uint64_t*) = nullptr;
+    BB_Result(BB_CALL* LoadTexturePixelsScaled)(const uint8_t*,
+                                                uint32_t,
+                                                uint32_t,
+                                                int32_t,
+                                                uint32_t,
+                                                uint32_t,
+                                                uint32_t,
+                                                BB_Handle*) = nullptr;
 
     ~Api() {
         if (module) {
@@ -124,6 +132,7 @@ int wmain(int argc, wchar_t** argv) {
     Resolve(api, api.InvalidateShape, "BB_InvalidateShape");
     Resolve(api, api.ClearPictureCache, "BB_ClearPictureCache");
     Resolve(api, api.GetPictureCacheStats, "BB_GetPictureCacheStats");
+    Resolve(api, api.LoadTexturePixelsScaled, "BB_LoadTexturePixelsScaled");
     if (g_failures) {
         return 1;
     }

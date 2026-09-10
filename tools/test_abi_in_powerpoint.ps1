@@ -12,8 +12,8 @@ add-in being registered - which is the whole point of the C ABI.
 #>
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$dll = Join-Path $root 'dist/windows-x64/BlipBridge.dll'
-if (-not (Test-Path $dll)) { $dll = Join-Path $root 'build/Release/BlipBridge.dll' }
+$dll = Join-Path $root 'dist/windows-x64/BlipBridge-x64.dll'
+if (-not (Test-Path $dll)) { $dll = Join-Path $root 'build/Release/BlipBridge-x64.dll' }
 $texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
 $results = New-Object System.Collections.Generic.List[string]
 
@@ -23,17 +23,17 @@ using System.Runtime.InteropServices;
 public static class BB {
     [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr LoadLibraryW(string path);
-    [DllImport("BlipBridge.dll")] public static extern int BB_Init();
-    [DllImport("BlipBridge.dll")] public static extern int BB_Shutdown();
-    [DllImport("BlipBridge.dll")] public static extern int BB_LoadTexture(byte[] bytes, uint length, out ulong handle);
-    [DllImport("BlipBridge.dll")] public static extern int BB_ApplyTexture(IntPtr shape, ulong texture);
-    [DllImport("BlipBridge.dll")] public static extern int BB_ApplyTextureBatch(IntPtr[] shapes, ulong[] textures, uint count, out uint applied);
-    [DllImport("BlipBridge.dll")] public static extern int BB_ReleaseTexture(ulong texture);
-    [DllImport("BlipBridge.dll")] public static extern int BB_ClearTextures();
-    [DllImport("BlipBridge.dll")] public static extern uint BB_GetTextureCount();
-    [DllImport("BlipBridge.dll")] public static extern uint BB_GetCapabilities();
-    [DllImport("BlipBridge.dll")] public static extern uint BB_GetLastError(System.Text.StringBuilder buffer, uint capacity);
-    [DllImport("BlipBridge.dll")] public static extern uint BB_GetVersionString(System.Text.StringBuilder buffer, uint capacity);
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_Init();
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_Shutdown();
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_LoadTexture(byte[] bytes, uint length, out ulong handle);
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_ApplyTexture(IntPtr shape, ulong texture);
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_ApplyTextureBatch(IntPtr[] shapes, ulong[] textures, uint count, out uint applied);
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_ReleaseTexture(ulong texture);
+    [DllImport("BlipBridge-x64.dll")] public static extern int BB_ClearTextures();
+    [DllImport("BlipBridge-x64.dll")] public static extern uint BB_GetTextureCount();
+    [DllImport("BlipBridge-x64.dll")] public static extern uint BB_GetCapabilities();
+    [DllImport("BlipBridge-x64.dll")] public static extern uint BB_GetLastError(System.Text.StringBuilder buffer, uint capacity);
+    [DllImport("BlipBridge-x64.dll")] public static extern uint BB_GetVersionString(System.Text.StringBuilder buffer, uint capacity);
 }
 "@
 

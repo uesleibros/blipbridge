@@ -104,7 +104,7 @@ extern "C" {
 #define BB_VERSION_MINOR 4
 #define BB_VERSION_PATCH 0
 
-#define BB_ABI_VERSION 2u
+#define BB_ABI_VERSION 3u
 
 /**
  * Opaque texture handle.
@@ -152,6 +152,21 @@ typedef int32_t BB_Result;
 #define BB_CAP_PICKUP_FALLBACK 0x0010u /* the donor COM fallback exists        */
 #define BB_CAP_RAW_PIXELS 0x0020u      /* BB_LoadTexturePixels is implemented  */
 #define BB_CAP_APPLY_PICTURE 0x0040u   /* BB_ApplyPicture and its caches exist */
+#define BB_CAP_SCALED_PIXELS 0x0080u   /* BB_LoadTexturePixelsScaled is present */
+
+/*
+ * Resampling filters for BB_LoadTexturePixelsScaled.
+ *
+ * Every value here is implemented and tested. A filter is not given a name until
+ * it works, so there are no placeholders to discover at run time.
+ *
+ * These control the image BlipBridge hands to Office. They say nothing about how
+ * Office then draws it - Shape scaling, slideshow scaling, zoom and DPI are all
+ * downstream and unaffected.
+ */
+#define BB_SCALE_NEAREST 0u  /* exact point sampling; bytes preserved */
+#define BB_SCALE_BILINEAR 1u /* 2x2 interpolation                     */
+#define BB_SCALE_BICUBIC 2u  /* Catmull-Rom cubic over a 4x4 window   */
 
 /**
  * Prepares the library on the calling thread and probes the host.
@@ -252,6 +267,51 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void);
  *         or @p capacity is 0; the result is always terminated otherwise.
  */
 BB_API uint32_t BB_CALL BB_GetLastError(char* buffer, uint32_t capacity);
+
+/**
+ * Builds a texture from raw BGRA32 pixels, resampled to a chosen size.
+ *
+ * Separate from BB_LoadTexturePixels rather than an overload of it, so neither
+ * call has ambiguous behaviour: this one always scales to exactly
+ * @p targetWidth by @p targetHeight, using @p filter.
+ *
+ * @param pixels        BGRA32, @p height rows of @p stride bytes.
+ * @param width         source pixels per row; must be greater than zero.
+ * @param height        source rows; must be greater than zero.
+ * @param stride        bytes per source row; at least `width * 4`.
+ * @param targetWidth   destination pixels per row; must be greater than zero.
+ * @param targetHeight  destination rows; must be greater than zero.
+ * @param filter        one of the BB_SCALE_* values.
+ * @param out           receives the texture handle.
+ *
+ * Both upscaling and downscaling are supported, at arbitrary ratios, and the
+ * source stride may be padded. Alpha is interpolated correctly: the
+ * interpolating filters work in premultiplied alpha internally, so a transparent
+ * edge does not bleed dark colour into its visible neighbours.
+ *
+ * When the source and target sizes are equal the rows are copied and no filter
+ * runs, so the result is bit-exact whichever filter was named.
+ *
+ * Every size and stride is validated, and every product is computed in 64 bits
+ * and range-checked, before anything is read or allocated. Returns
+ * BB_E_INVALID_ARG for a bad size, stride or filter, BB_E_OUT_OF_MEMORY if the
+ * result cannot be allocated, and BB_E_DECODE_FAILED if the resampled pixels
+ * cannot be turned into an image.
+ *
+ * ## What this does not control
+ *
+ * BlipBridge resamples the pixels **before** Office receives them. It does not
+ * change how Office draws the resulting image. Do not read a choice of filter
+ * here as control over PowerPoint's own rendering.
+ */
+BB_API BB_Result BB_CALL BB_LoadTexturePixelsScaled(const uint8_t* pixels,
+                                                    uint32_t width,
+                                                    uint32_t height,
+                                                    int32_t stride,
+                                                    uint32_t targetWidth,
+                                                    uint32_t targetHeight,
+                                                    uint32_t filter,
+                                                    BB_Handle* out);
 
 /**
  * The one-call picture fill: give it a Shape and a file, and it decides.

@@ -76,6 +76,20 @@ class UnsupportedBackend final : public Backend {
         return Refuse();
     }
 
+    BackendResult LoadTexturePixelsScaled(const std::uint8_t*,
+                                          std::uint32_t,
+                                          std::uint32_t,
+                                          std::int32_t,
+                                          std::uint32_t,
+                                          std::uint32_t,
+                                          std::uint32_t,
+                                          std::uint64_t* out) noexcept override {
+        if (out) {
+            *out = 0;
+        }
+        return Refuse();
+    }
+
     BackendResult InvalidateShape(void*) noexcept override {
         return Refuse();
     }

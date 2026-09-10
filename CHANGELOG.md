@@ -17,6 +17,59 @@ the test machine.
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
   now prioritizes `windows.h` so subsequent formatting preserves this dependency.
 
+## [Unreleased]
+
+### Fixed
+
+- **`UserPicture2` broke after `ClearTextures`.** The texture store owned each
+  image outright and handed callers a handle into its map; the picture cache took
+  one of those handles, so clearing the map - or releasing that handle - destroyed
+  the image the cache still pointed at, and the next call failed with "Texture
+  handle 16777216 is not valid (it was released)". A public handle is now an
+  external token that *references* an image, and the handle table and the picture
+  cache own it independently. `ClearTextures` drops handles, `ClearPictureCache`
+  drops the cache's images and Shape skip state, neither can reach the other's,
+  and `BB_Shutdown` clears both. No retry, no handle recycling: released handles
+  remain permanently stale. Covered by `tools/test_cache_ownership.ps1`.
+
+### Added - ABI version 3
+
+- **`BB_LoadTexturePixelsScaled`**: raw BGRA32 resampled to any size with an
+  explicit filter - `BB_SCALE_NEAREST`, `BB_SCALE_BILINEAR`, `BB_SCALE_BICUBIC`.
+  Every filter named is implemented and tested; there are no placeholders.
+  Upscaling and downscaling at arbitrary ratios, padded source strides, correct
+  premultiplied-alpha interpolation so transparent edges do not darken, a
+  bit-exact fast path when the sizes match, and full 64-bit validation of every
+  size and product before anything is read or allocated. Capability bit
+  `BB_CAP_SCALED_PIXELS`. See `docs/resampling.md`.
+- `tests/resample_contract.cpp` runs in CI on both architectures with no Office,
+  including nearest's exact byte output, and `bb_resample_benchmark` times every
+  filter.
+
+### Changed - the VBA API is strongly typed
+
+- Shapes are `PowerPoint.Shape` and handles are `BlipBridgeTexture` - a public
+  two-Long type identical on both architectures. No `Object`, no `Variant` and no
+  `LongLong` in any public signature; `LongLong` does not exist in 32-bit VBA and
+  a `Double` would lose precision above 2^53, so two Longs are the one exact
+  shape both can express. The native handle stays an opaque `uint64_t`, and the
+  per-architecture marshalling is private.
+- `BlipBridgeScaleFilter` is a real enum, with `LoadTexturePixelsNearest`,
+  `...Bilinear` and `...Bicubic` convenience wrappers over the same native call.
+- **ABI version 3.** The wrapper refuses a DLL that reports anything else, and CI
+  now asserts the header and the wrapper agree.
+- The build emits `BlipBridge-x64.dll` and `BlipBridge-x86.dll` directly, so a
+  local build is the file the wrapper looks for rather than something the
+  packaging step renames.
+
+### Measured
+
+- Resampling, milliseconds, scaling only: 512x512 → 1920x1080 costs 2.09
+  (nearest), 47.5 (bilinear), 186 (bicubic). Nearest is roughly twenty times
+  cheaper than bilinear and eighty times cheaper than bicubic. Hoisting the
+  per-column weights out of the pixel loop took bicubic from 267 ms to 186 ms.
+  No SIMD or threading was added; nothing has shown them necessary.
+
 ## [0.4.0] - 2026-09-10
 
 First public release. `uesleibros/blipbridge`, MIT, with CI and an automatic

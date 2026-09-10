@@ -352,6 +352,33 @@ BB_API uint32_t BB_CALL BB_GetTextureCount(void) {
     }
 }
 
+BB_API BB_Result BB_CALL BB_LoadTexturePixelsScaled(const uint8_t* pixels,
+                                                    uint32_t width,
+                                                    uint32_t height,
+                                                    int32_t stride,
+                                                    uint32_t targetWidth,
+                                                    uint32_t targetHeight,
+                                                    uint32_t filter,
+                                                    BB_Handle* out) {
+    try {
+        if (out) {
+            *out = 0;
+        }
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        if (!out) {
+            return Fail(BB_E_INVALID_ARG, "An output handle is required");
+        }
+        // Sizes, stride and filter are validated inside, which is where the
+        // specific reason for each rejection lives.
+        return Translate(Library::Instance().Ensure().LoadTexturePixelsScaled(
+            pixels, width, height, stride, targetWidth, targetHeight, filter, out));
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_LoadTexturePixelsScaled");
+    }
+}
+
 BB_API BB_Result BB_CALL BB_ApplyPicture(void* shape, const uint16_t* path) {
     try {
         if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
@@ -432,6 +459,7 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void) {
         bits |= capabilities.pickUpFallback ? BB_CAP_PICKUP_FALLBACK : 0u;
         bits |= capabilities.rawPixels ? BB_CAP_RAW_PIXELS : 0u;
         bits |= capabilities.applyPicture ? BB_CAP_APPLY_PICTURE : 0u;
+        bits |= capabilities.scaledPixels ? BB_CAP_SCALED_PIXELS : 0u;
         return bits;
     } catch (...) {
         return 0;

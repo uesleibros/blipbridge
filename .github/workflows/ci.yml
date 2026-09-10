@@ -179,6 +179,7 @@ jobs:
             BB_InvalidateShape
             BB_ClearPictureCache
             BB_GetPictureCacheStats
+            BB_LoadTexturePixelsScaled
           )
 
           for symbol in "${required[@]}"; do
@@ -206,6 +207,52 @@ jobs:
           }
 
           Write-Host "Wrapper contains both architecture-specific DLL names."
+
+          # The ABI version the wrapper expects must match the header it ships
+          # beside, or a user gets a loud mismatch at Initialize for no reason.
+          $header = Get-Content "include/blipbridge/blipbridge.h" -Raw
+          if ($header -notmatch '#define\s+BB_ABI_VERSION\s+(\d+)u') {
+              throw "Could not read BB_ABI_VERSION from the public header."
+          }
+          $headerAbi = $Matches[1]
+
+          if ($wrapper -notmatch 'BB_EXPECTED_ABI\s+As\s+Long\s+=\s+(\d+)') {
+              throw "Could not read BB_EXPECTED_ABI from BlipBridge.bas."
+          }
+          $wrapperAbi = $Matches[1]
+
+          if ($headerAbi -ne $wrapperAbi) {
+              throw "ABI mismatch: header says $headerAbi, BlipBridge.bas expects $wrapperAbi."
+          }
+
+          Write-Host "Wrapper and header agree on ABI version $headerAbi."
+
+          <#
+            The public API must stay strongly typed. Object and Variant in a
+            public signature would compile and then quietly undo the typing, so
+            it is checked here rather than left to review.
+          #>
+          $publicLines = $wrapper -split "`r?`n" | Where-Object {
+              $_ -match '^\s*Public\s+(Function|Sub)\s'
+          }
+
+          foreach ($line in $publicLines) {
+              if ($line -match '\bAs\s+Object\b') {
+                  throw "Public API still uses Object: $line"
+              }
+              if ($line -match '\bAs\s+Variant\b') {
+                  throw "Public API still uses Variant: $line"
+              }
+          }
+
+          foreach ($name in @('BlipBridgeTexture', 'BlipBridgeScaleFilter',
+                              'LoadTexturePixelsScaled')) {
+              if ($wrapper -notmatch [regex]::Escape($name)) {
+                  throw "BlipBridge.bas is missing $name."
+              }
+          }
+
+          Write-Host "Public API is strongly typed and exposes the scaling surface."
 
       - name: Upload Release build
         if: matrix.configuration == 'Release'
