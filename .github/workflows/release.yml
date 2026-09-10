@@ -301,6 +301,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: staged
+          pattern: package-*
           merge-multiple: true
 
       - name: Inspect staged artifacts
@@ -316,11 +317,18 @@ jobs:
 
           version="${{ needs.metadata.outputs.version }}"
 
-          test -f \
-            "staged/blipbridge-v${version}-windows-x64.zip"
+          for arch in x64 x86; do
+            package="staged/blipbridge-v${version}-windows-${arch}.zip"
+            for file in "$package" "$package.sha256"; do
+              if [ ! -f "$file" ]; then
+                echo "::error::Missing release file: $file. Check tools/make_dist.ps1 output names."
+                find staged -type f -print
+                exit 1
+              fi
+            done
+          done
 
-          test -f \
-            "staged/blipbridge-v${version}-windows-x86.zip"
+          (cd staged && sha256sum -c *.zip.sha256)
 
       - name: Build universal Windows package
         shell: bash

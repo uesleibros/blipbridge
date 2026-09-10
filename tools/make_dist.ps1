@@ -5,13 +5,13 @@ Builds a release package for one architecture.
 .DESCRIPTION
 Produces exactly what a user needs and nothing else:
 
-    dist/blipbridge-<version>-windows-<arch>/BlipBridge.dll
+    dist/blipbridge-v<version>-windows-<arch>/BlipBridge-<arch>.dll
                                             /BlipBridge.bas
                                             /blipbridge.h
                                             /README.txt
                                             /LICENSE
-    dist/blipbridge-<version>-windows-<arch>.zip
-    dist/blipbridge-<version>-windows-<arch>.zip.sha256
+    dist/blipbridge-v<version>-windows-<arch>.zip
+    dist/blipbridge-v<version>-windows-<arch>.zip.sha256
 
 The README inside the archive is written per architecture, because the two say
 genuinely different things: x64 has a validated native backend, x86 does not yet
@@ -38,9 +38,14 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 if (-not $BuildDir) { $BuildDir = Join-Path $root "build/$Configuration" }
 
-$dll = Join-Path $BuildDir 'BlipBridge.dll'
+$dllName = "BlipBridge-$Architecture.dll"
+$dll = Join-Path $BuildDir $dllName
+# Older CMake revisions emit the unsuffixed DLL. Normalize only the package name.
 if (-not (Test-Path $dll)) {
-    throw "BlipBridge.dll not found at $dll - build $Configuration for $Architecture first"
+    $dll = Join-Path $BuildDir 'BlipBridge.dll'
+}
+if (-not (Test-Path $dll)) {
+    throw "$dllName or BlipBridge.dll not found in $BuildDir - build $Configuration for $Architecture first"
 }
 
 # The version the header declares is the single source of truth for the release
@@ -53,13 +58,23 @@ if (-not $Version) {
     if ($major -and $minor -and $patch) { $Version = "$major.$minor.$patch" } else { $Version = '0.0.0' }
 }
 
-$name = "blipbridge-$Version-windows-$Architecture"
+if ($Version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+    throw "Invalid package version: $Version. Expected a version such as 0.4.0 without the v prefix."
+}
+
+$name = "blipbridge-v$Version-windows-$Architecture"
 $distRoot = Join-Path $root 'dist'
 $target = Join-Path $distRoot $name
-if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+# Validate the resolved directory before recursively replacing an earlier package.
+$target = [System.IO.Path]::GetFullPath($target)
+$expectedParent = [System.IO.Path]::GetFullPath($distRoot)
+if ((Split-Path $target -Parent) -ne $expectedParent) {
+    throw "Package directory must be directly under $expectedParent"
+}
+if (Test-Path $target) { Remove-Item -LiteralPath $target -Recurse -Force }
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 
-Copy-Item $dll (Join-Path $target 'BlipBridge.dll')
+Copy-Item $dll (Join-Path $target $dllName)
 Copy-Item (Join-Path $root 'vba/BlipBridge.bas') (Join-Path $target 'BlipBridge.bas')
 Copy-Item (Join-Path $root 'include/blipbridge/blipbridge.h') (Join-Path $target 'blipbridge.h')
 Copy-Item (Join-Path $root 'LICENSE') (Join-Path $target 'LICENSE')
@@ -133,13 +148,13 @@ BlipBridge $Version - windows-$Architecture
 fast reusable image textures for PowerPoint Shapes
 
 WHAT IS IN HERE
-  BlipBridge.dll   the library
+  $dllName   the library
   BlipBridge.bas   the VBA module to import
   blipbridge.h     the C ABI, if you are calling from something other than VBA
   LICENSE          MIT
 
 INSTALL
-  1. Copy BlipBridge.dll next to your .pptm.
+  1. Copy $dllName next to your .pptm.
   2. Import BlipBridge.bas into the VBA project.
 
   There is nothing to register and nothing to install. No regsvr32, no ProgID,

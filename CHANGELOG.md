@@ -7,6 +7,9 @@ the test machine.
 
 ### Fixed
 
+- Align release ZIP names with the workflow's `blipbridge-v<version>` convention
+  and ship architecture-specific DLL names matching the VBA wrapper. Validate
+  downloaded checksums before assembling the universal Windows package.
 - Restore `windows.h` before `oleauto.h` in shared Automation and Office backend
   headers. Alphabetical include sorting broke MinGW's base type declarations,
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
