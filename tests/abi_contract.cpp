@@ -222,13 +222,23 @@ int wmain(int argc, wchar_t** argv) {
         Check(sizeof(BB_Handle) == 8, "BB_Handle is 64 bits on this architecture");
 
         const BB_Handle wide = 0x1234abcd5678ef01ull;
-        Check(api.ReleaseTexture(wide) == BB_E_INVALID_HANDLE,
-              "a handle with both halves set is rejected, not misread");
+        /*
+         * Which refusal comes back depends on whether this build has a backend:
+         * one that tracks handles says BB_E_INVALID_HANDLE, one that has no
+         * backend at all says BB_E_UNSUPPORTED_HOST first. Both are correct, and
+         * pinning either would make this test assert the architecture rather
+         * than the thing it is here for - that a 64-bit value crosses the ABI
+         * intact. What must not happen is success.
+         */
+        const BB_Result refused = api.ReleaseTexture(wide);
+        Check(refused != BB_OK,
+              "a handle with both halves set is refused, not misread as valid");
         // A null Shape, deliberately: it is refused by argument validation before
         // anything dereferences it. A non-null fake would be dereferenced once the
         // handle check no longer short-circuits, and that is a crash, not a test.
         Check(api.ApplyTexture(nullptr, wide) == BB_E_INVALID_ARG,
               "the same handle reaches ApplyTexture's argument checks intact");
+        Check(!LastError(api).empty(), "and the refusal came with a readable reason");
 
         // The real assertion: the stack survived. A convention mismatch shows up
         // here rather than above.

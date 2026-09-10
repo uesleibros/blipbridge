@@ -20,9 +20,33 @@ BlipBridge.ReleaseTexture tex
 No `regsvr32`. No ProgID. No `CreateObject`. No add-in installer. Put the DLL
 next to your presentation and import one `.bas` module.
 
-> **Status: research-grade, working, and narrow.** The accelerated backend runs
-> against **one validated Office build** and refuses to run against anything
-> else. Read [Supported builds](#supported-builds) before depending on it.
+[![ci](https://github.com/uesleibros/blipbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/uesleibros/blipbridge/actions/workflows/ci.yml)
+
+## Status
+
+Two different things, kept apart on purpose. **A green build says nothing about
+whether the PowerPoint backend is safe** - hosted CI runners have no Office at
+all.
+
+| | Builds in CI | Native PowerPoint backend |
+|---|---|---|
+| **Windows x64** | yes | **validated** on Office 16.0.14334.20848 |
+| **Windows x86** | yes | **not yet** - loads and refuses every texture call |
+| macOS | no | not implemented, and not a port |
+
+The x86 package is real and useful for testing the ABI, the wrapper and the
+packaging on 32-bit Office. It will not accelerate anything: the 64-bit backend
+is not even compiled into it, because code that links and is wrong is the worst
+possible outcome for a library that drives undocumented Office internals. See
+[docs/windows_x86.md](docs/windows_x86.md).
+
+Backend validation happens on a machine with the validated Office build, and the
+transcripts are committed under [docs/evidence/](docs/evidence/) so the evidence
+travels with the repository even though CI cannot reproduce it.
+
+> **Research-grade, working, and narrow.** The accelerated backend runs against
+> **one validated Office build** and refuses anything else. Read
+> [Supported builds](#supported-builds) before depending on it.
 
 ## Why it exists
 
@@ -57,7 +81,9 @@ Measured in process on the test machine, 1000 iterations, same Shape and image:
 | `BlipBridge.ApplyTexture` | **0.1860 ms** | **0.1756 ms** | **0.2260 ms** | **0.3361 ms** |
 
 **≈3.5x faster on the mean, ≈3.5x on the median**, and a wider margin in the
-tail. One-off costs: `LoadTexture` 0.0231 ms, `ReleaseTexture` 0.0001 ms.
+tail. Measured on the validated test environment - Office 16.0.14334.20848,
+Windows x64, one machine, one workload. Performance varies with Office build,
+hardware, image size and how much else the document is doing. One-off costs: `LoadTexture` 0.0231 ms, `ReleaseTexture` 0.0001 ms.
 Alternating between two textures costs the same as repeating one.
 
 These numbers are from one Office build, one machine and one workload. Your
@@ -89,11 +115,17 @@ it because one call is tidier, not because it is quicker. See
 
 | | |
 |---|---|
-| Platform | Windows x64 only |
+| Platform | Windows. x64 has a validated backend; x86 builds and refuses |
 | Host | PowerPoint (the accelerated path is refused elsewhere) |
 | Office | **16.0.14334.20848** (PowerPoint LTSC 2021 x64), the build every offset was validated against |
-| VBA | VBA7, 64-bit |
+| VBA | VBA7. One `.bas` serves both 32-bit and 64-bit Office |
 | macOS | **not supported** - see [docs/macos.md](docs/macos.md) |
+
+The validated build is a property of **that build**, not of a version family.
+`16.0.14334.x` is not assumed to work; only the exact build was tested, and
+anything else fails closed. Adding one means re-validating its layouts against a
+real install - use the
+[unsupported-build issue template](https://github.com/uesleibros/blipbridge/issues/new?template=unsupported_office_build.yml).
 
 On any other build, `BB_Init` returns `BB_E_UNSUPPORTED_BUILD` and
 `BB_GetCapabilities` reports nothing. That is deliberate: the backend depends on
@@ -146,6 +178,25 @@ The backend calls undocumented Office internals, so every call is gated:
   worked around.
 
 ## Getting started
+
+### Which package?
+
+Check **File > Account > About PowerPoint**. The first line ends with `64-bit` or
+`32-bit`, and that is the package to download from
+[Releases](https://github.com/uesleibros/blipbridge/releases):
+
+```text
+blipbridge-<version>-windows-x64.zip     64-bit PowerPoint
+blipbridge-<version>-windows-x86.zip     32-bit PowerPoint
+```
+
+Get it wrong and `BlipBridge.bas` says so in words - "Architecture mismatch: ...
+is the 64-bit build, but this PowerPoint is 32-bit" - rather than leaving you
+with error 53, error 193, or "Bad DLL calling convention".
+
+Verify a download with `sha256sum -c SHA256SUMS.txt`.
+
+### Install
 
 ```text
 MyGame.pptm
@@ -209,21 +260,81 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |
 | [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |
 | [cost_profile.md](docs/cost_profile.md) | where each microsecond of an apply goes |
+| [windows_x86.md](docs/windows_x86.md) | what x86 is today, and what validating it would take |
 | [research.md](docs/research.md) | the journal, including the wrong turns |
 
 Raw transcripts are in `docs/evidence/`.
 
 ## Building
 
-Windows x64, MinGW-w64 UCRT and CMake:
+MinGW-w64 and CMake. The architecture comes from the toolchain, so a UCRT64 shell
+produces x64 and a MINGW32 shell produces x86 - there is no flag to get wrong,
+and CMake prints which one it chose.
 
 ```powershell
 .\build.ps1 -Configuration Release
 & ctest --test-dir build/Release --output-on-failure
 ```
 
-`tests/abi_contract.cpp` runs without PowerPoint. The PowerPoint regressions in
-`tools/` need a live host.
+or directly:
+
+```bash
+cmake -S . -B build/Release -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build/Release --parallel
+ctest --test-dir build/Release --output-on-failure
+```
+
+## Testing
+
+Two suites, and the difference matters:
+
+| Suite | Needs PowerPoint | Runs in CI |
+|---|---|---|
+| `ctest` - ABI and COM contracts | no | yes, both architectures |
+| `tools/test_*.ps1` - the Office regressions | **yes** | **no** |
+
+The Office suites cover the semantic Shape guards, the compatibility matrix, the
+per-class stress runs, the picture cache, Shape lifecycle, undo and redo. They
+need a live PowerPoint on the validated build, so they are never run or reported
+by CI. Run them locally:
+
+```powershell
+.\tools\test_semantic_guards.ps1        # Connector, Line, WordArt
+.\tools\test_shape_compatibility.ps1    # the matrix, one process per class
+.\tools\test_shape_class_stress.ps1     # 1000 applies per native class
+.\tools\test_picture_cache.ps1          # UserPicture2 and both caches
+.\tools\test_shape_lifecycle_cache.ps1  # duplicate, group, delete, undo
+```
+
+See [.github/workflows/README.md](.github/workflows/README.md) for the full split
+and how an Office-capable runner could be added later.
+
+## Releasing
+
+Tag with SemVer and the release workflow does the rest - build both
+architectures in Release and Debug, test, package, checksum, and publish:
+
+```bash
+git tag v0.4.0 && git push origin v0.4.0
+```
+
+Nothing is published if a build or test job fails.
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the workflow. Two things are worth
+knowing before opening a pull request:
+
+* **Guards are not optional.** Version checks, structural validation, signature
+  checks, semantic Shape eligibility and per-apply receiver re-resolution all
+  exist because of specific measured failures. Weakening one needs a better
+  reason than speed.
+* **Evidence over reasoning.** A Shape class is not supported because it looks
+  like it should be - a Connector looks identical to a rectangle all the way down
+  and terminates PowerPoint. Support comes from running the harnesses.
+
+Security issues, and anything that could damage a document, go through
+[SECURITY.md](SECURITY.md) privately first.
 
 ## License
 
