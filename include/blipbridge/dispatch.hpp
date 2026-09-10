@@ -1,11 +1,13 @@
 #pragma once
 
 #include <algorithm>
+// MinGW requires Windows base types before the Automation declarations.
+#include <windows.h>
+
 #include <oleauto.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <windows.h>
 
 namespace bb {
 /** Internal exception carrying an HRESULT; translate at every COM/C ABI boundary. */

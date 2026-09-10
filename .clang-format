@@ -43,3 +43,11 @@ Cpp11BracedListStyle: true
 
 SortIncludes: CaseSensitive
 IncludeBlocks: Regroup
+
+# MinGW's COM headers require Windows base types before oleauto.h is parsed.
+# Negative priority also keeps windows.h ahead of a source file's main header.
+IncludeCategories:
+  - Regex: '^<windows\.h>$'
+    Priority: -1
+  - Regex: '.*'
+    Priority: 1

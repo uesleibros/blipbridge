@@ -27,9 +27,11 @@
  */
 
 #include <cstdint>
+// MinGW requires Windows base types before the Automation declarations.
+#include <windows.h>
+
 #include <oleauto.h>
 #include <string>
-#include <windows.h>
 
 namespace bb::office {
 

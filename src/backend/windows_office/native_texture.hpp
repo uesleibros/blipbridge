@@ -18,9 +18,11 @@
  * so one ApplyTexture can serve both.
  */
 
+// MinGW requires Windows base types before the Automation declarations.
+#include <windows.h>
+
 #include <oleauto.h>
 #include <string>
-#include <windows.h>
 
 /**
  * True when the native backend can actually run in this process: PowerPoint

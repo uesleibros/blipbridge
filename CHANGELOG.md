@@ -3,6 +3,15 @@
 All notable changes to BlipBridge. Dates are the day the work was validated on
 the test machine.
 
+## [Unreleased]
+
+### Fixed
+
+- Restore `windows.h` before `oleauto.h` in shared Automation and Office backend
+  headers. Alphabetical include sorting broke MinGW's base type declarations,
+  causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
+  now prioritizes `windows.h` so subsequent formatting preserves this dependency.
+
 ## [0.4.0] - 2026-09-10
 
 First public release. `uesleibros/blipbridge`, MIT, with CI and an automatic

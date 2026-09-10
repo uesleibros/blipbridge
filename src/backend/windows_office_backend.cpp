@@ -20,13 +20,14 @@
 #include "windows_office/native_texture.hpp"
 #include "windows_office/picture_cache.hpp"
 #include "windows_office/shape_policy.hpp"
-
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
 #include <cstring>
 #include <new>
-#include <oleauto.h>
+// MinGW requires Windows base types before the Automation declarations.
 #include <windows.h>
+
+#include <oleauto.h>
 
 namespace bb {
 namespace {

@@ -1,7 +1,9 @@
 #pragma once
+// MinGW requires Windows base types before the Automation declarations.
+#include <windows.h>
+
 #include <oleauto.h>
 #include <string>
-#include <windows.h>
 
 // The texture store is production code and lives with the backend. The research
 // harnesses below drive it; it does not know they exist.
