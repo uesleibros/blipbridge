@@ -1,0 +1,88 @@
+name: Crash or document damage
+description: PowerPoint closed unexpectedly, or a document was left wrong
+title: "Crash: "
+labels: [crash]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **If this looks like it could damage other people's documents, please
+        report it privately first**: [report a
+        vulnerability](https://github.com/uesleibros/blipbridge/security/advisories/new).
+        See SECURITY.md.
+
+        A crash in this library is taken seriously. One has already been found
+        and fixed — a Connector passed every structural check and terminated
+        PowerPoint — so the guards are built around exactly this class of bug.
+
+        **Please do not attach a memory dump.** They can contain the contents of
+        whatever document was open. What is asked for below is more useful and
+        carries far less of your data.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you called, and what PowerPoint did.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: The smallest sequence that reproduces it
+      description: VBA is ideal. The Shape type involved matters a great deal.
+      render: vb
+    validations:
+      required: true
+
+  - type: input
+    id: shape
+    attributes:
+      label: Shape type
+      description: "`Debug.Print shp.Type` for the Shape involved, and `shp.Connector` if it answers."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: damage
+    attributes:
+      label: Was a document left damaged?
+      options:
+        - "No - PowerPoint closed but the file was fine"
+        - "Yes - the file was damaged or would not reopen"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: BlipBridge version
+      description: "`Debug.Print BlipBridge.Version`"
+    validations:
+      required: true
+
+  - type: input
+    id: office
+    attributes:
+      label: PowerPoint version, build, and architecture
+      placeholder: "16.0.14334.20848, 64-bit"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+    validations:
+      required: true
+
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capability output
+      description: "`Debug.Print Hex(BlipBridge.Capabilities)`"
+      render: text
+    validations:
+      required: false

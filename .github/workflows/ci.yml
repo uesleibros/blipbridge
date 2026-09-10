@@ -105,7 +105,7 @@ jobs:
                         BB_GetAbiVersion BB_ApplyPicture BB_InvalidateShape \
                         BB_ClearPictureCache BB_GetPictureCacheStats; do
             if ! objdump -p build/${{ matrix.configuration }}/BlipBridge.dll \
-                 | grep -qE "\\[[ 0-9]+\\] $symbol\$"; then
+                 | grep -qE "[[:space:]]$symbol\$"; then
               echo "missing or decorated export: $symbol"
               exit 1
             fi

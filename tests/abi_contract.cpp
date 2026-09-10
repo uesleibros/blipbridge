@@ -35,29 +35,38 @@ void Check(bool condition, const std::string& what) {
 }
 
 /// Every entry point, resolved by name the way the VBA wrapper resolves them.
+/*
+ * Every pointer below carries BB_CALL, and that is not decoration.
+ *
+ * On x64 it expands to nothing, because there is one convention. On x86 it is
+ * __stdcall, which is what the DLL exports - and a cdecl pointer to a stdcall
+ * function leaves the stack unbalanced on every call. The failure does not
+ * appear at the call site; it appears somewhere afterwards, as a crash that
+ * looks unrelated. CI found exactly that when these were written without it.
+ */
 struct Api {
     HMODULE module = nullptr;
 
-    BB_Result (*Init)(void) = nullptr;
-    BB_Result (*Shutdown)(void) = nullptr;
-    BB_Result (*LoadTexture)(const uint8_t*, uint32_t, BB_Handle*) = nullptr;
-    BB_Result (*ApplyTexture)(void*, BB_Handle) = nullptr;
-    BB_Result (*ApplyTextureBatch)(void* const*, const BB_Handle*, uint32_t,
-                                   uint32_t*) = nullptr;
-    BB_Result (*ReleaseTexture)(BB_Handle) = nullptr;
-    BB_Result (*ClearTextures)(void) = nullptr;
-    uint32_t (*GetTextureCount)(void) = nullptr;
-    uint32_t (*GetCapabilities)(void) = nullptr;
-    uint32_t (*GetLastError)(char*, uint32_t) = nullptr;
-    uint32_t (*GetVersion)(void) = nullptr;
-    uint32_t (*GetAbiVersion)(void) = nullptr;
-    BB_Result (*LoadTexturePixels)(const uint8_t*, uint32_t, uint32_t, int32_t,
-                                   BB_Handle*) = nullptr;
-    uint32_t (*GetVersionString)(char*, uint32_t) = nullptr;
-    BB_Result (*ApplyPicture)(void*, const uint16_t*) = nullptr;
-    BB_Result (*InvalidateShape)(void*) = nullptr;
-    BB_Result (*ClearPictureCache)(void) = nullptr;
-    BB_Result (*GetPictureCacheStats)(uint32_t*, uint32_t*, uint64_t*) = nullptr;
+    BB_Result (BB_CALL *Init)(void) = nullptr;
+    BB_Result (BB_CALL *Shutdown)(void) = nullptr;
+    BB_Result (BB_CALL *LoadTexture)(const uint8_t*, uint32_t, BB_Handle*) = nullptr;
+    BB_Result (BB_CALL *ApplyTexture)(void*, BB_Handle) = nullptr;
+    BB_Result (BB_CALL *ApplyTextureBatch)(void* const*, const BB_Handle*, uint32_t,
+                                           uint32_t*) = nullptr;
+    BB_Result (BB_CALL *ReleaseTexture)(BB_Handle) = nullptr;
+    BB_Result (BB_CALL *ClearTextures)(void) = nullptr;
+    uint32_t (BB_CALL *GetTextureCount)(void) = nullptr;
+    uint32_t (BB_CALL *GetCapabilities)(void) = nullptr;
+    uint32_t (BB_CALL *GetLastError)(char*, uint32_t) = nullptr;
+    uint32_t (BB_CALL *GetVersion)(void) = nullptr;
+    uint32_t (BB_CALL *GetAbiVersion)(void) = nullptr;
+    BB_Result (BB_CALL *LoadTexturePixels)(const uint8_t*, uint32_t, uint32_t, int32_t,
+                                           BB_Handle*) = nullptr;
+    uint32_t (BB_CALL *GetVersionString)(char*, uint32_t) = nullptr;
+    BB_Result (BB_CALL *ApplyPicture)(void*, const uint16_t*) = nullptr;
+    BB_Result (BB_CALL *InvalidateShape)(void*) = nullptr;
+    BB_Result (BB_CALL *ClearPictureCache)(void) = nullptr;
+    BB_Result (BB_CALL *GetPictureCacheStats)(uint32_t*, uint32_t*, uint64_t*) = nullptr;
 
     ~Api() {
         if (module) {

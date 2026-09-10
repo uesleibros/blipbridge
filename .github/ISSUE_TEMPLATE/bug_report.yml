@@ -1,0 +1,62 @@
+name: Bug report
+description: Something behaves incorrectly, but nothing crashed
+title: "Bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a crash or a damaged document, use the crash template instead — those
+        are handled differently.
+
+        If BlipBridge refused to run on your Office build, that is the
+        unsupported-build template: refusing is by design.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: The smallest sequence that reproduces it
+      render: vb
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: The error message, if any
+      description: BlipBridge raises errors with a specific reason; paste it verbatim.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: BlipBridge version
+      description: "`Debug.Print BlipBridge.Version`"
+    validations:
+      required: true
+
+  - type: input
+    id: office
+    attributes:
+      label: PowerPoint version, build, and architecture
+      placeholder: "16.0.14334.20848, 64-bit"
+    validations:
+      required: true
+
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capability output
+      description: "`Debug.Print Hex(BlipBridge.Capabilities)`"
+      render: text
+    validations:
+      required: false

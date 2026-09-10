@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security or document-corruption report
+    url: https://github.com/uesleibros/blipbridge/security/advisories/new
+    about: >-
+      Anything that could crash PowerPoint or damage a document should be
+      reported privately first. See SECURITY.md.

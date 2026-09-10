@@ -1,0 +1,87 @@
+name: Unsupported Office build
+description: BlipBridge refuses to run on your Office build
+title: "Unsupported build: "
+labels: [unsupported-build]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        BlipBridge validates the exact Office build it runs against and refuses
+        anything else. That is deliberate: the backend depends on internal
+        layouts verified per build, and guessing at an unvalidated one could
+        corrupt a document.
+
+        So this is not a bug — but it is exactly the report that lets a build be
+        added. Supporting a new one means re-validating its layouts against a
+        real install, which needs the details below.
+
+        **Please do not attach a memory dump.** They can contain whatever
+        document was open. The fields here are more useful and carry far less of
+        your data.
+
+  - type: input
+    id: version
+    attributes:
+      label: BlipBridge version
+      description: "`Debug.Print BlipBridge.Version` — paste the whole line."
+      placeholder: "0.4.0 (windows-x64, ...)"
+    validations:
+      required: true
+
+  - type: input
+    id: abi
+    attributes:
+      label: ABI version
+      description: The number BlipBridge.bas reports if it refused the DLL, if that happened.
+    validations:
+      required: false
+
+  - type: input
+    id: office
+    attributes:
+      label: PowerPoint version and build
+      description: "File → Account → About PowerPoint. The full build number, e.g. 16.0.14334.20848."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: office_arch
+    attributes:
+      label: Office architecture
+      description: The same About dialog — the first line ends with 32-bit or 64-bit.
+      options:
+        - 64-bit
+        - 32-bit
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 Pro 24H2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capability output
+      description: |
+        Run this in the VBA immediate window and paste the result:
+        ```vb
+        Debug.Print BlipBridge.Version
+        Debug.Print Hex(BlipBridge.Capabilities)
+        ```
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: message
+    attributes:
+      label: The exact message
+      description: BlipBridge explains what it found and why it refused. Paste it verbatim.
+      render: text
+    validations:
+      required: true
