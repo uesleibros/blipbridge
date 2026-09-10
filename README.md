@@ -1,6 +1,19 @@
-# BlipBridge
+<p align="center">
+  <img src="assets/blipbridge-logo.png" alt="BlipBridge logo" width="240">
+</p>
 
-Fast, reusable image textures for ordinary PowerPoint Shapes, callable from VBA.
+<h1 align="center">BlipBridge</h1>
+
+<p align="center">
+  Fast, reusable image textures for ordinary PowerPoint Shapes, callable from VBA.
+</p>
+
+<p align="center">
+  <a href="https://github.com/uesleibros/blipbridge/actions/workflows/ci.yml"><img src="https://github.com/uesleibros/blipbridge/actions/workflows/ci.yml/badge.svg" alt="CI build status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
+  <a href="#building"><img src="https://img.shields.io/badge/C%2B%2B-20-2563eb" alt="C++20"></a>
+  <a href="#supported-builds"><img src="https://img.shields.io/badge/native_backend-Windows_x64-7c3aed" alt="Native backend: Windows x64"></a>
+</p>
 
 ```vb
 BlipBridge.UserPicture2 shp, "C:\textures\brick.png"   ' that is the whole API
@@ -19,8 +32,6 @@ BlipBridge.ReleaseTexture tex
 
 No `regsvr32`. No ProgID. No `CreateObject`. No add-in installer. Put the DLL
 next to your presentation and import one `.bas` module.
-
-[![ci](https://github.com/uesleibros/blipbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/uesleibros/blipbridge/actions/workflows/ci.yml)
 
 ## Status
 
