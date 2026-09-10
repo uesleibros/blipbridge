@@ -7,6 +7,8 @@ the test machine.
 
 ### Fixed
 
+- Allow release publication retries to replace matching assets on an existing
+  release while preserving its notes and settings.
 - Align release ZIP names with the workflow's `blipbridge-v<version>` convention
   and ship architecture-specific DLL names matching the VBA wrapper. Validate
   downloaded checksums before assembling the universal Windows package.

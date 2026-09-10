@@ -421,18 +421,30 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
-          tag="${{ needs.metadata.outputs.tag }}"
-
-          gh release create "$tag" \
-            --repo "${{ github.repository }}" \
-            --verify-tag \
-            --title "BlipBridge $tag" \
-            --notes-file notes.md \
-            --generate-notes \
+          assets=(
             staged/*.zip \
             staged/*.zip.sha256 \
             staged/SHA256SUMS.txt
+          )
+
+          if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" >/dev/null; then
+            # Keep existing notes and release settings when retrying publication.
+            gh release upload "$RELEASE_TAG" \
+              --repo "$RELEASE_REPOSITORY" \
+              --clobber \
+              "${assets[@]}"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$RELEASE_REPOSITORY" \
+              --verify-tag \
+              --title "BlipBridge $RELEASE_TAG" \
+              --notes-file notes.md \
+              --generate-notes \
+              "${assets[@]}"
+          fi
