@@ -93,7 +93,11 @@ ShapeClassification ClassifyShapeForNativePictureFill(IDispatch* shape) noexcept
  * The gate in front of the private OART apply. `Unsupported` and `Invalid` carry
  * different HRESULTs so the C ABI can report "this Shape class has no native
  * path" separately from "this is not a usable Shape".
+ *
+ * Returns the classification it accepted, so a caller that needs `Shape.Type`
+ * afterwards does not have to ask Office for it a second time. Callers that do
+ * not need it ignore the value and read as before.
  */
-void RequireNativePictureFillTarget(IDispatch* shape);
+ShapeClassification RequireNativePictureFillTarget(IDispatch* shape);
 
 } // namespace bb::office

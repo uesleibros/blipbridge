@@ -127,7 +127,7 @@ IDispatch* RequireDispatchShape(void* shape) {
     return dispatch;
 }
 
-IDispatch* RequireFillableShape(void* shape) {
+IDispatch* RequireFillableShape(void* shape, long* shapeType = nullptr) {
     if (!shape) {
         throw Error(E_INVALIDARG, "Shape pointer is null");
     }
@@ -157,7 +157,11 @@ IDispatch* RequireFillableShape(void* shape) {
     // ABI and the COM surface cannot disagree about what they accept. This is
     // the gate in front of the private OART apply - nothing internal has been
     // touched yet when it refuses.
-    office::RequireNativePictureFillTarget(dispatch);
+    const office::ShapeClassification classification =
+        office::RequireNativePictureFillTarget(dispatch);
+    if (shapeType) {
+        *shapeType = classification.shapeType;
+    }
     return dispatch;
 }
 
@@ -275,10 +279,25 @@ class WindowsOfficeBackend final : public Backend {
 
     BackendResult ApplyTexture(void* shape, std::uint64_t texture) noexcept override {
         return Guarded([&] {
-            IDispatch* dispatch = RequireFillableShape(shape);
+            long shapeType = 0;
+            IDispatch* dispatch = RequireFillableShape(shape, &shapeType);
             // Fill is fetched per call; the receiver behind it is resolved inside
             // and never cached, because a deleted Shape still passes every check.
-            nativeTextureApply(get(dispatch, L"Fill").obj(), static_cast<long>(texture));
+            nativeTextureApplyToShape(dispatch, static_cast<long>(texture), shapeType);
+        });
+    }
+
+    BackendResult ApplyTextureIfChanged(void* shape,
+                                        std::uint64_t texture,
+                                        bool* skipped) noexcept override {
+        return Guarded([&] {
+            // Same gate, same order: an ineligible Shape is refused before the
+            // skip cache is consulted, so this cannot become a way to reach the
+            // private backend with a Shape the ordinary apply would reject.
+            long shapeType = 0;
+            IDispatch* dispatch = RequireFillableShape(shape, &shapeType);
+            nativeTextureApplyIfChanged(
+                dispatch, static_cast<long>(texture), shapeType, skipped);
         });
     }
 

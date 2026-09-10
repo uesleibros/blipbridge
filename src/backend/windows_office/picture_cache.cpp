@@ -73,6 +73,8 @@
 #include "picture_cache.hpp"
 
 #include "native_texture.hpp"
+#include "apply_skip_cache.hpp"
+#include "shape_identity.hpp"
 #include "shape_policy.hpp"
 
 #include <blipbridge/dispatch.hpp>
@@ -129,104 +131,6 @@ FileKey DescribeFile(const std::wstring& path) {
         (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
     key.written = (static_cast<std::uint64_t>(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
                   attributes.ftLastWriteTime.dwLowDateTime;
-    return key;
-}
-
-/**
- * A Shape's identity as values rather than as a pointer.
- *
- * `valid` is false when any part could not be read; such a Shape is applied to
- * but never cached, because a partial key would collide with other Shapes.
- */
-struct ShapeKey {
-    long presentation = 0;
-    long slide = 0;
-    long shape = 0;
-    /// False when this Shape must not be cached at all - see DescribeShape.
-    bool valid = false;
-
-    bool operator<(const ShapeKey& other) const {
-        if (presentation != other.presentation) {
-            return presentation < other.presentation;
-        }
-        if (slide != other.slide) {
-            return slide < other.slide;
-        }
-        return shape < other.shape;
-    }
-};
-
-/**
- * Reads a Shape's composite identity.
- *
- * Never throws: an unkeyable Shape is a reason to skip the cache, not to fail an
- * apply that would otherwise have worked.
- */
-ShapeKey DescribeShape(IDispatch* shape, long shapeType) noexcept {
-    ShapeKey key;
-    // A group's fill propagates to its children, and a child's fill changes what
-    // the group shows, so a remembered texture on either side goes stale when the
-    // other is filled. Neither is cached; see the file comment for the pixel
-    // evidence. msoGroup is 6.
-    constexpr long kGroup = 6;
-    if (shapeType == kGroup) {
-        return key;
-    }
-    try {
-        // ParentGroup answers only for a Shape inside a group. One property read,
-        // about a microsecond, against the 190 an incorrect skip would misplace.
-        bb::Value owner = bb::get(shape, L"ParentGroup");
-        if (owner.v.vt == VT_DISPATCH && owner.obj()) {
-            return key;
-        }
-    } catch (const bb::Error&) {
-        // Top-level Shapes refuse the question, which is the common case and
-        // means exactly what it should: this Shape is not inside a group.
-    }
-    try {
-        key.shape = bb::get(shape, L"Id").integer();
-        bb::Value parent = bb::get(shape, L"Parent");
-        if (parent.v.vt != VT_DISPATCH || !parent.obj()) {
-            return key;
-        }
-        // Shape.Parent is the Slide. Anything that does not report a SlideID
-        // goes uncached rather than being given a key that means something else.
-        key.slide = bb::get(parent.obj(), L"SlideID").integer();
-        bb::Value presentation = bb::get(parent.obj(), L"Parent");
-        if (presentation.v.vt != VT_DISPATCH || !presentation.obj()) {
-            return key;
-        }
-        // Presentations have no numeric id, but every open one has a distinct
-        // window-independent hash of its full name plus its index. The index
-        // alone would shift as documents open and close.
-        bb::Value name = bb::get(presentation.obj(), L"FullName");
-        std::wstring text;
-        if (name.v.vt == VT_BSTR && name.v.bstrVal) {
-            text.assign(name.v.bstrVal, SysStringLen(name.v.bstrVal));
-        }
-        if (text.empty()) {
-            // An unsaved presentation has no FullName. Its Name ("Presentation1")
-            // is unique among open documents, which is all this key needs.
-            bb::Value shortName = bb::get(presentation.obj(), L"Name");
-            if (shortName.v.vt == VT_BSTR && shortName.v.bstrVal) {
-                text.assign(shortName.v.bstrVal, SysStringLen(shortName.v.bstrVal));
-            }
-        }
-        if (text.empty()) {
-            return key;
-        }
-        // FNV-1a over the document's name. Unsigned throughout: the constants
-        // do not fit a 32-bit long, and signed overflow would be undefined.
-        std::uint32_t hash = 2166136261u;
-        for (wchar_t character : text) {
-            hash ^= static_cast<std::uint32_t>(character);
-            hash *= 16777619u;
-        }
-        key.presentation = static_cast<long>(hash);
-        key.valid = true;
-    } catch (...) {
-        key.valid = false;
-    }
     return key;
 }
 
@@ -308,46 +212,11 @@ class PictureCache {
         return texture;
     }
 
-    /// True when @p shape already carries this image and still looks like it.
-    bool AlreadyApplied(const ShapeKey& key, std::uint64_t textureId, IDispatch* shape) {
-        if (!key.valid) {
-            return false;
-        }
-        const auto found = shapes_.find(key);
-        if (found == shapes_.end() || found->second != textureId) {
-            return false;
-        }
-        // The record says this texture is already on this Shape. Confirm the
-        // fill is still a picture before trusting it: a fill cleared or replaced
-        // with a colour elsewhere must be re-applied, not skipped.
-        try {
-            bb::Value fill = bb::get(shape, L"Fill");
-            if (fill.v.vt != VT_DISPATCH || !fill.obj()) {
-                return false;
-            }
-            if (bb::get(fill.obj(), L"Type").integer() != kPictureFill) {
-                shapes_.erase(found);
-                return false;
-            }
-        } catch (...) {
-            shapes_.erase(found);
-            return false;
-        }
-        ++skipped_;
-        return true;
-    }
-
-    void Remember(const ShapeKey& key, std::uint64_t textureId) {
-        if (key.valid) {
-            shapes_[key] = textureId;
-        }
-    }
-
-    void Forget(const ShapeKey& key) {
-        if (key.valid) {
-            shapes_.erase(key);
-        }
-    }
+    /*
+     * Which Shape carries which image is not this cache's business any more: it
+     * is one record, in apply_skip_cache, written by every path that changes a
+     * fill. This cache owns the file-keyed images and nothing else.
+     */
 
     /**
      * Drops every image this cache owns, and every Shape it remembers.
@@ -358,11 +227,11 @@ class PictureCache {
      */
     void Clear() noexcept {
         textures_.clear();
-        shapes_.clear();
     }
 
     PictureCacheStats Stats() const noexcept {
-        return PictureCacheStats{textures_.size(), shapes_.size(), skipped_};
+        const SkipStats skips = ApplySkipStats();
+        return PictureCacheStats{textures_.size(), skips.shapes, skips.skipped};
     }
 
   private:
@@ -383,14 +252,7 @@ class PictureCache {
             }
             // Every Shape remembered as carrying it must forget it too, or the
             // apply of the new version would be skipped as redundant.
-            const std::uint64_t stale = TextureIdOf(entry->second);
-            for (auto shape = shapes_.begin(); shape != shapes_.end();) {
-                if (shape->second == stale) {
-                    shape = shapes_.erase(shape);
-                } else {
-                    ++shape;
-                }
-            }
+            ForgetTexture(TextureIdOf(entry->second));
             // Erasing drops this cache's reference. If a public handle also
             // holds the image, it stays alive there - which is correct: the
             // caller asked for that handle and has not released it.
@@ -399,8 +261,6 @@ class PictureCache {
     }
 
     std::map<FileKey, TextureRef> textures_;
-    std::map<ShapeKey, std::uint64_t> shapes_;
-    std::uint64_t skipped_ = 0;
 };
 
 /// The ordinary Office route, for classes with no validated native path.
@@ -458,7 +318,7 @@ void ApplyPictureCached(IDispatch* shape, const std::wstring& path) {
     // The type was already read by the classifier; passing it on saves a second
     // Automation fetch on every apply.
     const ShapeKey key = DescribeShape(shape, classification.shapeType);
-    if (cache.AlreadyApplied(key, TextureIdOf(texture), shape)) {
+    if (AlreadyCarries(key, TextureIdOf(texture), shape)) {
         return;
     }
 
@@ -470,7 +330,7 @@ void ApplyPictureCached(IDispatch* shape, const std::wstring& path) {
     // unvalidated build or a corrupt image are all things the caller needs to
     // see, not things to retry more slowly.
     ApplyTextureRef(fill.obj(), texture);
-    cache.Remember(key, TextureIdOf(texture));
+    RememberApplied(key, TextureIdOf(texture));
 }
 
 void InvalidateShapeCache(IDispatch* shape) {
@@ -478,11 +338,14 @@ void InvalidateShapeCache(IDispatch* shape) {
         throw bb::Error(E_POINTER, "Missing Shape");
     }
     const ShapeClassification classification = ClassifyShapeForNativePictureFill(shape);
-    PictureCache::Instance().Forget(DescribeShape(shape, classification.shapeType));
+    ForgetApplied(DescribeShape(shape, classification.shapeType));
 }
 
 void ClearPictureCache() noexcept {
+    // The images go, so every claim on them goes too: a Shape must not be left
+    // remembered as carrying an image this cache no longer holds.
     PictureCache::Instance().Clear();
+    ForgetAllApplied();
 }
 
 PictureCacheStats GetPictureCacheStats() noexcept {

@@ -220,6 +220,12 @@ Private Declare PtrSafe Function BB_ApplyTexture Lib "BlipBridge-x64.dll" ( _
     ByVal texture As LongLong _
 ) As Long
 
+Private Declare PtrSafe Function BB_ApplyTextureIfChanged Lib "BlipBridge-x64.dll" ( _
+    ByVal shapePtr As LongPtr, _
+    ByVal texture As LongLong, _
+    ByRef skipped As Long _
+) As Long
+
 Private Declare PtrSafe Function BB_ApplyTextureBatch Lib "BlipBridge-x64.dll" ( _
     ByVal shapesPtr As LongPtr, _
     ByVal texturesPtr As LongPtr, _
@@ -298,6 +304,13 @@ Private Declare PtrSafe Function BB_ApplyTexture Lib "BlipBridge-x86.dll" ( _
     ByVal shapePtr As LongPtr, _
     ByVal textureLow As Long, _
     ByVal textureHigh As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_ApplyTextureIfChanged Lib "BlipBridge-x86.dll" ( _
+    ByVal shapePtr As LongPtr, _
+    ByVal textureLow As Long, _
+    ByVal textureHigh As Long, _
+    ByRef skipped As Long _
 ) As Long
 
 Private Declare PtrSafe Function BB_ApplyTextureBatch Lib "BlipBridge-x86.dll" ( _
@@ -722,6 +735,41 @@ Public Sub ApplyTexture(ByVal shp As PowerPoint.Shape, ByRef texture As BlipBrid
     CheckResult BB_ApplyTexture(ObjPtr(shp), texture.Low, texture.High), "ApplyTexture"
 #End If
 End Sub
+
+'/**
+' * @function ApplyTextureIfChanged
+' * @brief Applies a texture only when the Shape is not already carrying that image.
+' * @param shp Live PowerPoint Shape-compatible object whose pointer is borrowed for this call only.
+' * @param texture Opaque handle returned by LoadTexture or LoadTexturePixels.
+' * @return True when the Shape already had the image and nothing was touched.
+' * @remarks Accepts exactly what ApplyTexture accepts and leaves the same document behind. The
+' * difference is that a redundant call costs almost nothing: no document edit, no undo entry, no
+' * invalidation, no modified flag. Images are compared by internal identity, so two handles for the
+' * same picture compare equal. BlipBridge cannot see a fill changed behind its back by another
+' * add-in, a paste or a theme change - call InvalidateShape after such a change, or use
+' * ApplyTexture, which never skips.
+' */
+Public Function ApplyTextureIfChanged(ByVal shp As PowerPoint.Shape, _
+                                      ByRef texture As BlipBridgeTexture) As Boolean
+    Dim skipped As Long
+
+    Initialize
+
+    If shp Is Nothing Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.ApplyTextureIfChanged", _
+                  "ApplyTextureIfChanged requires a live Shape."
+    End If
+
+#If Win64 Then
+    CheckResult BB_ApplyTextureIfChanged(ObjPtr(shp), TextureToNative(texture), skipped), _
+                "ApplyTextureIfChanged"
+#Else
+    CheckResult BB_ApplyTextureIfChanged(ObjPtr(shp), texture.Low, texture.High, skipped), _
+                "ApplyTextureIfChanged"
+#End If
+
+    ApplyTextureIfChanged = (skipped <> 0)
+End Function
 
 '/**
 ' * @function UserPicture2

@@ -92,6 +92,24 @@ void ApplyTextureRef(IDispatch* fill, const TextureRef& texture);
  */
 std::uint64_t TextureIdOf(const TextureRef& texture);
 
+/**
+ * Resolves a public handle to the image it references.
+ *
+ * Throws bb::Error if the handle is unknown or was released. Used by the stage
+ * profiler, which needs the lookup and the apply as separately timed steps
+ * rather than as one call.
+ */
+TextureRef LookupTexture(long handle);
+
+/**
+ * The GFX cached image inside @p texture, borrowed.
+ *
+ * Exists so a profiler can hand the image to ApplyCachedImage directly and time
+ * the guard chain separately from the apply. Not an ownership transfer: the
+ * TextureRef still owns it.
+ */
+void* CachedImageOf(const TextureRef& texture);
+
 } // namespace bb::office
 
 // Whether a Shape may take the native path is decided by
@@ -110,6 +128,31 @@ long nativeTextureLoadPixels(const void* pixels,
                              long stride);
 
 void nativeTextureApply(IDispatch* fill, long handle);
+
+/**
+ * Applies @p handle to the Shape @p shape, fetching its Fill.
+ *
+ * Unlike the Fill-only overload this keeps the shared per-Shape record truthful,
+ * so a later ApplyTextureIfChanged or BB_ApplyPicture cannot skip on the
+ * strength of an image this call replaced. @p shapeType is `Shape.Type`, already
+ * read by the caller's eligibility check.
+ */
+void nativeTextureApplyToShape(IDispatch* shape, long handle, long shapeType);
+
+/**
+ * Applies @p handle to @p shape only if it is not already carrying that image.
+ *
+ * @p shapeType is `Shape.Type`, passed in because the caller has already read it
+ * while deciding the Shape was eligible. @p skipped receives whether the Office
+ * edit was avoided, and is written even when this throws.
+ *
+ * The identity compared is the process-unique image id, never the public handle:
+ * a handle can be released while another owner keeps the same image alive.
+ *
+ * Every check the ordinary apply makes still runs. This only removes the Office
+ * document edit, and only when the Shape demonstrably does not need one.
+ */
+void nativeTextureApplyIfChanged(IDispatch* shape, long handle, long shapeType, bool* skipped);
 void nativeTextureRelease(long handle);
 void nativeTextureClear() noexcept;
 bool nativeTextureOwnsHandle(long handle);

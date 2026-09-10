@@ -111,6 +111,15 @@ class Backend {
     /// Fills the Shape behind @p shape, borrowed for this call only.
     virtual BackendResult ApplyTexture(void* shape, std::uint64_t texture) noexcept = 0;
 
+    /**
+     * Fills the Shape behind @p shape unless it already carries that image.
+     *
+     * @p skipped receives whether the Office edit was avoided. A skip leaves the
+     * document untouched: no undo entry, no invalidation, no modified flag.
+     */
+    virtual BackendResult
+    ApplyTextureIfChanged(void* shape, std::uint64_t texture, bool* skipped) noexcept = 0;
+
     virtual BackendResult ReleaseTexture(std::uint64_t texture) noexcept = 0;
     virtual void ClearTextures() noexcept = 0;
 

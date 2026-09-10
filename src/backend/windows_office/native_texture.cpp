@@ -38,6 +38,8 @@
 
 #include "native_texture.hpp"
 
+#include "apply_skip_cache.hpp"
+
 #include "native_apply.hpp"
 #include "oart_layout.hpp"
 #include "shape_policy.hpp"
@@ -328,6 +330,14 @@ void ApplyTextureRef(IDispatch* fill, const TextureRef& texture) {
     texture->countApply();
 }
 
+TextureRef LookupTexture(long handle) {
+    return TextureStore::Instance().GetRef(handle);
+}
+
+void* CachedImageOf(const TextureRef& texture) {
+    return texture ? texture->cached() : nullptr;
+}
+
 std::uint64_t TextureIdOf(const TextureRef& texture) {
     return texture ? texture->id() : 0;
 }
@@ -353,10 +363,68 @@ void nativeTextureApply(IDispatch* fill, long handle) {
 }
 
 void nativeTextureRelease(long handle) {
+    // Forget the image *before* the handle goes, while its id is still readable.
+    // If another owner keeps the image alive this costs one apply; if this was
+    // the last owner it prevents a stale claim outliving it.
+    std::uint64_t id = 0;
+    try {
+        id = bb::office::TextureIdOf(TextureStore::Instance().GetRef(handle));
+    } catch (...) {
+        // An unknown handle is reported by Release below, not here.
+    }
     TextureStore::Instance().Release(handle);
+    if (id != 0) {
+        bb::office::ForgetTexture(id);
+    }
+}
+
+void nativeTextureApplyToShape(IDispatch* shape, long handle, long shapeType) {
+    const bb::office::TextureRef texture = TextureStore::Instance().GetRef(handle);
+    bb::office::ApplyTextureRef(bb::get(shape, L"Fill").obj(), texture);
+
+    /*
+     * An apply that changes a fill without saying so leaves a stale claim behind
+     * it, and a later skip would honour that claim and show the wrong picture.
+     * So this path writes the record too, even though it never reads it.
+     *
+     * The test comes first because the Shape key costs four Automation fetches.
+     * Nothing is remembered until something asks for a skip, so a caller who
+     * only ever calls ApplyTexture pays one comparison and no fetches.
+     */
+    if (bb::office::AnyRemembered()) {
+        bb::office::RememberApplied(bb::office::DescribeShape(shape, shapeType),
+                                    bb::office::TextureIdOf(texture));
+    }
+}
+
+void nativeTextureApplyIfChanged(IDispatch* shape, long handle, long shapeType, bool* skipped) {
+    if (skipped) {
+        *skipped = false;
+    }
+    // Resolved first, and by reference: an unknown handle must fail here exactly
+    // as nativeTextureApply would, before any decision about skipping.
+    const bb::office::TextureRef texture = TextureStore::Instance().GetRef(handle);
+    const std::uint64_t id = bb::office::TextureIdOf(texture);
+    const bb::office::ShapeKey key = bb::office::DescribeShape(shape, shapeType);
+
+    if (bb::office::AlreadyCarries(key, id, shape)) {
+        if (skipped) {
+            *skipped = true;
+        }
+        return;
+    }
+
+    // Only now is Fill worth fetching: the skip check reads the Shape's fill
+    // itself, so fetching up front would charge the cheap path for the dear one.
+    bb::office::ApplyTextureRef(bb::get(shape, L"Fill").obj(), texture);
+    bb::office::RememberApplied(key, id);
 }
 
 void nativeTextureClear() noexcept {
+    // Dropping every handle may drop the last reference to some images, and a
+    // Shape must not keep claiming one that no longer exists - a later image
+    // could otherwise inherit the claim and be wrongly skipped.
+    bb::office::ForgetAllApplied();
     TextureStore::Instance().Clear();
 }
 

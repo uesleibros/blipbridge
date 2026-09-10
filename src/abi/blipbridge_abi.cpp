@@ -276,6 +276,34 @@ BB_API BB_Result BB_CALL BB_ApplyTexture(void* shape, BB_Handle texture) {
     }
 }
 
+BB_API BB_Result BB_CALL BB_ApplyTextureIfChanged(void* shape,
+                                                  BB_Handle texture,
+                                                  int32_t* skipped) {
+    try {
+        if (skipped) {
+            *skipped = 0;
+        }
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        if (!shape) {
+            return Fail(BB_E_INVALID_ARG, "BB_ApplyTextureIfChanged needs a Shape pointer");
+        }
+        if (texture == 0) {
+            return Fail(BB_E_INVALID_HANDLE, "Texture handle 0 is never valid");
+        }
+        bool avoided = false;
+        const bb::BackendResult result =
+            Library::Instance().Ensure().ApplyTextureIfChanged(shape, texture, &avoided);
+        if (skipped && result.ok()) {
+            *skipped = avoided ? 1 : 0;
+        }
+        return Translate(result);
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_ApplyTextureIfChanged");
+    }
+}
+
 BB_API BB_Result BB_CALL BB_ApplyTextureBatch(void* const* shapes,
                                               const BB_Handle* textures,
                                               uint32_t count,

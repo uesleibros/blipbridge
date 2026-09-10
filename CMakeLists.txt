@@ -93,6 +93,8 @@ set(BB_BACKEND_SOURCES
     src/backend/windows_office/native_apply.cpp
     src/backend/windows_office/native_texture.cpp
     src/backend/windows_office/shape_policy.cpp
+    src/backend/windows_office/shape_identity.cpp
+    src/backend/windows_office/apply_skip_cache.cpp
     src/backend/windows_office/picture_cache.cpp
 )
 
@@ -113,9 +115,11 @@ set(BB_RESEARCH_SOURCES
     experiments/exp_internal_blip/cached_image_load.cpp
     experiments/exp_internal_blip/texture_benchmark.cpp
     experiments/exp_internal_blip/batch_benchmark.cpp
+    experiments/exp_internal_blip/skip_benchmark.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
     experiments/exp_internal_blip/shape_compatibility.cpp
+    experiments/exp_internal_blip/apply_profiler.cpp
     experiments/exp_internal_blip/picture_cache_driver.cpp
 )
 

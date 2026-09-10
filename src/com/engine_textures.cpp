@@ -52,7 +52,9 @@ void Engine::ApplyTexture(IDispatch* destination, long handle) {
     RequireNormalShape(destination, "Target must be AutoShape or Freeform");
     if (nativeTextureOwnsHandle(handle)) {
         // The receiver behind this Fill is resolved inside, per apply, never cached.
-        nativeTextureApply(get(destination, L"Fill").obj(), handle);
+        // Routed through the Shape so this surface keeps the per-Shape record as
+        // truthful as the C ABI does; the harnesses mix the two freely.
+        nativeTextureApplyToShape(destination, handle, get(destination, L"Type").integer());
         return;
     }
     const auto texture = textures_.find(handle);

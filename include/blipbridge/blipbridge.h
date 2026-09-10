@@ -225,6 +225,26 @@ BB_API BB_Result BB_CALL BB_LoadTexturePixels(
 BB_API BB_Result BB_CALL BB_ApplyTexture(void* shape, BB_Handle texture);
 
 /**
+ * Applies @p texture to @p shape only if that Shape does not already carry it.
+ *
+ * Identical to BB_ApplyTexture in what it accepts and in what the document looks
+ * like afterwards. The difference is that a Shape already carrying the image is
+ * left completely untouched: no document edit, no undo entry, no invalidation,
+ * no modified flag. @p skipped, when given, receives 1 in that case and 0 when
+ * the fill was really applied.
+ *
+ * The image is compared by internal identity, not by handle, so two handles for
+ * the same picture compare equal and a released handle cannot alias a new one.
+ *
+ * Because BlipBridge cannot see a fill replaced behind its back by something
+ * else - another add-in, a paste, a theme change - use BB_InvalidateShape after
+ * such a change, or BB_ApplyTexture, which never skips.
+ */
+BB_API BB_Result BB_CALL BB_ApplyTextureIfChanged(void* shape,
+                                                  BB_Handle texture,
+                                                  int32_t* skipped);
+
+/**
  * Fills many Shapes in one call, to avoid a language-boundary crossing per
  * Shape.
  *

@@ -66,6 +66,13 @@ class UnsupportedBackend final : public Backend {
         return Refuse();
     }
 
+    BackendResult ApplyTextureIfChanged(void*, std::uint64_t, bool* skipped) noexcept override {
+        if (skipped) {
+            *skipped = false;
+        }
+        return Refuse();
+    }
+
     BackendResult ReleaseTexture(std::uint64_t) noexcept override {
         return Refuse();
     }

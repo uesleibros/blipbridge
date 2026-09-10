@@ -147,11 +147,11 @@ ShapeClassification ClassifyShapeForNativePictureFill(IDispatch* shape) noexcept
     return result;
 }
 
-void RequireNativePictureFillTarget(IDispatch* shape) {
+ShapeClassification RequireNativePictureFillTarget(IDispatch* shape) {
     const ShapeClassification classification = ClassifyShapeForNativePictureFill(shape);
     switch (classification.eligibility) {
     case ShapeEligibility::NativeSupported:
-        return;
+        return classification;
     case ShapeEligibility::Invalid:
         throw bb::Error(E_INVALIDARG, classification.reason);
     case ShapeEligibility::FallbackSupported:

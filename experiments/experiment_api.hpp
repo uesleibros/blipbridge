@@ -65,6 +65,14 @@ benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath, long ite
 std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long iterations);
 
 /**
+ * Research: the six scenarios that decide whether BB_ApplyTextureIfChanged is
+ * worth having - repeated applies, a first apply, repeated skips, alternating
+ * images, Shape deletion and recreation, and many Shapes sharing one texture.
+ * Asserts the skip decision each leg expected. See skip_benchmark.cpp.
+ */
+std::wstring benchmarkApplySkip(IDispatch* slide, long shapeCount, long iterations);
+
+/**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.
@@ -87,6 +95,14 @@ std::wstring probeShapeCompatibility(IDispatch* shape);
  * dangerous call, rather than merely observing that PowerPoint survived it.
  */
 std::wstring probeShapePolicy(IDispatch* shape);
+
+/**
+ * Research: stage-by-stage timing of the production ApplyTexture path.
+ *
+ * Walks exactly what BB_ApplyTexture walks, timing each step separately, so the
+ * ~0.186 ms can be attributed rather than guessed at. See apply_profiler.cpp.
+ */
+std::wstring profileApplyStages(IDispatch* shape, long handle, long iterations);
 
 /**
  * Research: applies a texture with the Shape-type allowlist bypassed, so the

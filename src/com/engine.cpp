@@ -42,6 +42,7 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"InspectTexture", DispatchId::InspectTexture},
     {L"BenchmarkNativeTexture", DispatchId::BenchmarkNativeTexture},
     {L"BenchmarkTextureBatch", DispatchId::BenchmarkTextureBatch},
+    {L"BenchmarkApplySkip", DispatchId::BenchmarkApplySkip},
     {L"PixelTextureExperiment", DispatchId::PixelTextureExperiment},
     {L"BenchmarkPixelLoad", DispatchId::BenchmarkPixelLoad},
     {L"ProfileFillStages", DispatchId::ProfileFillStages},
@@ -51,7 +52,8 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"InvalidateShape", DispatchId::InvalidateShape},
     {L"ClearPictureCache", DispatchId::ClearPictureCache},
     {L"PictureCacheStats", DispatchId::PictureCacheStats},
-    {L"ProbeShapePolicy", DispatchId::ProbeShapePolicy}};
+    {L"ProbeShapePolicy", DispatchId::ProbeShapePolicy},
+    {L"ProfileApplyStages", DispatchId::ProfileApplyStages}};
 
 /**
  * Highest DISPID GetIDsOfNames can hand out. Invoke must accept every one of
