@@ -1,0 +1,21 @@
+  ok   UserPicture2 works from a clean start ()
+  ok   and produces a picture fill
+  ok   UserPicture2 survives ClearTextures ()
+  ok   and still produces a picture fill
+  ok   a second Shape works after ClearTextures ()
+  ok   UserPicture2 survives ClearPictureCache ()
+  ok   and the cache repopulated itself
+  ok   UserPicture2 survives ReleaseTexture of a caller handle ()
+  ok   an explicit texture survives ClearPictureCache ()
+  ok   and still applies
+  ok   a released handle is still refused
+  ok   and says handles are never recycled
+  ok   and a new handle is a different number
+  ok   repeating the same path is stable ()
+  ok   alternating paths is stable ()
+  ok   and both files are cached
+  ok   one file across many Shapes ()
+  ok   and every one of them is filled
+  ok   UserPicture2 works after clearing both owners ()
+  ok   and the cache holds exactly one image
+  ok   ordinary Fill.UserPicture still works at the end

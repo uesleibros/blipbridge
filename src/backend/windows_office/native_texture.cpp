@@ -63,14 +63,22 @@ constexpr char kCreateFromStreamSymbol[] =
     "AEAV?$TCntPtr@UIImage@GEL@@@4@PEAUIStream@@W4IStreamCopyInstruction@12@"
     "PEBVMD4UID@4@_N@Z";
 
+} // namespace
+
+namespace bb::office {
+
 /**
  * One decoded image, owning one reference to each of the GFX objects the
  * creator returned.
+ *
+ * Lives outside the anonymous namespace because ownership is now shared: the
+ * public handle table and the picture cache each hold a TextureRef to the same
+ * instance, and the image dies only when the last of them lets go.
  */
 class NativeTexture {
   public:
     NativeTexture(void* cached, void* image, std::size_t byteCount)
-        : cached_(cached), image_(image), byteCount_(byteCount) {}
+        : cached_(cached), image_(image), byteCount_(byteCount), id_(++nextId_) {}
 
     NativeTexture(const NativeTexture&) = delete;
     NativeTexture& operator=(const NativeTexture&) = delete;
@@ -98,12 +106,30 @@ class NativeTexture {
         ++applyCount_;
     }
 
+    /// Process-unique, so the picture cache can say "the same image" without
+    /// keeping it alive or dereferencing something already freed.
+    std::uint64_t id() const {
+        return id_;
+    }
+
   private:
     void* cached_ = nullptr;
     void* image_ = nullptr;
     std::size_t byteCount_ = 0;
     unsigned long applyCount_ = 0;
+    std::uint64_t id_ = 0;
+
+    static std::uint64_t nextId_;
 };
+
+std::uint64_t NativeTexture::nextId_ = 0;
+
+} // namespace bb::office
+
+namespace {
+
+using bb::office::NativeTexture;
+using bb::office::TextureRef;
 
 /**
  * Process-wide texture store.
@@ -120,15 +146,24 @@ class TextureStore {
         return store;
     }
 
-    long Add(void* cached, void* image, std::size_t byteCount) {
+    /**
+     * Gives @p texture a public handle, adding this table as a second owner.
+     *
+     * The table used to own the image outright, which is what let ClearTextures
+     * destroy an image the picture cache was still using.
+     */
+    long Add(TextureRef texture) {
         RequireOwningThread(true);
         const long handle = nextHandle_++;
-        textures_.emplace(handle, std::make_unique<NativeTexture>(cached, image, byteCount));
-        ++creations_;
+        textures_.emplace(handle, std::move(texture));
         return handle;
     }
 
-    NativeTexture& Get(long handle) {
+    void CountCreation() {
+        ++creations_;
+    }
+
+    const TextureRef& GetRef(long handle) {
         RequireOwningThread(false);
         const auto found = textures_.find(handle);
         if (found == textures_.end()) {
@@ -139,7 +174,12 @@ class TextureStore {
             }
             throw bb::Error(bb::BB_E_TEXTURE_NOT_FOUND, out.str());
         }
-        return *found->second;
+        return found->second;
+    }
+
+    NativeTexture& Get(long handle) {
+        RequireOwningThread(false);
+        return *GetRef(handle);
     }
 
     void Release(long handle) {
@@ -151,9 +191,15 @@ class TextureStore {
         }
     }
 
-    /// Releases every texture. Safe to call when the store was never used.
+    /**
+     * Drops every public handle. Safe to call when the store was never used.
+     *
+     * This releases the *handles*, not necessarily the images: one the picture
+     * cache also holds stays alive and usable, which is the whole point of the
+     * split. Deliberately not thread-checked, because this also runs from
+     * teardown paths.
+     */
     void Clear() noexcept {
-        // Deliberately not thread-checked: this also runs from teardown paths.
         textures_.clear();
     }
 
@@ -169,10 +215,6 @@ class TextureStore {
     /// if this stays far below the number of applies.
     unsigned long Creations() const {
         return creations_;
-    }
-
-    void CountCreation() {
-        ++creations_;
     }
 
   private:
@@ -193,7 +235,7 @@ class TextureStore {
         }
     }
 
-    std::map<long, std::unique_ptr<NativeTexture>> textures_;
+    std::map<long, TextureRef> textures_;
     unsigned long creations_ = 0;
     long nextHandle_ = kNativeHandleBase;
     DWORD owningThread_ = 0;
@@ -224,7 +266,24 @@ bool nativeTextureBackendAvailable() noexcept {
     }
 }
 
-long nativeTextureLoad(SAFEARRAY* bytes) {
+namespace bb::office {
+
+/// Wraps a freshly created image, releasing its GFX references if the wrap
+/// itself throws - the only window in which nothing else owns them yet.
+static TextureRef Own(const bb::oart::CreatedImage& created, std::size_t byteCount) {
+    try {
+        TextureRef texture =
+            std::make_shared<NativeTexture>(created.cached, created.image, byteCount);
+        TextureStore::Instance().CountCreation();
+        return texture;
+    } catch (...) {
+        bb::oart::ReleaseIntrusive(created.image);
+        bb::oart::ReleaseIntrusive(created.cached);
+        throw;
+    }
+}
+
+TextureRef CreateTextureFromBytes(SAFEARRAY* bytes) {
     LONG lower = 0;
     LONG upper = 0;
     if (!bytes || SafeArrayGetDim(bytes) != 1) {
@@ -233,47 +292,64 @@ long nativeTextureLoad(SAFEARRAY* bytes) {
     bb::check(SafeArrayGetLBound(bytes, 1, &lower), "SafeArrayGetLBound");
     bb::check(SafeArrayGetUBound(bytes, 1, &upper), "SafeArrayGetUBound");
 
-    // Decoding is the expensive half, and it happens exactly once per texture.
-    const bb::oart::CreatedImage created = bb::oart::CreateCachedImageFromBytes(bytes);
-    try {
-        return TextureStore::Instance().Add(
-            created.cached, created.image, static_cast<std::size_t>(upper - lower) + 1);
-    } catch (...) {
-        bb::oart::ReleaseIntrusive(created.image);
-        bb::oart::ReleaseIntrusive(created.cached);
-        throw;
+    // Decoding is the expensive half, and it happens exactly once per image.
+    return Own(bb::oart::CreateCachedImageFromBytes(bytes),
+               static_cast<std::size_t>(upper - lower) + 1);
+}
+
+TextureRef CreateTextureFromPixels(const void* pixels,
+                                   unsigned long width,
+                                   unsigned long height,
+                                   long stride) {
+    // Same lifetime rules as an encoded image; only the decode differs.
+    return Own(bb::oart::CreateCachedImageFromPixels(pixels,
+                                                     static_cast<std::uint32_t>(width),
+                                                     static_cast<std::uint32_t>(height),
+                                                     static_cast<std::int32_t>(stride)),
+               static_cast<std::size_t>(stride) * height);
+}
+
+long RegisterTexture(TextureRef texture) {
+    if (!texture) {
+        throw bb::Error(E_POINTER, "Cannot register a null texture");
     }
+    return TextureStore::Instance().Add(std::move(texture));
+}
+
+void ApplyTextureRef(IDispatch* fill, const TextureRef& texture) {
+    if (!texture) {
+        throw bb::Error(bb::BB_E_TEXTURE_NOT_FOUND, "No texture to apply");
+    }
+    // Re-resolved for every apply and never cached: a Shape deleted through
+    // public COM still passes every pointer and vtable check in this chain.
+    const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill);
+    const bb::oart::ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
+    bb::oart::ApplyCachedImage(functions, target, texture->cached());
+    texture->countApply();
+}
+
+std::uint64_t TextureIdOf(const TextureRef& texture) {
+    return texture ? texture->id() : 0;
+}
+
+} // namespace bb::office
+
+long nativeTextureLoad(SAFEARRAY* bytes) {
+    return bb::office::RegisterTexture(bb::office::CreateTextureFromBytes(bytes));
 }
 
 long nativeTextureLoadPixels(const void* pixels,
                              unsigned long width,
                              unsigned long height,
                              long stride) {
-    // Same store, same handles, same lifetime rules as an encoded texture. The
-    // only difference is where the decoded image came from.
-    const bb::oart::CreatedImage created =
-        bb::oart::CreateCachedImageFromPixels(pixels,
-                                              static_cast<std::uint32_t>(width),
-                                              static_cast<std::uint32_t>(height),
-                                              static_cast<std::int32_t>(stride));
-    try {
-        return TextureStore::Instance().Add(
-            created.cached, created.image, static_cast<std::size_t>(stride) * height);
-    } catch (...) {
-        bb::oart::ReleaseIntrusive(created.image);
-        bb::oart::ReleaseIntrusive(created.cached);
-        throw;
-    }
+    return bb::office::RegisterTexture(
+        bb::office::CreateTextureFromPixels(pixels, width, height, stride));
 }
 
 void nativeTextureApply(IDispatch* fill, long handle) {
-    NativeTexture& texture = TextureStore::Instance().Get(handle);
-    // Re-resolved for every apply and never cached: a Shape deleted through
-    // public COM still passes every pointer and vtable check in this chain.
-    const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill);
-    const bb::oart::ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
-    bb::oart::ApplyCachedImage(functions, target, texture.cached());
-    texture.countApply();
+    // The handle is resolved to a reference first, so the apply itself is the
+    // same code the picture cache runs.
+    bb::office::ApplyTextureRef(fill, TextureStore::Instance().GetRef(handle));
 }
 
 void nativeTextureRelease(long handle) {

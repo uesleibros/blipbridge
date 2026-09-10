@@ -246,9 +246,18 @@ std::vector<std::uint8_t> ReadFile(const std::wstring& path) {
     return bytes;
 }
 
-/// Loads bytes into a native texture. The store copies them, so the array only
-/// has to outlive the call.
-long LoadTextureFromBytes(const std::vector<std::uint8_t>& bytes) {
+/**
+ * Decodes bytes into an image this cache owns outright.
+ *
+ * Deliberately *not* a public texture handle. The cache used to take one, which
+ * meant `ClearTextures()` - or a caller releasing that particular handle -
+ * destroyed the image the cache was still pointing at, and the next
+ * `UserPicture2` failed with "handle ... is not valid (it was released)". The
+ * cache now holds its own reference, so the two lifetimes are independent.
+ *
+ * The store copies the bytes, so the array only has to outlive the call.
+ */
+TextureRef LoadTextureFromBytes(const std::vector<std::uint8_t>& bytes) {
     SAFEARRAYBOUND bound{static_cast<ULONG>(bytes.size()), 0};
     SAFEARRAY* array = SafeArrayCreate(VT_UI1, 1, &bound);
     if (!array) {
@@ -267,7 +276,7 @@ long LoadTextureFromBytes(const std::vector<std::uint8_t>& bytes) {
     bb::check(SafeArrayAccessData(array, &raw), "SafeArrayAccessData");
     std::memcpy(raw, bytes.data(), bytes.size());
     SafeArrayUnaccessData(array);
-    return nativeTextureLoad(array);
+    return CreateTextureFromBytes(array);
 }
 
 /**
@@ -283,29 +292,29 @@ class PictureCache {
         return cache;
     }
 
-    /// The texture for a file, decoding it only the first time it is seen.
-    long TextureFor(const std::wstring& path) {
+    /// The image for a file, decoding it only the first time it is seen.
+    TextureRef TextureFor(const std::wstring& path) {
         const FileKey key = DescribeFile(path);
         const auto found = textures_.find(key);
         if (found != textures_.end()) {
             return found->second;
         }
-        const long handle = LoadTextureFromBytes(ReadFile(path));
+        TextureRef texture = LoadTextureFromBytes(ReadFile(path));
         // A file whose size or timestamp changed lands on a different key, so the
-        // superseded entry for the same path is released rather than left to
+        // superseded entry for the same path is dropped rather than left to
         // accumulate across a session that keeps rewriting one file.
         DropOtherVersionsOf(path);
-        textures_.emplace(key, handle);
-        return handle;
+        textures_.emplace(key, texture);
+        return texture;
     }
 
-    /// True when @p shape already carries @p handle and still looks like it.
-    bool AlreadyApplied(const ShapeKey& key, long handle, IDispatch* shape) {
+    /// True when @p shape already carries this image and still looks like it.
+    bool AlreadyApplied(const ShapeKey& key, std::uint64_t textureId, IDispatch* shape) {
         if (!key.valid) {
             return false;
         }
         const auto found = shapes_.find(key);
-        if (found == shapes_.end() || found->second != handle) {
+        if (found == shapes_.end() || found->second != textureId) {
             return false;
         }
         // The record says this texture is already on this Shape. Confirm the
@@ -328,9 +337,9 @@ class PictureCache {
         return true;
     }
 
-    void Remember(const ShapeKey& key, long handle) {
+    void Remember(const ShapeKey& key, std::uint64_t textureId) {
         if (key.valid) {
-            shapes_[key] = handle;
+            shapes_[key] = textureId;
         }
     }
 
@@ -340,14 +349,14 @@ class PictureCache {
         }
     }
 
+    /**
+     * Drops every image this cache owns, and every Shape it remembers.
+     *
+     * It touches nothing the caller owns: an image that also has a public
+     * texture handle stays alive behind that handle. Symmetrically,
+     * `ClearTextures()` cannot reach these.
+     */
     void Clear() noexcept {
-        for (const auto& [key, handle] : textures_) {
-            try {
-                nativeTextureRelease(handle);
-            } catch (...) {
-                // Teardown: a handle the store already dropped is not a failure.
-            }
-        }
         textures_.clear();
         shapes_.clear();
     }
@@ -374,7 +383,7 @@ class PictureCache {
             }
             // Every Shape remembered as carrying it must forget it too, or the
             // apply of the new version would be skipped as redundant.
-            const long stale = entry->second;
+            const std::uint64_t stale = TextureIdOf(entry->second);
             for (auto shape = shapes_.begin(); shape != shapes_.end();) {
                 if (shape->second == stale) {
                     shape = shapes_.erase(shape);
@@ -382,17 +391,15 @@ class PictureCache {
                     ++shape;
                 }
             }
-            try {
-                nativeTextureRelease(stale);
-            } catch (...) {
-                // The store may already have dropped it; not a failure here.
-            }
+            // Erasing drops this cache's reference. If a public handle also
+            // holds the image, it stays alive there - which is correct: the
+            // caller asked for that handle and has not released it.
             entry = textures_.erase(entry);
         }
     }
 
-    std::map<FileKey, long> textures_;
-    std::map<ShapeKey, long> shapes_;
+    std::map<FileKey, TextureRef> textures_;
+    std::map<ShapeKey, std::uint64_t> shapes_;
     std::uint64_t skipped_ = 0;
 };
 
@@ -447,11 +454,11 @@ void ApplyPictureCached(IDispatch* shape, const std::wstring& path) {
     }
 
     PictureCache& cache = PictureCache::Instance();
-    const long handle = cache.TextureFor(path);
+    const TextureRef texture = cache.TextureFor(path);
     // The type was already read by the classifier; passing it on saves a second
     // Automation fetch on every apply.
     const ShapeKey key = DescribeShape(shape, classification.shapeType);
-    if (cache.AlreadyApplied(key, handle, shape)) {
+    if (cache.AlreadyApplied(key, TextureIdOf(texture), shape)) {
         return;
     }
 
@@ -462,8 +469,8 @@ void ApplyPictureCached(IDispatch* shape, const std::wstring& path) {
     // Any failure from here is reported as itself. A deleted Shape, an
     // unvalidated build or a corrupt image are all things the caller needs to
     // see, not things to retry more slowly.
-    nativeTextureApply(fill.obj(), handle);
-    cache.Remember(key, handle);
+    ApplyTextureRef(fill.obj(), texture);
+    cache.Remember(key, TextureIdOf(texture));
 }
 
 void InvalidateShapeCache(IDispatch* shape) {

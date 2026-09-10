@@ -191,7 +191,12 @@ BB_API BB_Result BB_CALL BB_Shutdown(void) {
     try {
         Library& library = Library::Instance();
         if (library.backend) {
+            // Both, because the two are now independently owned: caller handles
+            // and the picture cache each reference their images, and clearing
+            // one deliberately leaves the other alone. Shutdown is the only
+            // place that must let go of everything BlipBridge owns.
             library.backend->ClearTextures();
+            library.backend->ClearPictureCache();
         }
         library.owningThread = 0;
         g_lastError.clear();
