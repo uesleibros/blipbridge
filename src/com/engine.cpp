@@ -43,6 +43,8 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"BenchmarkNativeTexture", DispatchId::BenchmarkNativeTexture},
     {L"BenchmarkTextureBatch", DispatchId::BenchmarkTextureBatch},
     {L"BenchmarkApplySkip", DispatchId::BenchmarkApplySkip},
+    {L"MeasureApplyCostFactors", DispatchId::MeasureApplyCostFactors},
+    {L"ProfileResolveStages", DispatchId::ProfileResolveStages},
     {L"PixelTextureExperiment", DispatchId::PixelTextureExperiment},
     {L"BenchmarkPixelLoad", DispatchId::BenchmarkPixelLoad},
     {L"ProfileFillStages", DispatchId::ProfileFillStages},

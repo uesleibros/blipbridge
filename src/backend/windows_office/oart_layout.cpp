@@ -373,12 +373,69 @@ HMODULE EnsureOfficeModule(const wchar_t* moduleName) {
     return LoadLibraryExW(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
 }
 
+/**
+ * Takes a permanent reference on @p module, so its handle can never go stale.
+ *
+ * Pinning is what makes the fast path below sound rather than merely fast: a
+ * pinned module cannot be unloaded, so its base cannot change and a different
+ * image cannot appear at the same address. Windows offers no way to undo it,
+ * which is the point.
+ */
+HMODULE PinModule(HMODULE module) {
+    if (!module) {
+        return nullptr;
+    }
+    HMODULE pinned = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN |
+                                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                            reinterpret_cast<LPCWSTR>(module),
+                            &pinned)) {
+        // Not pinnable: keep answering the slow way rather than pretend.
+        return nullptr;
+    }
+    return pinned;
+}
+
 OfficeModules SynchroniseOfficeModules() {
+    /*
+     * Three GetModuleHandleW calls measured 7.1 microseconds together - 38% of
+     * the whole receiver resolution, and the largest single cost in it. Each one
+     * takes the loader lock and walks Office's module list by name, and it did
+     * that on every apply to answer a question whose answer cannot change.
+     *
+     * Cannot change once the modules are *pinned*, which is what this does. Only
+     * an unload could move a module, and a pinned module is never unloaded, so
+     * after the first complete lookup the handles are facts about the process
+     * rather than a cache of something that might have moved. That is a stronger
+     * guarantee than the per-call re-lookup it replaces: the old code could only
+     * notice a swap after it happened.
+     *
+     * Until all three are resolved and pinned, every call does the full lookup.
+     * GFX is delay-loaded and is genuinely absent until Office's first picture
+     * operation, so "not yet" is an ordinary state, not a failure.
+     *
+     * STA-only, like the rest of this file: the statics are not synchronised
+     * because nothing here may be touched off the owning thread.
+     */
+    static OfficeModules pinned;
+    static bool settled = false;
+    if (settled) {
+        return pinned;
+    }
+
     OfficeModules modules;
     modules.oart = EnsureOfficeModule(L"oart.dll");
     modules.ppcore = EnsureOfficeModule(L"ppcore.dll");
     modules.gfx = GetModuleHandleW(L"gfx.dll");
     ValidationCache::Instance().SynchroniseWith(modules.oart, modules.ppcore, modules.gfx);
+
+    const OfficeModules candidate{
+        PinModule(modules.oart), PinModule(modules.ppcore), PinModule(modules.gfx)};
+    if (candidate.oart == modules.oart && candidate.ppcore == modules.ppcore &&
+        candidate.gfx == modules.gfx && candidate.oart && candidate.ppcore && candidate.gfx) {
+        pinned = candidate;
+        settled = true;
+    }
     return modules;
 }
 

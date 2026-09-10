@@ -73,6 +73,20 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
 std::wstring benchmarkApplySkip(IDispatch* slide, long shapeCount, long iterations);
 
 /**
+ * Research: what the private apply's cost is made of, by varying one thing at a
+ * time around it - displayed slide, another slide, hidden, off-slide, minimised
+ * window. Answers whether the 76% is rendering or document bookkeeping, which
+ * decides whether batching is worth building. See apply_cost_factors.cpp.
+ */
+std::wstring measureApplyCostFactors(IDispatch* presentation, long iterations);
+
+/**
+ * Research: step-by-step timing of ResolveFillTarget, the second largest cost in
+ * an apply and the largest one that is ours. See resolve_profiler.cpp.
+ */
+std::wstring profileResolveStages(IDispatch* fill, long iterations);
+
+/**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.

@@ -131,14 +131,20 @@ struct OfficeModules {
 };
 
 /**
- * Fetches all three module handles once and points the validation cache at them,
+ * Fetches all three module handles and points the validation cache at them,
  * discarding everything it holds if any of them changed.
  *
- * This exists because the handles are the cache's *reload detector*, so they
- * cannot themselves be cached - but fetching them once per operation rather than
- * three times per module check costs a tenth as much and detects exactly the
- * same thing. GFX is looked up and never loaded here: only the create path needs
- * it, and loading it as a side effect of an apply would be a surprise.
+ * Once all three are resolved they are **pinned**, and from then on this returns
+ * them without asking the loader anything. The handles were the cache's reload
+ * detector, which is why they could not simply be remembered - but a pinned
+ * module cannot be unloaded, so there is nothing left to detect. That is the
+ * stronger statement of the two: the old re-lookup could only notice a module
+ * swap after it had already happened.
+ *
+ * Before that point every call does the full lookup. GFX is delay-loaded and is
+ * legitimately absent until Office's first picture operation; it is looked up
+ * and never loaded here, because loading it as a side effect of an apply would
+ * be a surprise.
  */
 OfficeModules SynchroniseOfficeModules();
 

@@ -116,6 +116,8 @@ set(BB_RESEARCH_SOURCES
     experiments/exp_internal_blip/texture_benchmark.cpp
     experiments/exp_internal_blip/batch_benchmark.cpp
     experiments/exp_internal_blip/skip_benchmark.cpp
+    experiments/exp_internal_blip/apply_cost_factors.cpp
+    experiments/exp_internal_blip/resolve_profiler.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
     experiments/exp_internal_blip/shape_compatibility.cpp
