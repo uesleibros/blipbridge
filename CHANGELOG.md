@@ -3,6 +3,50 @@
 All notable changes to BlipBridge. Dates are the day the work was validated on
 the test machine.
 
+## [0.4.0] - 2026-09-10
+
+First public release. `uesleibros/blipbridge`, MIT, with CI and an automatic
+release pipeline.
+
+### Added - distribution
+
+- **Windows x86 as a build target, and deliberately not a supported backend.**
+  CMake decides architecture from the toolchain and ships different file sets:
+  x64 gets the validated PowerPoint backend, x86 gets the public C ABI over a
+  backend that refuses. The reverse-engineered sources are not compiled on x86 at
+  all, because they would compile and be wrong - they depend on the x64 calling
+  convention, per-build module RVAs, x64 instruction bytes for the signature
+  checks, and pointer-sized record slots. See `docs/windows_x86.md`.
+- **One VBA wrapper for both architectures.** `LongLong` exists only in 64-bit
+  Office, so handles cross as two `ByVal Long` on x86 - exactly how a stdcall
+  frame carries a 64-bit value. The public API takes and returns `Variant`, so
+  caller code is identical on both.
+- **Wrong-package detection.** `ERROR_BAD_EXE_FORMAT` becomes "Architecture
+  mismatch: ... is the 64-bit build, but this PowerPoint is 32-bit", naming the
+  package to download, instead of error 193.
+- **CI** across x64/x86 and Release/Debug: configure, build, confirm the DLL
+  really is the architecture it claims, test, and check the export surface.
+- **Release workflow** on a `v*` tag: build, test, package, SHA-256, publish.
+  Nothing publishes if a build or test job fails.
+- `SECURITY.md` and four issue templates. The crash and unsupported-build
+  templates ask for version, build, architecture and capability output, and both
+  say not to attach a memory dump - those carry whatever document was open.
+
+### Changed
+
+- **x86 exports are `__stdcall`**, with `-Wl,--kill-at` keeping the names
+  undecorated. `BB_CALL` was empty, which on 32-bit means cdecl, and VBA's
+  `Declare` can only call stdcall - a cdecl export would bind and then unbalance
+  the stack on every call. x64 is unaffected.
+- The library version lives in the public header alone. It had drifted to three
+  different values across the header, the ABI implementation and CMake.
+
+### Fixed
+
+- The ABI contract test declared its function pointers without a calling
+  convention, which is cdecl on x86 against a stdcall DLL. Found by CI as a
+  segfault with no useful message.
+
 ## [Unreleased]
 
 ### Changed - ABI version 2
