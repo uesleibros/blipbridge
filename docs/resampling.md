@@ -31,10 +31,18 @@ scaling, zoom, DPI and the renderer's own sampling are all downstream and
 unaffected by anything here.
 
 The supported claim is exactly this: *BlipBridge provides explicit software
-image-resampling filters before the image is handed to Office.* Nothing on this
-page should be read as control over PowerPoint's final interpolation. Whether
-Office exposes any such control is a separate question and has not been
-established.
+image-resampling filters before the image is handed to Office.*
+
+**Office may still resample the image when it draws it.** If a Shape is not
+exactly the pixel size of the image, or the slide is zoomed, or a slideshow is
+scaled to the display, PowerPoint's own renderer scales it with its own sampling
+- which BlipBridge neither chooses nor sees. Picking `BBScaleBicubic` here does
+not make PowerPoint's final draw bicubic.
+
+The practical consequence: to get exactly the pixels you chose, the image has to
+reach the renderer at the size it will be drawn. That is up to the caller and the
+document, not this library. Whether Office exposes any control over its own
+sampling is a separate question that has not been investigated.
 
 ## The filters
 
@@ -133,9 +141,36 @@ Reproduce with `build/<config>/bb_resample_benchmark.exe`.
 
 Read these plainly. **Nearest is roughly twenty times cheaper than bilinear and
 eighty times cheaper than bicubic**, and bicubic upscaling to full HD costs
-around 186 ms - fine as a one-off load, far too slow to do per frame. If you are
-scaling the same image repeatedly, scale it once and reuse the texture handle;
-that is what handles are for.
+around 186 ms.
+
+### When you pay it
+
+**Scaling cost is paid on every `BB_LoadTexturePixelsScaled` call.** It is not
+inherently a one-time cost, and whether it behaves like one depends entirely on
+what the caller does:
+
+* **Static or reused images.** Scale once, keep the handle, apply it as often as
+  you like. The cost is then paid once and amortised over every apply - and at
+  that point 186 ms for a full-HD bicubic upscale is usually irrelevant.
+* **New content each time.** A workload that builds a *new* scaled texture per
+  frame pays the full scaling cost per frame, on top of cached-image creation and
+  the apply. At 186 ms, bicubic is not viable there; nearest, at 2 ms, may be.
+
+Nothing caches by pixel content, so calling `LoadTexturePixelsScaled` twice with
+the same buffer does the work twice. If you want it once, keep the handle.
+
+### Which stage is which
+
+The four costs are measured separately and should not be added up carelessly:
+
+| Stage | Where it is measured |
+|---|---|
+| scaling | `bb_resample_benchmark`, the table above |
+| cached-image creation | `docs/cost_profile.md`, the `create` stage |
+| `ApplyTexture` | `docs/benchmarks.md` and `cost_profile.md`, the `apply` stage |
+| whole `LoadTexturePixelsScaled` | scaling plus cached-image creation |
+
+A single number covering all of them would hide which half a change affected.
 
 The identity row confirms the fast path: all three filters cost the same there,
 because none of them runs.

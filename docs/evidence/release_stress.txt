@@ -1,0 +1,20 @@
+  note private bytes at start: 144.1 MB
+  note after 2000 UserPicture2: textures=2;shapes=6;skipped=1994;
+  ok   the picture cache holds one image per distinct file, not per call
+  ok   and one entry per Shape, not per call
+  ok   handles keep increasing across thousands of load/release cycles
+  ok   and none of them is still held
+  ok   the very first handle is still permanently stale
+  ok   fifty interleaved ClearTextures/ClearPictureCache cycles completed
+  ok   and the picture cache is empty after the final clear
+  ok   and remembers no Shapes
+  ok   repeated load/apply/release leaves no handles behind
+  note shared image: textures=1;nextHandle=16779417;creations=2301;handle=16779416;cached=0x258e72b8fc0;cachedCount=25;bytes=49087;applies=6;
+  ok   the store reports its creation count
+  ok   and releasing it leaves nothing
+  ok   both owners are empty at the end
+  ok   and no caller-visible texture remains
+  note private bytes at end: 202.1 MB (PowerPoint's own document, undo and
+       render resources are included here and are not BlipBridge's to release)
+  ok   ordinary Fill.UserPicture still works after the whole run
+  ok   and so does UserPicture2

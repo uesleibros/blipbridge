@@ -58,7 +58,7 @@ all.
 | | Builds in CI | Native PowerPoint backend |
 |---|---|---|
 | **Windows x64** | yes | **validated** on Office 16.0.14334.20848 |
-| **Windows x86** | yes | **not yet** - loads and refuses every texture call |
+| **Windows x86** | yes | **not validated** - never run in a real 32-bit PowerPoint; loads and refuses every texture call |
 | macOS | no | not implemented, and not a port |
 
 The x86 package is real and useful for testing the ABI, the wrapper and the
@@ -185,6 +185,37 @@ guard is `Shape.Connector`, which is Office's own answer.
 The full matrix, the evidence, and how a class earns native support are in
 [docs/shape_compatibility.md](docs/shape_compatibility.md). It is a property of
 one Office build and has to be re-run on any other.
+
+## Textures, caches and ownership
+
+Three things a caller should know, and they are the difference between the API
+behaving obviously and behaving mysteriously.
+
+**A texture handle is an opaque token.** Not a pointer, not an index, and no
+arithmetic on it means anything. Zero is never valid. Handles are never recycled,
+so a released one is permanently stale and can never silently resolve to a
+different image.
+
+**Two owners, independently.** A handle *references* an image; it does not own it
+outright. `UserPicture2`'s cache holds its own reference to the images it created.
+An image lives until the last owner lets go:
+
+| Call | What it drops |
+|---|---|
+| `ReleaseTexture` | that one handle's reference |
+| `ClearTextures` | every caller-visible handle |
+| `ClearPictureCache` | the `UserPicture2` cache's own images, and its per-Shape skip state |
+| `Shutdown` | both, because it is the only call that should |
+
+`ClearTextures` cannot break `UserPicture2`, and `ClearPictureCache` cannot break
+a handle you still hold. Neither touches resources the other owns.
+
+**`InvalidateShape`** forgets what `UserPicture2` last put on one Shape. Call it
+after changing that Shape's fill by any other means, so the next call does real
+work instead of correctly-but-wrongly skipping.
+
+Full detail, including the defect that produced this model, is in
+[docs/picture_cache.md](docs/picture_cache.md).
 
 ## Safety
 

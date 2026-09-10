@@ -236,7 +236,9 @@ jobs:
             BB_GetTextureCount
             BB_GetCapabilities
             BB_GetLastError
+            BB_GetVersion
             BB_GetVersionString
+            BB_LoadTexturePixelsScaled
           )
 
           for symbol in "${required[@]}"; do
@@ -247,6 +249,56 @@ jobs:
           done
 
           echo "Required C ABI exports found."
+
+      - name: Verify the ABI version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The DLL cannot be asked without loading it, so the header is the
+          # authority and the wrapper must agree with it. A mismatch would make
+          # every user's Initialize fail for a reason nobody could act on.
+          header_abi="$(grep -oP '#define\s+BB_ABI_VERSION\s+\K\d+' include/blipbridge/blipbridge.h)"
+          wrapper_abi="$(grep -oP 'BB_EXPECTED_ABI\s+As\s+Long\s+=\s+\K\d+' vba/BlipBridge.bas)"
+
+          echo "header ABI  : $header_abi"
+          echo "wrapper ABI : $wrapper_abi"
+
+          if [ "$header_abi" != "3" ]; then
+            echo "This release requires ABI 3, header says $header_abi"
+            exit 1
+          fi
+
+          if [ "$header_abi" != "$wrapper_abi" ]; then
+            echo "ABI mismatch between the header and BlipBridge.bas"
+            exit 1
+          fi
+
+      - name: Verify the public VBA API stayed typed
+        shell: pwsh
+        run: |
+          $wrapper = Get-Content "vba/BlipBridge.bas" -Raw
+
+          # Object or Variant in a public signature would compile and quietly
+          # undo the typed API, so it fails the release rather than shipping.
+          $publicLines = $wrapper -split "`r?`n" | Where-Object {
+              $_ -match '^\s*Public\s+(Function|Sub)\s'
+          }
+
+          foreach ($line in $publicLines) {
+              if ($line -match '\bAs\s+(Object|Variant)\b') {
+                  throw "Public API regressed to Object/Variant: $line"
+              }
+          }
+
+          foreach ($name in @('BlipBridgeTexture', 'BlipBridgeScaleFilter',
+                              'LoadTexturePixelsScaled')) {
+              if ($wrapper -notmatch [regex]::Escape($name)) {
+                  throw "BlipBridge.bas is missing $name"
+              }
+          }
+
+          Write-Host "Public VBA API is strongly typed."
 
       - name: Verify VBA wrapper architecture names
         shell: pwsh
@@ -266,22 +318,14 @@ jobs:
           Write-Host `
               "VBA wrapper knows both architecture-specific DLL names."
 
-      - name: Package architecture
-        shell: pwsh
-        run: |
-          ./tools/make_dist.ps1 `
-              -Architecture "${{ matrix.arch }}" `
-              -Configuration Release `
-              -Version "${{ needs.metadata.outputs.version }}"
-
-      - name: Upload architecture package
+      # The release ships one universal archive, so each job contributes only
+      # its DLL and the packaging happens once, where both are present.
+      - name: Upload the built DLL
         uses: actions/upload-artifact@v4
         with:
-          name: package-${{ matrix.arch }}
+          name: dll-${{ matrix.arch }}
           if-no-files-found: error
-          path: |
-            dist/*.zip
-            dist/*.zip.sha256
+          path: ${{ steps.dll.outputs.path }}
 
   publish:
     name: publish release
@@ -297,11 +341,11 @@ jobs:
           ref: ${{ needs.metadata.outputs.tag }}
           fetch-depth: 0
 
-      - name: Download packages
+      - name: Download the built DLLs
         uses: actions/download-artifact@v4
         with:
           path: staged
-          pattern: package-*
+          pattern: dll-*
           merge-multiple: true
 
       - name: Inspect staged artifacts
@@ -310,94 +354,79 @@ jobs:
           set -euo pipefail
           find staged -maxdepth 2 -type f -print
 
-      - name: Validate architecture package names
+      - name: Build the universal Windows package
         shell: bash
         run: |
           set -euo pipefail
 
           version="${{ needs.metadata.outputs.version }}"
+          name="blipbridge-v${version}-windows"
 
-          for arch in x64 x86; do
-            package="staged/blipbridge-v${version}-windows-${arch}.zip"
-            for file in "$package" "$package.sha256"; do
-              if [ ! -f "$file" ]; then
-                echo "::error::Missing release file: $file. Check tools/make_dist.ps1 output names."
-                find staged -type f -print
-                exit 1
-              fi
-            done
+          for dll in BlipBridge-x64.dll BlipBridge-x86.dll; do
+            if [ ! -f "staged/$dll" ]; then
+              echo "::error::Missing $dll - the ${dll#BlipBridge-} build job did not produce it."
+              find staged -type f -print
+              exit 1
+            fi
           done
 
-          (cd staged && sha256sum -c *.zip.sha256)
+          # Only files named here go in. Nothing is copied by pattern, so no
+          # build output, research DLL, experiment or test fixture can arrive by
+          # accident.
+          mkdir -p "universal/$name/docs"
+          cp staged/BlipBridge-x64.dll "universal/$name/"
+          cp staged/BlipBridge-x86.dll "universal/$name/"
+          cp vba/BlipBridge.bas        "universal/$name/"
+          cp include/blipbridge/blipbridge.h "universal/$name/"
+          cp README.md                 "universal/$name/"
+          cp LICENSE                   "universal/$name/"
+          cp CHANGELOG.md              "universal/$name/"
 
-      - name: Build universal Windows package
+          for doc in c_abi.md picture_cache.md resampling.md \
+                     shape_compatibility.md safety_model.md \
+                     benchmarks.md windows_x86.md; do
+            if [ -f "docs/$doc" ]; then
+              cp "docs/$doc" "universal/$name/docs/"
+            fi
+          done
+
+          ( cd universal && zip -9 -r "../staged/${name}.zip" "$name" )
+
+      - name: Verify the archive contents
         shell: bash
         run: |
           set -euo pipefail
 
           version="${{ needs.metadata.outputs.version }}"
+          name="blipbridge-v${version}-windows"
+          listing="$(unzip -Z1 "staged/${name}.zip")"
+          echo "$listing"
 
-          mkdir -p unpack/x64
-          mkdir -p unpack/x86
-          mkdir -p universal
+          for required in "$name/BlipBridge-x64.dll" "$name/BlipBridge-x86.dll" \
+                          "$name/BlipBridge.bas" "$name/README.md" "$name/LICENSE"; do
+            if ! grep -qxF "$required" <<< "$listing"; then
+              echo "::error::Package is missing $required"
+              exit 1
+            fi
+          done
 
-          unzip -q \
-            "staged/blipbridge-v${version}-windows-x64.zip" \
-            -d unpack/x64
-
-          unzip -q \
-            "staged/blipbridge-v${version}-windows-x86.zip" \
-            -d unpack/x86
-
-          x64dll=$(
-            find unpack/x64 \
-              -type f \
-              -name 'BlipBridge-x64.dll' \
-              -print \
-              -quit
-          )
-
-          x86dll=$(
-            find unpack/x86 \
-              -type f \
-              -name 'BlipBridge-x86.dll' \
-              -print \
-              -quit
-          )
-
-          if [ -z "$x64dll" ]; then
-            echo "x64 package does not contain BlipBridge-x64.dll"
+          # Anything from the build tree or the research surface is a packaging
+          # bug, not a cosmetic one: the shipped DLL is what runs in someone's
+          # PowerPoint.
+          if grep -Eq 'BlipBridgeResearch|experiments/|CMakeFiles|\.(obj|o|ilk|exp|lib)$' <<< "$listing"; then
+            echo "::error::Package contains build or research artefacts"
             exit 1
           fi
 
-          if [ -z "$x86dll" ]; then
-            echo "x86 package does not contain BlipBridge-x86.dll"
-            exit 1
-          fi
+          echo "Archive contents verified."
 
-          cp "$x64dll" universal/
-          cp "$x86dll" universal/
-
-          cp vba/BlipBridge.bas universal/
-          cp LICENSE universal/
-
-          if [ -f README.md ]; then
-            cp README.md universal/
-          fi
-
-          (
-            cd universal
-            zip -9 -r \
-              "../staged/blipbridge-v${version}-windows.zip" \
-              .
-          )
-
-          (
-            cd staged
-            sha256sum \
-              "blipbridge-v${version}-windows.zip" \
-              > "blipbridge-v${version}-windows.zip.sha256"
-          )
+      - name: Checksum the archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.metadata.outputs.version }}"
+          ( cd staged && sha256sum "blipbridge-v${version}-windows.zip" \
+              > "blipbridge-v${version}-windows.zip.sha256" )
 
       - name: Combine checksums
         shell: bash
@@ -406,8 +435,7 @@ jobs:
 
           rm -f staged/SHA256SUMS.txt
 
-          cat staged/*.zip.sha256 \
-            > staged/SHA256SUMS.txt
+          ( cd staged && sha256sum *.zip > SHA256SUMS.txt )
 
           cat staged/SHA256SUMS.txt
 

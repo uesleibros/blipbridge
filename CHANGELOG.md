@@ -3,7 +3,10 @@
 All notable changes to BlipBridge. Dates are the day the work was validated on
 the test machine.
 
-## [Unreleased]
+## [0.5.0] - 2026-09-10
+
+Breaking: the public VBA API is now strongly typed and the ABI is version 3.
+Callers written against 0.4.0 need the changes shown in the release notes.
 
 ### Fixed
 
@@ -64,11 +67,15 @@ the test machine.
 
 ### Measured
 
-- Resampling, milliseconds, scaling only: 512x512 → 1920x1080 costs 2.09
-  (nearest), 47.5 (bilinear), 186 (bicubic). Nearest is roughly twenty times
-  cheaper than bilinear and eighty times cheaper than bicubic. Hoisting the
-  per-column weights out of the pixel loop took bicubic from 267 ms to 186 ms.
-  No SIMD or threading was added; nothing has shown them necessary.
+- Resampling, milliseconds, **scaling only** - cached-image creation and the
+  apply are measured separately: 512x512 → 1920x1080 costs 2.09 (nearest), 47.5
+  (bilinear), 186 (bicubic). Nearest is roughly twenty times cheaper than
+  bilinear and eighty times cheaper than bicubic. Hoisting the per-column weights
+  out of the pixel loop took bicubic from 267 ms to 186 ms. No SIMD or threading
+  was added; nothing has shown them necessary.
+- That cost is paid on **every** `BB_LoadTexturePixelsScaled` call. It amortises
+  to nothing if you keep the handle and reuse it, and is paid in full by any
+  workload that builds a new scaled texture each time.
 
 ## [0.4.0] - 2026-09-10
 

@@ -68,10 +68,15 @@ add_compile_definitions(UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 add_compile_options(-Wall -Wextra -Wpedantic)
 include_directories(include)
 
-# --- the library -------------------------------------------------------------
+# --- the shipped library -----------------------------------------------------
 #
-# Portable core: the public C ABI, the platform seam, and image validation.
-# Nothing here knows what Office is.
+# BB_SOURCES is *only* what ships. The COM Automation surface and the
+# reverse-engineering probes are deliberately absent: they belong to the research
+# target below, which is a separate DLL that never leaves this repository.
+#
+# Keeping them apart matters for more than tidiness. The shipped DLL is what runs
+# inside someone's PowerPoint, and it should contain nothing that was written to
+# poke at Office internals for investigation.
 set(BB_SOURCES
     src/abi/blipbridge_abi.cpp
     src/image/validate.cpp
@@ -81,38 +86,41 @@ set(BB_SOURCES
     src/dllmain.cpp
 )
 
+# The reverse-engineered backend, reached only through backend.hpp.
+set(BB_BACKEND_SOURCES
+    src/backend/windows_office_backend.cpp
+    src/backend/windows_office/oart_layout.cpp
+    src/backend/windows_office/native_apply.cpp
+    src/backend/windows_office/native_texture.cpp
+    src/backend/windows_office/shape_policy.cpp
+    src/backend/windows_office/picture_cache.cpp
+)
+
+# The COM Automation surface and the probes it exposes. Research only: this is
+# how the Office harnesses drive the same texture store the C ABI drives, which
+# is what lets them assert shipping behaviour without shipping themselves.
+set(BB_RESEARCH_SOURCES
+    src/com/class_factory.cpp
+    src/com/engine.cpp
+    src/com/engine_textures.cpp
+    experiments/automation_bridge.cpp
+    experiments/main.cpp
+    experiments/exp_userpicture/trace.cpp
+    experiments/exp_pickup_apply/focused.cpp
+    experiments/exp_pickup_apply/stress.cpp
+    experiments/exp_internal_blip/receiver_inspect.cpp
+    experiments/exp_internal_blip/native_apply_probe.cpp
+    experiments/exp_internal_blip/cached_image_load.cpp
+    experiments/exp_internal_blip/texture_benchmark.cpp
+    experiments/exp_internal_blip/batch_benchmark.cpp
+    experiments/exp_internal_blip/pixel_texture.cpp
+    experiments/exp_internal_blip/stage_profiler.cpp
+    experiments/exp_internal_blip/shape_compatibility.cpp
+    experiments/exp_internal_blip/picture_cache_driver.cpp
+)
+
 if(BB_NATIVE_BACKEND)
-    list(APPEND BB_SOURCES
-        # The seam's Windows implementation.
-        src/backend/windows_office_backend.cpp
-        # The reverse-engineered backend, reached only through backend.hpp.
-        src/backend/windows_office/oart_layout.cpp
-        src/backend/windows_office/native_apply.cpp
-        src/backend/windows_office/native_texture.cpp
-        src/backend/windows_office/shape_policy.cpp
-        src/backend/windows_office/picture_cache.cpp
-        # The COM Automation surface: research and compatibility, never the
-        # normal path. It drives the same texture store the C ABI drives, which
-        # is what lets the Office harnesses assert shipping behaviour.
-        src/com/class_factory.cpp
-        src/com/engine.cpp
-        src/com/engine_textures.cpp
-        # Explicit research entry points, reachable only through that surface.
-        experiments/automation_bridge.cpp
-        experiments/main.cpp
-        experiments/exp_userpicture/trace.cpp
-        experiments/exp_pickup_apply/focused.cpp
-        experiments/exp_pickup_apply/stress.cpp
-        experiments/exp_internal_blip/receiver_inspect.cpp
-        experiments/exp_internal_blip/native_apply_probe.cpp
-        experiments/exp_internal_blip/cached_image_load.cpp
-        experiments/exp_internal_blip/texture_benchmark.cpp
-        experiments/exp_internal_blip/batch_benchmark.cpp
-        experiments/exp_internal_blip/pixel_texture.cpp
-        experiments/exp_internal_blip/stage_profiler.cpp
-        experiments/exp_internal_blip/shape_compatibility.cpp
-        experiments/exp_internal_blip/picture_cache_driver.cpp
-    )
+    list(APPEND BB_SOURCES ${BB_BACKEND_SOURCES})
 else()
     list(APPEND BB_SOURCES src/backend/unsupported_backend.cpp)
 endif()
@@ -145,6 +153,24 @@ else()
     target_link_libraries(BlipBridge PRIVATE ole32 oleaut32)
 endif()
 
+# --- the research library ----------------------------------------------------
+#
+# Never packaged, never released. It compiles the same production sources plus
+# the COM surface, so the Office harnesses exercise the shipping code paths
+# through an Automation object - and the DLL a user installs stays free of them.
+#
+# It exists only where there is a validated backend to investigate.
+if(BB_NATIVE_BACKEND)
+    add_library(BlipBridgeResearch SHARED ${BB_SOURCES} ${BB_RESEARCH_SOURCES})
+    target_compile_definitions(BlipBridgeResearch PRIVATE BB_DLL BLIPBRIDGE_BUILD)
+    target_link_options(BlipBridgeResearch PRIVATE -static -static-libgcc -static-libstdc++)
+    set_target_properties(BlipBridgeResearch PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "BlipBridgeResearch-${BB_ARCH}")
+    target_link_libraries(BlipBridgeResearch
+                          PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
+endif()
+
 # --- tests -------------------------------------------------------------------
 include(CTest)
 if(BUILD_TESTING)
@@ -169,6 +195,16 @@ if(BUILD_TESTING)
     add_executable(bb_resample_benchmark tests/resample_benchmark.cpp src/image/resample.cpp)
     target_link_options(bb_resample_benchmark PRIVATE -static -static-libgcc -static-libstdc++)
 
+    #[[
+        The 64-bit handle's journey across the VBA boundary, reproduced in C++.
+        Runs on both architectures and needs no Office - and no VBA, which is
+        exactly its limit: it proves the arithmetic and the slot layout, not that
+        a real 32-bit PowerPoint executes the wrapper correctly.
+    ]]
+    add_executable(bb_handle_marshalling tests/handle_marshalling.cpp)
+    target_link_options(bb_handle_marshalling PRIVATE -static -static-libgcc -static-libstdc++)
+    add_test(NAME handle_marshalling COMMAND bb_handle_marshalling)
+
     add_executable(bb_abi_contract tests/abi_contract.cpp)
     target_link_options(bb_abi_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
     add_test(NAME abi_contract COMMAND bb_abi_contract $<TARGET_FILE:BlipBridge>)
@@ -179,7 +215,7 @@ if(BUILD_TESTING)
         add_executable(bb_com_contract tests/com_contract.cpp)
         target_link_libraries(bb_com_contract PRIVATE ole32 oleaut32 uuid)
         target_link_options(bb_com_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
-        add_test(NAME com_contract COMMAND bb_com_contract $<TARGET_FILE:BlipBridge>)
+        add_test(NAME com_contract COMMAND bb_com_contract $<TARGET_FILE:BlipBridgeResearch>)
     endif()
 endif()
 
