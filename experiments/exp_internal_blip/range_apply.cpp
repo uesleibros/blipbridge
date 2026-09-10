@@ -28,17 +28,22 @@
  *
  * ## Why this is not simply better
  *
- * **It makes no undo entry.** Measured, not assumed: five Undos leave a
- * range-filled Shape filled, while one Undo reverts a single-Shape native apply
- * in the same document, and one Undo reverts Office's own
- * ShapeRange.Fill.UserPicture across every member. So Office does record undo
- * for range fills, above the receiver this reaches, and going straight to the
- * receiver skips it.
+ * **Undo takes one step per member, not one step.** Counted by putting a marker
+ * Shape on the undo stack and undoing until it goes:
  *
- * That is a semantic difference, not a tuning detail, and it is why this cannot
- * quietly become what ApplyTexture does. The fills persist through save and
- * reopen and every member is filled correctly - see tools/test_range_apply.ps1 -
- * but a caller who fills 32 Shapes and presses Ctrl+Z gets nothing back.
+ *     nothing                                        0 entries
+ *     4 x native ApplyTexture                        4 entries, reverted after 4
+ *     native apply to a range of 4                   6 entries, reverted after 6
+ *     Office's own ShapeRange.Fill.UserPicture       1 entry,  reverted after 1
+ *
+ * The fills do come back, completely, and Redo restores them - so this is a
+ * granularity difference rather than a correctness hole. Office coalesces a
+ * range fill into one entry above the receiver; reaching the receiver directly
+ * leaves one per member plus two.
+ *
+ * It still is not something to make the default: a user who fills 100 Shapes and
+ * presses Ctrl+Z once sees one Shape revert. But it is a smaller objection than
+ * it first appeared, and it is not data loss.
  *
  * ## The part that is not free
  *

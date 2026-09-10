@@ -234,17 +234,32 @@ proves the refusal happens *before* the private apply using the apply-entry
 counter, for a Connector, a Line and a Table, and proves the other members are
 left as they were rather than half-filled.
 
-### Why it cannot be the default
+### Undo takes one step per member
 
-**The range apply makes no undo entry.** Five Undos leave a range-filled Shape
-filled, while in the same document one Undo reverts a single-Shape native apply,
-and one Undo reverts Office's own `ShapeRange.Fill.UserPicture` across every
-member. So Office does record undo for range fills, above the receiver this path
-reaches, and going straight to the receiver skips it.
+Counted rather than guessed at: a marker Shape goes on the undo stack first, then
+Undo is repeated until the marker disappears, which gives the number of entries
+an operation added.
 
-The fills are correct and survive save and reopen (12 of 12). But a caller who
-fills 32 Shapes and presses Ctrl+Z would get nothing back, and that is a
-semantic difference rather than a tuning detail.
+| Operation | undo entries | fills reverted after |
+|---|---:|---|
+| nothing | 0 | — |
+| N x native `BB_ApplyTexture` | N | N undos |
+| native apply to a range of N | N + 2 | N + 2 undos |
+| Office's own `ShapeRange.Fill.UserPicture` | 1 | 1 undo |
+
+The fills do come back, completely, and the same number of Redos restores them.
+So this is a **granularity** difference, not a correctness hole: Office coalesces
+a range fill into a single entry above the receiver, and reaching the receiver
+directly leaves one entry per member plus two.
+
+It is still not something to make the default - a user who fills 100 Shapes and
+presses Ctrl+Z once sees one Shape revert - but it is a smaller objection than
+"no undo", and nothing is lost. Note also that the per-Shape path has always
+behaved this way: filling N Shapes one at a time leaves N entries too.
+
+An earlier run of this measurement used fewer Undos than there were entries and
+read the result as "no undo entry at all". The number above is what repeated
+Undo actually does.
 
 ## 6. What is production-safe
 
@@ -254,7 +269,7 @@ semantic difference rather than a tuning detail.
 | One shared per-Shape record | Ready, and fixes a latent wrong-picture case in the shipped code |
 | Pinned Office modules | Ready. Strictly stronger than what it replaces |
 | Freeform keying | Ready. `ConvertToShape` reports a ShapeRange as its Parent; those Shapes could never be keyed, in either cache |
-| ShapeRange apply | **Research only**, on the undo finding above |
+| ShapeRange apply | **Research only**, on the undo granularity above |
 | `ApplyRoute::Split` / `ChangeOnly` | Research only. Never reachable from the C ABI |
 
 ## 7. Rejected, and why
@@ -278,9 +293,20 @@ Ship `BB_ApplyTextureIfChanged`, the shared record, the module pinning and the
 Freeform keying fix as a minor release. They are additive, they are tested, and
 one of them fixes a wrong-picture case that exists in v0.5.0 today.
 
-Keep the ShapeRange apply as research until the undo question is answered. It is
-the largest remaining win by a wide margin - 3.5x at 32 Shapes, 3.8x at 100 - and
-the only thing standing between it and a shipped `BB_ApplyTextureToRange` is an
-undo entry. The next thing worth investigating is where PPCORE creates that entry
-for `ShapeRange.Fill.UserPicture`, and whether the same scope can be opened
-around a native range apply.
+Keep the ShapeRange apply as research, but it is closer to shippable than it
+first looked. It is the largest remaining win by a wide margin - 3.5x at 32
+Shapes, 3.8x at 100 - the fills are correct, they persist, ineligible members are
+refused before anything internal is touched, and Undo does restore them. What is
+missing is only that Office coalesces its own range fill into one undo entry and
+this leaves N + 2.
+
+Two ways forward, in order of appeal:
+
+1. Find where PPCORE coalesces. `ShapeRange.Fill.UserPicture` produces exactly
+   one entry, so the scope exists and is opened above the receiver. If it can be
+   opened around a native range apply, the path becomes equivalent to Office's
+   own and can ship as `BB_ApplyTextureToRange`.
+2. Ship it as an explicitly separate API whose documented weaker semantics are
+   the undo granularity, per the rule that such a difference may not be silent.
+   A caller filling a whole slide every frame may not care; one editing a deck
+   by hand would.

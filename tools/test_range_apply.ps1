@@ -15,10 +15,9 @@ So this asserts, in order:
   refusal     one Connector, Line or Table in the range refuses the whole range
   gating      and refuses it *before* the private apply, proved by the entry
               counter rather than by PowerPoint having survived
-  undo        that the range apply makes NO undo entry, with a single-Shape
-              apply in the same document as the control that proves the undo
-              stack was working - this is the finding that decides the path
-              cannot be what ApplyTexture does
+  undo        that the range fill is fully reverted by repeated Undo, but takes
+              one entry per member plus two rather than Office's single entry,
+              with a single-Shape apply in the same document as the control
   persistence the fills survive save and reopen
   mixed       a range whose members carry different images all end up with the
               one that was applied
@@ -134,26 +133,42 @@ try {
     Assert ((Count-Filled $slide $undoNames) -eq 4) 'the range apply fills all four'
 
     <#
-    The range apply makes no undo entry. That is measured, not assumed: five
-    Undos in a row leave all four Shapes filled, while one Undo reverts a
-    single-Shape native apply, and one Undo reverts Office's own
-    ShapeRange.Fill.UserPicture across all four.
+    The range apply is undoable, but not in one step.
 
-    So Office does record undo for range fills - through PPCORE, above the
-    receiver this path calls - and reaching the receiver directly skips it. That
-    is the reason this cannot become what ApplyTexture does: a caller who fills
-    32 Shapes and presses Ctrl+Z would get nothing back. It is asserted here as
-    the behaviour it actually has, so that a future build changing it fails this
-    test loudly rather than quietly gaining an undo entry nobody checked for.
+    Counted by putting a marker Shape on the undo stack first and undoing until
+    the marker goes, so the entries an operation adds can be counted rather than
+    guessed at:
+
+        operation                                    entries   fills reverted
+        nothing                                            0   -
+        4 x native ApplyTexture                            4   after 4 undos
+        native apply to a range of 4                       6   after 6 undos
+        Office's own ShapeRange.Fill.UserPicture            1   after 1 undo
+
+    So the fills do come back, and completely - this is a granularity difference,
+    not a correctness hole. Office coalesces a range fill into a single entry
+    above the receiver; going straight to the receiver leaves one entry per
+    member plus two. A user who fills 100 Shapes and presses Ctrl+Z once would
+    see one Shape revert, which is a poor thing to ship even though nothing is
+    lost.
     #>
     $presentation.Windows.Item(1).Activate()
     $app.StartNewUndoEntry()
-    for ($u = 0; $u -lt 5; $u++) { $app.CommandBars.ExecuteMso('Undo') }
-    Assert ((Count-Filled $slide $undoNames) -eq 4) `
-        'the range apply makes NO undo entry - five Undos leave all four filled'
+    $undoCount = 0
+    for ($u = 1; $u -le 12; $u++) {
+        $app.CommandBars.ExecuteMso('Undo')
+        if ((Count-Filled $slide $undoNames) -eq 0) { $undoCount = $u; break }
+    }
+    Assert ($undoCount -gt 0) "the range fill is fully reverted by repeated Undo (took $undoCount)"
+    Assert ($undoCount -gt 1) `
+        "and NOT in one step - $undoCount entries for 4 members, where Office's own range fill takes 1"
+
+    for ($u = 1; $u -le $undoCount; $u++) { $app.CommandBars.ExecuteMso('Redo') }
+    Assert ((Count-Filled $slide $undoNames) -eq 4) 'and the same number of Redos restores all four'
 
     # The control, in the same document and the same undo stack: a single-Shape
-    # native apply is undone by one Undo. The difference is the range, not us.
+    # native apply is undone by one Undo, which is what our per-Shape path has
+    # always done.
     $control = $slide.Shapes.AddShape(1, 300, 380, 50, 50)
     $control.Name = 'UndoControl'
     $app.StartNewUndoEntry()
