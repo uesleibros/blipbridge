@@ -38,14 +38,12 @@
 
 #include "native_texture.hpp"
 
-#include "shape_policy.hpp"
-
 #include "native_apply.hpp"
 #include "oart_layout.hpp"
+#include "shape_policy.hpp"
 
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <map>
 #include <memory>
 #include <sstream>
@@ -70,11 +68,13 @@ constexpr char kCreateFromStreamSymbol[] =
  * creator returned.
  */
 class NativeTexture {
-public:
+  public:
     NativeTexture(void* cached, void* image, std::size_t byteCount)
         : cached_(cached), image_(image), byteCount_(byteCount) {}
+
     NativeTexture(const NativeTexture&) = delete;
     NativeTexture& operator=(const NativeTexture&) = delete;
+
     ~NativeTexture() {
         // Order mirrors creation: the image is the companion output, the cached
         // image is the one Office holds while a fill is in place.
@@ -82,12 +82,23 @@ public:
         bb::oart::ReleaseIntrusive(cached_);
     }
 
-    void* cached() const { return cached_; }
-    std::size_t byteCount() const { return byteCount_; }
-    unsigned long applyCount() const { return applyCount_; }
-    void countApply() { ++applyCount_; }
+    void* cached() const {
+        return cached_;
+    }
 
-private:
+    std::size_t byteCount() const {
+        return byteCount_;
+    }
+
+    unsigned long applyCount() const {
+        return applyCount_;
+    }
+
+    void countApply() {
+        ++applyCount_;
+    }
+
+  private:
     void* cached_ = nullptr;
     void* image_ = nullptr;
     std::size_t byteCount_ = 0;
@@ -103,7 +114,7 @@ private:
  * Engine's disconnect and destructor, which is what bounds the lifetime.
  */
 class TextureStore {
-public:
+  public:
     static TextureStore& Instance() {
         static TextureStore store;
         return store;
@@ -146,15 +157,25 @@ public:
         textures_.clear();
     }
 
-    std::size_t Count() const { return textures_.size(); }
-    long NextHandle() const { return nextHandle_; }
+    std::size_t Count() const {
+        return textures_.size();
+    }
+
+    long NextHandle() const {
+        return nextHandle_;
+    }
 
     /// Total decodes since the process started. A reuse claim is only credible
     /// if this stays far below the number of applies.
-    unsigned long Creations() const { return creations_; }
-    void CountCreation() { ++creations_; }
+    unsigned long Creations() const {
+        return creations_;
+    }
 
-private:
+    void CountCreation() {
+        ++creations_;
+    }
+
+  private:
     TextureStore() = default;
 
     void RequireOwningThread(bool mayClaim) {
@@ -215,8 +236,8 @@ long nativeTextureLoad(SAFEARRAY* bytes) {
     // Decoding is the expensive half, and it happens exactly once per texture.
     const bb::oart::CreatedImage created = bb::oart::CreateCachedImageFromBytes(bytes);
     try {
-        return TextureStore::Instance().Add(created.cached, created.image,
-                                            static_cast<std::size_t>(upper - lower) + 1);
+        return TextureStore::Instance().Add(
+            created.cached, created.image, static_cast<std::size_t>(upper - lower) + 1);
     } catch (...) {
         bb::oart::ReleaseIntrusive(created.image);
         bb::oart::ReleaseIntrusive(created.cached);
@@ -224,17 +245,20 @@ long nativeTextureLoad(SAFEARRAY* bytes) {
     }
 }
 
-long nativeTextureLoadPixels(const void* pixels, unsigned long width,
-                             unsigned long height, long stride) {
+long nativeTextureLoadPixels(const void* pixels,
+                             unsigned long width,
+                             unsigned long height,
+                             long stride) {
     // Same store, same handles, same lifetime rules as an encoded texture. The
     // only difference is where the decoded image came from.
-    const bb::oart::CreatedImage created = bb::oart::CreateCachedImageFromPixels(
-        pixels, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
-        static_cast<std::int32_t>(stride));
+    const bb::oart::CreatedImage created =
+        bb::oart::CreateCachedImageFromPixels(pixels,
+                                              static_cast<std::uint32_t>(width),
+                                              static_cast<std::uint32_t>(height),
+                                              static_cast<std::int32_t>(stride));
     try {
         return TextureStore::Instance().Add(
-            created.cached, created.image,
-            static_cast<std::size_t>(stride) * height);
+            created.cached, created.image, static_cast<std::size_t>(stride) * height);
     } catch (...) {
         bb::oart::ReleaseIntrusive(created.image);
         bb::oart::ReleaseIntrusive(created.cached);
@@ -247,8 +271,7 @@ void nativeTextureApply(IDispatch* fill, long handle) {
     // Re-resolved for every apply and never cached: a Shape deleted through
     // public COM still passes every pointer and vtable check in this chain.
     const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill);
-    const bb::oart::ApplyFunctions functions =
-        bb::oart::ResolveApplyFunctions(target.oartBase);
+    const bb::oart::ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
     bb::oart::ApplyCachedImage(functions, target, texture.cached());
     texture.countApply();
 }
@@ -272,15 +295,14 @@ long nativeTextureCount() {
 std::wstring nativeTextureReport(long handle) {
     const TextureStore& store = TextureStore::Instance();
     std::wostringstream out;
-    out << L"textures=" << store.Count() << L";nextHandle=" << store.NextHandle()
-        << L";creations=" << store.Creations() << L';';
+    out << L"textures=" << store.Count() << L";nextHandle=" << store.NextHandle() << L";creations="
+        << store.Creations() << L';';
     if (handle > 0) {
         const NativeTexture& texture = TextureStore::Instance().Get(handle);
         out << L"handle=" << handle << L";cached=0x" << std::hex
-            << reinterpret_cast<std::uintptr_t>(texture.cached()) << std::dec
-            << L";cachedCount=" << bb::oart::IntrusiveCount(texture.cached())
-            << L";bytes=" << texture.byteCount() << L";applies=" << texture.applyCount()
-            << L';';
+            << reinterpret_cast<std::uintptr_t>(texture.cached()) << std::dec << L";cachedCount="
+            << bb::oart::IntrusiveCount(texture.cached()) << L";bytes=" << texture.byteCount()
+            << L";applies=" << texture.applyCount() << L';';
     }
     return out.str();
 }

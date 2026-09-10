@@ -14,13 +14,11 @@
  */
 
 #include <blipbridge/blipbridge.h>
-
-#include <windows.h>
-
 #include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
+#include <windows.h>
 
 namespace {
 
@@ -47,26 +45,28 @@ void Check(bool condition, const std::string& what) {
 struct Api {
     HMODULE module = nullptr;
 
-    BB_Result (BB_CALL *Init)(void) = nullptr;
-    BB_Result (BB_CALL *Shutdown)(void) = nullptr;
-    BB_Result (BB_CALL *LoadTexture)(const uint8_t*, uint32_t, BB_Handle*) = nullptr;
-    BB_Result (BB_CALL *ApplyTexture)(void*, BB_Handle) = nullptr;
-    BB_Result (BB_CALL *ApplyTextureBatch)(void* const*, const BB_Handle*, uint32_t,
-                                           uint32_t*) = nullptr;
-    BB_Result (BB_CALL *ReleaseTexture)(BB_Handle) = nullptr;
-    BB_Result (BB_CALL *ClearTextures)(void) = nullptr;
-    uint32_t (BB_CALL *GetTextureCount)(void) = nullptr;
-    uint32_t (BB_CALL *GetCapabilities)(void) = nullptr;
-    uint32_t (BB_CALL *GetLastError)(char*, uint32_t) = nullptr;
-    uint32_t (BB_CALL *GetVersion)(void) = nullptr;
-    uint32_t (BB_CALL *GetAbiVersion)(void) = nullptr;
-    BB_Result (BB_CALL *LoadTexturePixels)(const uint8_t*, uint32_t, uint32_t, int32_t,
-                                           BB_Handle*) = nullptr;
-    uint32_t (BB_CALL *GetVersionString)(char*, uint32_t) = nullptr;
-    BB_Result (BB_CALL *ApplyPicture)(void*, const uint16_t*) = nullptr;
-    BB_Result (BB_CALL *InvalidateShape)(void*) = nullptr;
-    BB_Result (BB_CALL *ClearPictureCache)(void) = nullptr;
-    BB_Result (BB_CALL *GetPictureCacheStats)(uint32_t*, uint32_t*, uint64_t*) = nullptr;
+    BB_Result(BB_CALL* Init)(void) = nullptr;
+    BB_Result(BB_CALL* Shutdown)(void) = nullptr;
+    BB_Result(BB_CALL* LoadTexture)(const uint8_t*, uint32_t, BB_Handle*) = nullptr;
+    BB_Result(BB_CALL* ApplyTexture)(void*, BB_Handle) = nullptr;
+    BB_Result(BB_CALL* ApplyTextureBatch)(void* const*,
+                                          const BB_Handle*,
+                                          uint32_t,
+                                          uint32_t*) = nullptr;
+    BB_Result(BB_CALL* ReleaseTexture)(BB_Handle) = nullptr;
+    BB_Result(BB_CALL* ClearTextures)(void) = nullptr;
+    uint32_t(BB_CALL* GetTextureCount)(void) = nullptr;
+    uint32_t(BB_CALL* GetCapabilities)(void) = nullptr;
+    uint32_t(BB_CALL* GetLastError)(char*, uint32_t) = nullptr;
+    uint32_t(BB_CALL* GetVersion)(void) = nullptr;
+    uint32_t(BB_CALL* GetAbiVersion)(void) = nullptr;
+    BB_Result(BB_CALL* LoadTexturePixels)(const uint8_t*, uint32_t, uint32_t, int32_t, BB_Handle*) =
+        nullptr;
+    uint32_t(BB_CALL* GetVersionString)(char*, uint32_t) = nullptr;
+    BB_Result(BB_CALL* ApplyPicture)(void*, const uint16_t*) = nullptr;
+    BB_Result(BB_CALL* InvalidateShape)(void*) = nullptr;
+    BB_Result(BB_CALL* ClearPictureCache)(void) = nullptr;
+    BB_Result(BB_CALL* GetPictureCacheStats)(uint32_t*, uint32_t*, uint64_t*) = nullptr;
 
     ~Api() {
         if (module) {
@@ -77,8 +77,7 @@ struct Api {
 
 template <typename Fn>
 void Resolve(Api& api, Fn& slot, const char* name) {
-    slot = reinterpret_cast<Fn>(
-        reinterpret_cast<void*>(GetProcAddress(api.module, name)));
+    slot = reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(api.module, name)));
     Check(slot != nullptr, std::string("export missing: ") + name);
 }
 
@@ -198,12 +197,10 @@ int wmain(int argc, wchar_t** argv) {
           "LoadTexture rejects a zero length");
     Check(api.LoadTexture(&byte, 1, nullptr) == BB_E_INVALID_ARG,
           "LoadTexture rejects a null output pointer");
-    Check(api.ApplyTexture(nullptr, 1) == BB_E_INVALID_ARG,
-          "ApplyTexture rejects a null Shape");
+    Check(api.ApplyTexture(nullptr, 1) == BB_E_INVALID_ARG, "ApplyTexture rejects a null Shape");
     Check(api.ApplyTexture(reinterpret_cast<void*>(&byte), 0) == BB_E_INVALID_HANDLE,
           "handle 0 is never valid");
-    Check(api.ReleaseTexture(0) == BB_E_INVALID_HANDLE,
-          "ReleaseTexture rejects handle 0");
+    Check(api.ReleaseTexture(0) == BB_E_INVALID_HANDLE, "ReleaseTexture rejects handle 0");
 
     /*
      * The 64-bit handle must survive the ABI on a 32-bit build too.
@@ -231,8 +228,7 @@ int wmain(int argc, wchar_t** argv) {
          * intact. What must not happen is success.
          */
         const BB_Result refused = api.ReleaseTexture(wide);
-        Check(refused != BB_OK,
-              "a handle with both halves set is refused, not misread as valid");
+        Check(refused != BB_OK, "a handle with both halves set is refused, not misread as valid");
         // A null Shape, deliberately: it is refused by argument validation before
         // anything dereferences it. A non-null fake would be dereferenced once the
         // handle check no longer short-circuits, and that is a crash, not a test.
@@ -266,8 +262,7 @@ int wmain(int argc, wchar_t** argv) {
         uint64_t skipped = 99;
         Check(api.GetPictureCacheStats(&textures, &shapes, &skipped) == BB_OK,
               "GetPictureCacheStats succeeds");
-        Check(textures == 0 && shapes == 0 && skipped == 0,
-              "an untouched cache reports zeroes");
+        Check(textures == 0 && shapes == 0 && skipped == 0, "an untouched cache reports zeroes");
     }
 
     // --- batch argument validation -------------------------------------------
@@ -292,7 +287,7 @@ int wmain(int argc, wchar_t** argv) {
     Check(api.GetTextureCount() == 0, "ClearTextures leaves nothing behind");
 
     // --- raw pixel argument validation ---------------------------------------
-    const uint8_t bgra[16] = {};   // 2x2 BGRA
+    const uint8_t bgra[16] = {}; // 2x2 BGRA
     Check(api.LoadTexturePixels(nullptr, 2, 2, 8, &handle) == BB_E_INVALID_ARG,
           "pixel load rejects a null buffer");
     Check(api.LoadTexturePixels(bgra, 0, 2, 8, &handle) == BB_E_INVALID_ARG,

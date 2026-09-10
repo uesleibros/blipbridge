@@ -77,7 +77,6 @@
 
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -126,8 +125,8 @@ FileKey DescribeFile(const std::wstring& path) {
     }
     FileKey key;
     key.path = path;
-    key.size = (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) |
-               attributes.nFileSizeLow;
+    key.size =
+        (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
     key.written = (static_cast<std::uint64_t>(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
                   attributes.ftLastWriteTime.dwLowDateTime;
     return key;
@@ -236,7 +235,8 @@ std::vector<std::uint8_t> ReadFile(const std::wstring& path) {
     // the wstring overload is not standard.
     std::ifstream file(std::filesystem::path(path), std::ios::binary);
     if (!file) {
-        throw bb::Error(bb::BB_E_IMAGE_FILE_MISSING, "Cannot open the image file at the path given");
+        throw bb::Error(bb::BB_E_IMAGE_FILE_MISSING,
+                        "Cannot open the image file at the path given");
     }
     std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(file)),
                                     std::istreambuf_iterator<char>());
@@ -254,9 +254,13 @@ long LoadTextureFromBytes(const std::vector<std::uint8_t>& bytes) {
     if (!array) {
         throw std::bad_alloc();
     }
+
     struct Destroy {
         SAFEARRAY* value;
-        ~Destroy() { SafeArrayDestroy(value); }
+
+        ~Destroy() {
+            SafeArrayDestroy(value);
+        }
     } destroy{array};
 
     void* raw = nullptr;
@@ -273,7 +277,7 @@ long LoadTextureFromBytes(const std::vector<std::uint8_t>& bytes) {
  * everything here is STA-bound.
  */
 class PictureCache {
-public:
+  public:
     static PictureCache& Instance() {
         static PictureCache cache;
         return cache;
@@ -352,7 +356,7 @@ public:
         return PictureCacheStats{textures_.size(), shapes_.size(), skipped_};
     }
 
-private:
+  private:
     PictureCache() = default;
 
     /**

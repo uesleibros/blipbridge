@@ -1,6 +1,6 @@
 #pragma once
-#include <windows.h>
 #include <atomic>
+#include <windows.h>
 
 namespace bb {
 inline constexpr CLSID kEngineClsid = {
@@ -11,6 +11,7 @@ struct ServerLifetime {
     std::atomic<long> objects{0};
     std::atomic<long> locks{0};
 };
+
 ServerLifetime& GetServerLifetime() noexcept;
 /** Returns one owned Engine interface reference; exceptions never escape. */
 HRESULT CreateEngine(REFIID interfaceId, void** result) noexcept;

@@ -50,7 +50,6 @@
 #include "../experiment_api.hpp"
 
 #include <blipbridge/dispatch.hpp>
-
 #include <cstdint>
 #include <cstring>
 #include <sstream>
@@ -59,7 +58,7 @@
 namespace {
 
 /// Only this exact Office build has been observed and validated.
-constexpr DWORD kSupportedVersionHigh = 0x00100000;   // 16.0
+constexpr DWORD kSupportedVersionHigh = 0x00100000; // 16.0
 constexpr DWORD kSupportedVersionLow = (14334u << 16) | 20848u;
 
 /// Exported symbol; resolved by name, never by address.
@@ -69,8 +68,8 @@ constexpr char kCreateFromStreamSymbol[] =
     "PEBVMD4UID@4@_N@Z";
 
 /// Vtables of the two objects the creator produces, used only to verify.
-constexpr uintptr_t kCachedImageVtableRva = 0x409DC0;   // gfx.dll
-constexpr uintptr_t kImageVtableRva = 0x4055C8;         // gfx.dll
+constexpr uintptr_t kCachedImageVtableRva = 0x409DC0; // gfx.dll
+constexpr uintptr_t kImageVtableRva = 0x4055C8;       // gfx.dll
 
 /// Intrusive layout shared by both: 32-bit count at +8, Release at vtable +8.
 constexpr size_t kCountOffset = 8;
@@ -90,13 +89,12 @@ struct CountedPointer {
 };
 
 /// MSVC x64 signature with the hidden return pointer written out explicitly.
-using CreateCachedImageFromStream = CountedPointer*(__stdcall*)(
-    CountedPointer* returnStorage,
-    CountedPointer* imageInOut,
-    IStream* stream,
-    int copyInstruction,
-    const void* uid,
-    bool flag);
+using CreateCachedImageFromStream = CountedPointer*(__stdcall*)(CountedPointer * returnStorage,
+                                                                CountedPointer* imageInOut,
+                                                                IStream* stream,
+                                                                int copyInstruction,
+                                                                const void* uid,
+                                                                bool flag);
 
 /**
  * Releases one intrusive reference through vtable slot +8.
@@ -108,26 +106,28 @@ void ReleaseIntrusive(void* object) noexcept {
     }
     auto vtable = *reinterpret_cast<void* const* const*>(object);
     using Release = void(__stdcall*)(void*);
-    auto release = reinterpret_cast<Release>(
-        *reinterpret_cast<void* const*>(
-            reinterpret_cast<const std::uint8_t*>(vtable) + kReleaseSlotOffset));
+    auto release = reinterpret_cast<Release>(*reinterpret_cast<void* const*>(
+        reinterpret_cast<const std::uint8_t*>(vtable) + kReleaseSlotOffset));
     release(object);
 }
 
 std::uint32_t IntrusiveCount(const void* object) {
     std::uint32_t count = 0;
-    std::memcpy(&count, reinterpret_cast<const std::uint8_t*>(object) + kCountOffset,
-                sizeof(count));
+    std::memcpy(
+        &count, reinterpret_cast<const std::uint8_t*>(object) + kCountOffset, sizeof(count));
     return count;
 }
 
 /// Owns one intrusive reference for the duration of the experiment.
 class CountedReference {
-public:
+  public:
     CountedReference() = default;
     CountedReference(const CountedReference&) = delete;
     CountedReference& operator=(const CountedReference&) = delete;
-    ~CountedReference() { ReleaseIntrusive(storage.value); }
+
+    ~CountedReference() {
+        ReleaseIntrusive(storage.value);
+    }
 
     CountedPointer storage;
 };
@@ -160,8 +160,7 @@ HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* descriptio
     }
     if (information->dwFileVersionMS != kSupportedVersionHigh ||
         information->dwFileVersionLS != kSupportedVersionLow) {
-        throw bb::Error(E_NOTIMPL,
-                        "Cached image loading supports only Office 16.0.14334.20848");
+        throw bb::Error(E_NOTIMPL, "Cached image loading supports only Office 16.0.14334.20848");
     }
     return module;
 }
@@ -169,6 +168,7 @@ HMODULE RequireSupportedModule(const wchar_t* moduleName, const char* descriptio
 /// Releases the HGLOBAL-backed stream and its memory together.
 struct OwnedStream {
     IStream* value = nullptr;
+
     ~OwnedStream() {
         if (value) {
             value->Release();
@@ -252,8 +252,7 @@ std::wstring loadCachedImageExperiment(SAFEARRAY* bytes) {
 
     CountedReference cached;
     CountedReference image;
-    create(&cached.storage, &image.storage, stream.value, kStreamCopyInstruction, uid,
-           kCreateFlag);
+    create(&cached.storage, &image.storage, stream.value, kStreamCopyInstruction, uid, kCreateFlag);
 
     if (!cached.storage.value) {
         throw bb::Error(E_FAIL, "Creator returned no cached image for these bytes");
@@ -276,7 +275,7 @@ std::wstring loadCachedImageExperiment(SAFEARRAY* bytes) {
             << L";imageVtableMatches=" << (imageVtable == gfxBase + kImageVtableRva ? 1 : 0)
             << L';';
         if (imageVtable != gfxBase + kImageVtableRva) {
-            image.storage.value = nullptr;   // unknown layout: leak rather than corrupt
+            image.storage.value = nullptr; // unknown layout: leak rather than corrupt
         }
     } else {
         out << L"image=none;";

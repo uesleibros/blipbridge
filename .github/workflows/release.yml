@@ -1,43 +1,92 @@
 name: release
 
-# Triggered by a SemVer tag: v0.4.0, v1.0.0, and so on.
-#
-# Nothing is published unless every build and test job passes first. The release
-# job depends on the build job, so a red build cannot become a green release.
-#
-# Only architectures with a validated native backend are presented as supported.
-# x86 is packaged so the ABI, the wrapper and the packaging can be exercised on
-# 32-bit Office, and is labelled in the notes and in its own README.txt as having
-# no accelerated backend yet. See docs/windows_x86.md.
-
 on:
   push:
-    tags: ['v*']
+    tags:
+      - "v*"
+
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build, e.g. v0.4.0'
+        description: "Existing SemVer tag to release, e.g. v0.4.0"
         required: true
+        type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
+  metadata:
+    name: resolve release
+    runs-on: ubuntu-latest
+
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and validate release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag"
+            echo "Expected something like v0.4.0"
+            exit 1
+          fi
+
+          if ! git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag does not exist: $tag"
+            exit 1
+          fi
+
+          version="${tag#v}"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          echo "Tag:     $tag"
+          echo "Version: $version"
+
   build:
-    name: package ${{ matrix.arch }}
+    name: windows-${{ matrix.arch }}
+    needs: metadata
     runs-on: windows-latest
+
     strategy:
-      fail-fast: true      # a broken architecture must stop the release
+      fail-fast: true
+
       matrix:
         include:
           - arch: x64
             msystem: UCRT64
+            dll_name: BlipBridge-x64.dll
+            machine: pei-x86-64
             packages: >-
               mingw-w64-ucrt-x86_64-gcc
               mingw-w64-ucrt-x86_64-cmake
               mingw-w64-ucrt-x86_64-make
+
           - arch: x86
             msystem: MINGW32
+            dll_name: BlipBridge-x86.dll
+            machine: pei-i386
             packages: >-
               mingw-w64-i686-gcc
               mingw-w64-i686-cmake
@@ -45,96 +94,337 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+          fetch-depth: 0
 
-      - name: Install the MinGW-w64 toolchain
+      - name: Install MinGW-w64 toolchain
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem }}
           update: true
           install: ${{ matrix.packages }}
 
+      - name: Configure Release
+        shell: msys2 {0}
+        run: |
+          cmake \
+            -S . \
+            -B build/Release \
+            -G "MinGW Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBLIPBRIDGE_ARCH=${{ matrix.arch }}
+
       - name: Build Release
         shell: msys2 {0}
         run: |
-          cmake -S . -B build/Release -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/Release --parallel
+          cmake \
+            --build build/Release \
+            --parallel
+
+      - name: Configure Debug
+        shell: msys2 {0}
+        run: |
+          cmake \
+            -S . \
+            -B build/Debug \
+            -G "MinGW Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBLIPBRIDGE_ARCH=${{ matrix.arch }}
 
       - name: Build Debug
         shell: msys2 {0}
-        # Debug is built and tested but not shipped: a configuration that only
-        # ever builds on tag day is a configuration that breaks on tag day.
         run: |
-          cmake -S . -B build/Debug -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/Debug --parallel
+          cmake \
+            --build build/Debug \
+            --parallel
 
-      - name: Test
+      - name: Test Release
         shell: msys2 {0}
         run: |
-          ctest --test-dir build/Release --output-on-failure
-          ctest --test-dir build/Debug --output-on-failure
+          ctest \
+            --test-dir build/Release \
+            --output-on-failure
 
-      - name: Confirm the binary is the architecture it claims
+      - name: Test Debug
         shell: msys2 {0}
         run: |
-          set -e
-          machine=$(objdump -f build/Release/BlipBridge.dll | grep -o 'pei-i386\|pei-x86-64')
-          case "${{ matrix.arch }}:$machine" in
-            x64:pei-x86-64) ;;
-            x86:pei-i386) ;;
-            *) echo "architecture mismatch: wanted ${{ matrix.arch }}, got $machine"; exit 1 ;;
-          esac
+          ctest \
+            --test-dir build/Debug \
+            --output-on-failure
 
-      - name: Package
+      - name: Locate release DLL
+        id: dll
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          if (-not $version) { $version = "${{ github.event.inputs.tag }}" -replace '^v', '' }
-          ./tools/make_dist.ps1 -Architecture ${{ matrix.arch }} -Configuration Release -Version $version
+          $expected = Join-Path `
+              "build/Release" `
+              "${{ matrix.dll_name }}"
 
-      - name: Upload the package
+          $legacy = Join-Path `
+              "build/Release" `
+              "BlipBridge.dll"
+
+          if (Test-Path $expected) {
+              $dll = $expected
+          }
+          elseif (Test-Path $legacy) {
+              Write-Host `
+                  "CMake still emitted BlipBridge.dll; normalizing release filename."
+
+              Copy-Item `
+                  $legacy `
+                  $expected
+
+              $dll = $expected
+          }
+          else {
+              throw "BlipBridge DLL was not produced."
+          }
+
+          "path=$dll" >> $env:GITHUB_OUTPUT
+
+          Write-Host "Native library: $dll"
+
+      - name: Verify binary architecture
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          dll="${{ steps.dll.outputs.path }}"
+
+          machine=$(
+            objdump -f "$dll" |
+            grep -o 'pei-i386\|pei-x86-64' |
+            head -n 1
+          )
+
+          echo "Expected: ${{ matrix.machine }}"
+          echo "Actual:   $machine"
+
+          if [ "$machine" != "${{ matrix.machine }}" ]; then
+            echo "Architecture mismatch."
+            exit 1
+          fi
+
+      - name: Verify exported ABI
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          dll="${{ steps.dll.outputs.path }}"
+
+          exports="$(
+            objdump -p "$dll" |
+            sed -n '/Export Address Table/,$p'
+          )"
+
+          required=(
+            BB_Init
+            BB_Shutdown
+            BB_GetAbiVersion
+            BB_LoadTexture
+            BB_LoadTexturePixels
+            BB_ApplyTexture
+            BB_ApplyTextureBatch
+            BB_ReleaseTexture
+            BB_ClearTextures
+            BB_ApplyPicture
+            BB_InvalidateShape
+            BB_ClearPictureCache
+            BB_GetPictureCacheStats
+            BB_GetTextureCount
+            BB_GetCapabilities
+            BB_GetLastError
+            BB_GetVersionString
+          )
+
+          for symbol in "${required[@]}"; do
+            if ! grep -q "$symbol" <<< "$exports"; then
+              echo "Missing required export: $symbol"
+              exit 1
+            fi
+          done
+
+          echo "Required C ABI exports found."
+
+      - name: Verify VBA wrapper architecture names
+        shell: pwsh
+        run: |
+          $wrapper = Get-Content `
+              "vba/BlipBridge.bas" `
+              -Raw
+
+          if ($wrapper -notmatch 'BlipBridge-x64\.dll') {
+              throw "BlipBridge.bas does not reference BlipBridge-x64.dll"
+          }
+
+          if ($wrapper -notmatch 'BlipBridge-x86\.dll') {
+              throw "BlipBridge.bas does not reference BlipBridge-x86.dll"
+          }
+
+          Write-Host `
+              "VBA wrapper knows both architecture-specific DLL names."
+
+      - name: Package architecture
+        shell: pwsh
+        run: |
+          ./tools/make_dist.ps1 `
+              -Architecture "${{ matrix.arch }}" `
+              -Configuration Release `
+              -Version "${{ needs.metadata.outputs.version }}"
+
+      - name: Upload architecture package
         uses: actions/upload-artifact@v4
         with:
           name: package-${{ matrix.arch }}
+          if-no-files-found: error
           path: |
             dist/*.zip
             dist/*.zip.sha256
 
   publish:
-    name: publish the release
-    needs: build          # no green build, no release
+    name: publish release
+    needs:
+      - metadata
+      - build
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+          fetch-depth: 0
 
-      - name: Collect the packages
+      - name: Download packages
         uses: actions/download-artifact@v4
         with:
           path: staged
           merge-multiple: true
 
-      - name: Combine the checksums
+      - name: Inspect staged artifacts
+        shell: bash
         run: |
-          set -e
-          ls -la staged
-          cat staged/*.sha256 > staged/SHA256SUMS.txt
+          set -euo pipefail
+          find staged -maxdepth 2 -type f -print
+
+      - name: Validate architecture package names
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ needs.metadata.outputs.version }}"
+
+          test -f \
+            "staged/blipbridge-v${version}-windows-x64.zip"
+
+          test -f \
+            "staged/blipbridge-v${version}-windows-x86.zip"
+
+      - name: Build universal Windows package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ needs.metadata.outputs.version }}"
+
+          mkdir -p unpack/x64
+          mkdir -p unpack/x86
+          mkdir -p universal
+
+          unzip -q \
+            "staged/blipbridge-v${version}-windows-x64.zip" \
+            -d unpack/x64
+
+          unzip -q \
+            "staged/blipbridge-v${version}-windows-x86.zip" \
+            -d unpack/x86
+
+          x64dll=$(
+            find unpack/x64 \
+              -type f \
+              -name 'BlipBridge-x64.dll' \
+              -print \
+              -quit
+          )
+
+          x86dll=$(
+            find unpack/x86 \
+              -type f \
+              -name 'BlipBridge-x86.dll' \
+              -print \
+              -quit
+          )
+
+          if [ -z "$x64dll" ]; then
+            echo "x64 package does not contain BlipBridge-x64.dll"
+            exit 1
+          fi
+
+          if [ -z "$x86dll" ]; then
+            echo "x86 package does not contain BlipBridge-x86.dll"
+            exit 1
+          fi
+
+          cp "$x64dll" universal/
+          cp "$x86dll" universal/
+
+          cp vba/BlipBridge.bas universal/
+          cp LICENSE universal/
+
+          if [ -f README.md ]; then
+            cp README.md universal/
+          fi
+
+          (
+            cd universal
+            zip -9 -r \
+              "../staged/blipbridge-v${version}-windows.zip" \
+              .
+          )
+
+          (
+            cd staged
+            sha256sum \
+              "blipbridge-v${version}-windows.zip" \
+              > "blipbridge-v${version}-windows.zip.sha256"
+          )
+
+      - name: Combine checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -f staged/SHA256SUMS.txt
+
+          cat staged/*.zip.sha256 \
+            > staged/SHA256SUMS.txt
+
           cat staged/SHA256SUMS.txt
 
-      - name: Assemble the release notes
-        # The preamble is a committed file rather than a heredoc inside this
-        # YAML: a block scalar ends at the first line that is not indented under
-        # it, so an embedded document silently broke the workflow. It is also
-        # easier to review and edit where it is.
-        run: cp .github/release-notes-preamble.md notes.md
+      - name: Assemble release notes
+        shell: bash
+        run: |
+          cp \
+            .github/release-notes-preamble.md \
+            notes.md
 
-      - name: Publish
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          tag="${{ github.ref_name }}"
-          if [ -z "$tag" ] || [ "$tag" = "main" ]; then tag="${{ github.event.inputs.tag }}"; fi
+          set -euo pipefail
+
+          tag="${{ needs.metadata.outputs.tag }}"
+
           gh release create "$tag" \
-             --repo "${{ github.repository }}" \
-             --title "BlipBridge $tag" \
-             --notes-file notes.md \
-             --generate-notes \
-             staged/*.zip staged/*.sha256 staged/SHA256SUMS.txt
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --title "BlipBridge $tag" \
+            --notes-file notes.md \
+            --generate-notes \
+            staged/*.zip \
+            staged/*.zip.sha256 \
+            staged/SHA256SUMS.txt

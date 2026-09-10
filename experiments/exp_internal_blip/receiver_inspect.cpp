@@ -12,11 +12,10 @@
  * deleted through public COM still passes every check in the chain.
  */
 
-#include "../experiment_api.hpp"
 #include "../../src/backend/windows_office/oart_layout.hpp"
+#include "../experiment_api.hpp"
 
 #include <blipbridge/dispatch.hpp>
-
 #include <cstring>
 #include <sstream>
 
@@ -38,10 +37,10 @@ std::wstring inspectFillReceiver(IDispatch* fill) {
     // Report the environment before walking, so a failure downstream still tells
     // the reader which build they are on and what the walk expected to find.
     std::wostringstream environment;
-    environment << L"expectedBuild=" << bb::oart::kSupportedVersionText
-                << L";oartVersion=" << bb::oart::ModuleVersionText(L"oart.dll")
-                << L";ppcoreVersion=" << bb::oart::ModuleVersionText(L"ppcore.dll")
-                << L";gfxVersion=" << bb::oart::ModuleVersionText(L"gfx.dll")
+    environment << L"expectedBuild=" << bb::oart::kSupportedVersionText << L";oartVersion="
+                << bb::oart::ModuleVersionText(L"oart.dll") << L";ppcoreVersion="
+                << bb::oart::ModuleVersionText(L"ppcore.dll") << L";gfxVersion="
+                << bb::oart::ModuleVersionText(L"gfx.dll")
                 << L";expectedOartFillFormatVtable=oart.dll+0x" << std::hex
                 << bb::oart::kFillFormatVtableRva << L";expectedOartReceiverVtable=oart.dll+0x"
                 << bb::oart::kReceiverVtableRva << std::dec
@@ -55,8 +54,8 @@ std::wstring inspectFillReceiver(IDispatch* fill) {
         // Re-throw with the environment attached: the guard message alone does
         // not say which build drifted or what the walk expected.
         const std::wstring wide = environment.str();
-        throw bb::Error(error.hr, std::string(error.what()) + " | " +
-                                      std::string(wide.begin(), wide.end()));
+        throw bb::Error(error.hr,
+                        std::string(error.what()) + " | " + std::string(wide.begin(), wide.end()));
     }
 
     std::wostringstream out;
@@ -68,14 +67,13 @@ std::wstring inspectFillReceiver(IDispatch* fill) {
     AppendPointer(out, L"oart", target.oartBase);
     AppendPointer(out, L"publicFill", reinterpret_cast<std::uintptr_t>(target.publicFill));
     AppendPointer(out, L"handler", reinterpret_cast<std::uintptr_t>(target.handler));
-    out << L"handlerRefs="
-        << bb::oart::LoadDword(target.handler, kFillFormatReferenceCountOffset) << L';';
+    out << L"handlerRefs=" << bb::oart::LoadDword(target.handler, kFillFormatReferenceCountOffset)
+        << L';';
     AppendPointer(out, L"token", reinterpret_cast<std::uintptr_t>(target.token));
     out << L"tokenStrong=" << target.tokenStrong << L';';
     AppendPointer(out, L"receiver", reinterpret_cast<std::uintptr_t>(target.receiver));
-    AppendPointer(out, L"container",
-                  bb::oart::LoadPointer(target.receiver, kReceiverContainerOffset));
-    out << L"sequence=" << bb::oart::LoadPointer(target.receiver, kReceiverSequenceOffset)
-        << L';';
+    AppendPointer(
+        out, L"container", bb::oart::LoadPointer(target.receiver, kReceiverContainerOffset));
+    out << L"sequence=" << bb::oart::LoadPointer(target.receiver, kReceiverSequenceOffset) << L';';
     return out.str();
 }

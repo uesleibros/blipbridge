@@ -1,6 +1,7 @@
-#include "engine.hpp"
 #include "../backend/windows_office/native_texture.hpp"
 #include "../backend/windows_office/shape_policy.hpp"
+#include "engine.hpp"
+
 #include <blipbridge/errors.hpp>
 #include <climits>
 #include <string>

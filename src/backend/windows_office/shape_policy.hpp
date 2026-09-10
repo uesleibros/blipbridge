@@ -29,10 +29,9 @@
  * in it, and docs/safety_model.md for the two-layer model.
  */
 
-#include <windows.h>
 #include <oleauto.h>
-
 #include <string>
+#include <windows.h>
 
 namespace bb::office {
 
@@ -70,7 +69,9 @@ struct ShapeClassification {
     /// A sentence explaining the verdict, suitable for the caller's error text.
     std::string reason;
 
-    bool native() const { return eligibility == ShapeEligibility::NativeSupported; }
+    bool native() const {
+        return eligibility == ShapeEligibility::NativeSupported;
+    }
 };
 
 /**

@@ -41,12 +41,11 @@
  * assumes a value; the caller supplies one and the harness reports what came out.
  */
 
-#include "../experiment_api.hpp"
 #include "../../src/backend/windows_office/native_apply.hpp"
 #include "../../src/backend/windows_office/oart_layout.hpp"
+#include "../experiment_api.hpp"
 
 #include <blipbridge/dispatch.hpp>
-
 #include <cstring>
 #include <sstream>
 
@@ -58,8 +57,8 @@ constexpr char kCreateFromPixelsSymbol[] =
     "AEBU?$TVector2@V?$TUnits@MU?$TUnitsRatioTag@UDevicePixels@Math@@UInches@2@"
     "@Math@@@Math@@@Math@@@Z";
 
-constexpr std::uintptr_t kCachedImageVtableRva = 0x409DC0;   // gfx.dll
-constexpr std::uintptr_t kImageVtableRva = 0x4055C8;         // gfx.dll
+constexpr std::uintptr_t kCachedImageVtableRva = 0x409DC0; // gfx.dll
+constexpr std::uintptr_t kImageVtableRva = 0x4055C8;       // gfx.dll
 
 /// `Ofc::TCntPtr<T>` as this code needs it: one pointer of storage.
 struct CountedPointer {
@@ -72,18 +71,25 @@ struct Vector2 {
     float y = 96.0f;
 };
 
-using CreateCachedImageFromPixels = CountedPointer*(__stdcall*)(
-    CountedPointer* returnStorage, CountedPointer* imageInOut, const void* pixels,
-    unsigned int width, unsigned int height, int stride, int surfaceFormat,
-    const Vector2* dpi);
+using CreateCachedImageFromPixels = CountedPointer*(__stdcall*)(CountedPointer * returnStorage,
+                                                                CountedPointer* imageInOut,
+                                                                const void* pixels,
+                                                                unsigned int width,
+                                                                unsigned int height,
+                                                                int stride,
+                                                                int surfaceFormat,
+                                                                const Vector2* dpi);
 
 /// Releases one intrusive GFX reference when it goes out of scope.
 class CountedReference {
-public:
+  public:
     CountedReference() = default;
     CountedReference(const CountedReference&) = delete;
     CountedReference& operator=(const CountedReference&) = delete;
-    ~CountedReference() { bb::oart::ReleaseIntrusive(storage.value); }
+
+    ~CountedReference() {
+        bb::oart::ReleaseIntrusive(storage.value);
+    }
 
     CountedPointer storage;
 };
@@ -102,8 +108,8 @@ public:
  * Returns a field list; throws bb::Error if creation or the apply fails, so a
  * rejected format value is distinguishable from an accepted one.
  */
-std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long width,
-                                    long height, long stride, long surfaceFormat) {
+std::wstring pixelTextureExperiment(
+    IDispatch* fill, SAFEARRAY* pixels, long width, long height, long stride, long surfaceFormat) {
     if (!pixels || SafeArrayGetDim(pixels) != 1) {
         throw bb::Error(E_INVALIDARG, "Expected a one-dimensional Byte array of pixels");
     }
@@ -123,8 +129,7 @@ std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long wid
     }
 
     const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill);
-    const bb::oart::ApplyFunctions functions =
-        bb::oart::ResolveApplyFunctions(target.oartBase);
+    const bb::oart::ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
 
     const HMODULE gfx = bb::oart::RequireSupportedModule(L"gfx.dll", "GFX");
     const auto gfxBase = reinterpret_cast<std::uintptr_t>(gfx);
@@ -136,17 +141,26 @@ std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long wid
 
     void* raw = nullptr;
     bb::check(SafeArrayAccessData(pixels, &raw), "SafeArrayAccessData");
+
     struct Unaccess {
         SAFEARRAY* value;
-        ~Unaccess() { SafeArrayUnaccessData(value); }
+
+        ~Unaccess() {
+            SafeArrayUnaccessData(value);
+        }
     } unaccess{pixels};
 
-    const Vector2 dpi;   // 96 dpi in both axes, the ordinary screen default
+    const Vector2 dpi; // 96 dpi in both axes, the ordinary screen default
     CountedReference cached;
     CountedReference image;
-    create(&cached.storage, &image.storage, raw, static_cast<unsigned int>(width),
-           static_cast<unsigned int>(height), static_cast<int>(stride),
-           static_cast<int>(surfaceFormat), &dpi);
+    create(&cached.storage,
+           &image.storage,
+           raw,
+           static_cast<unsigned int>(width),
+           static_cast<unsigned int>(height),
+           static_cast<int>(stride),
+           static_cast<int>(surfaceFormat),
+           &dpi);
 
     if (!cached.storage.value) {
         std::ostringstream out;
@@ -165,8 +179,8 @@ std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long wid
     std::wostringstream out;
     out << L"format=" << surfaceFormat << L";width=" << width << L";height=" << height
         << L";stride=" << stride << L";cached=0x" << std::hex
-        << reinterpret_cast<std::uintptr_t>(cached.storage.value) << std::dec
-        << L";cachedCount=" << bb::oart::IntrusiveCount(cached.storage.value) << L';';
+        << reinterpret_cast<std::uintptr_t>(cached.storage.value) << std::dec << L";cachedCount="
+        << bb::oart::IntrusiveCount(cached.storage.value) << L';';
     if (image.storage.value) {
         const std::uintptr_t imageVtable = bb::oart::LoadPointer(image.storage.value, 0);
         out << L"imageVtableMatches=" << (imageVtable == gfxBase + kImageVtableRva ? 1 : 0)

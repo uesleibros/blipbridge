@@ -17,19 +17,16 @@
  */
 
 #include "backend.hpp"
-
-#include <windows.h>
-#include <oleauto.h>
-
-#include <blipbridge/dispatch.hpp>
-#include <blipbridge/errors.hpp>
-
 #include "windows_office/native_texture.hpp"
 #include "windows_office/picture_cache.hpp"
 #include "windows_office/shape_policy.hpp"
 
+#include <blipbridge/dispatch.hpp>
+#include <blipbridge/errors.hpp>
 #include <cstring>
 #include <new>
+#include <oleauto.h>
+#include <windows.h>
 
 namespace bb {
 namespace {
@@ -143,10 +140,14 @@ IDispatch* RequireFillableShape(void* shape) {
         !dispatch) {
         throw Error(E_INVALIDARG, "Shape pointer is not an IDispatch");
     }
+
     // The QueryInterface reference is only needed while the type is checked.
     struct Release {
         IDispatch* value;
-        ~Release() { value->Release(); }
+
+        ~Release() {
+            value->Release();
+        }
     } release{dispatch};
 
     // Semantic eligibility: one authority, asked by every entry point, so the C
@@ -165,8 +166,10 @@ IDispatch* RequireFillableShape(void* shape) {
  * cannot disagree about what is loaded.
  */
 class WindowsOfficeBackend final : public Backend {
-public:
-    const char* Name() const noexcept override { return "windows-office-native"; }
+  public:
+    const char* Name() const noexcept override {
+        return "windows-office-native";
+    }
 
     BackendResult Probe() noexcept override {
         if (!GetModuleHandleW(L"POWERPNT.EXE")) {
@@ -208,7 +211,8 @@ public:
         return capabilities;
     }
 
-    BackendResult LoadTexture(const std::uint8_t* bytes, std::size_t length,
+    BackendResult LoadTexture(const std::uint8_t* bytes,
+                              std::size_t length,
                               std::uint64_t* out) noexcept override {
         if (out) {
             *out = 0;
@@ -218,8 +222,7 @@ public:
                                           "Image bytes and an output handle are required");
         }
         if (length > 0xFFFFFFFFull) {
-            return BackendResult::Failure(BackendStatus::InvalidArgument,
-                                          "Image is too large");
+            return BackendResult::Failure(BackendStatus::InvalidArgument, "Image is too large");
         }
         return Guarded([&] {
             // The store copies the bytes, so this array only has to outlive the call.
@@ -230,7 +233,9 @@ public:
             }
             struct Destroy {
                 SAFEARRAY* value;
-                ~Destroy() { SafeArrayDestroy(value); }
+                ~Destroy() {
+                    SafeArrayDestroy(value);
+                }
             } destroy{array};
 
             void* raw = nullptr;
@@ -241,8 +246,10 @@ public:
         });
     }
 
-    BackendResult LoadTexturePixels(const std::uint8_t* pixels, std::uint32_t width,
-                                    std::uint32_t height, std::int32_t stride,
+    BackendResult LoadTexturePixels(const std::uint8_t* pixels,
+                                    std::uint32_t width,
+                                    std::uint32_t height,
+                                    std::int32_t stride,
                                     std::uint64_t* out) noexcept override {
         if (out) {
             *out = 0;
@@ -253,13 +260,12 @@ public:
         }
         // A stride smaller than one row of BGRA would read past every row.
         if (stride < static_cast<std::int32_t>(width) * 4) {
-            return BackendResult::Failure(
-                BackendStatus::InvalidArgument,
-                "Stride must be at least width*4 bytes for BGRA32");
+            return BackendResult::Failure(BackendStatus::InvalidArgument,
+                                          "Stride must be at least width*4 bytes for BGRA32");
         }
         return Guarded([&] {
-            *out = static_cast<std::uint64_t>(
-                nativeTextureLoadPixels(pixels, width, height, stride));
+            *out =
+                static_cast<std::uint64_t>(nativeTextureLoadPixels(pixels, width, height, stride));
         });
     }
 
@@ -276,7 +282,9 @@ public:
         return Guarded([&] { nativeTextureRelease(static_cast<long>(texture)); });
     }
 
-    void ClearTextures() noexcept override { nativeTextureClear(); }
+    void ClearTextures() noexcept override {
+        nativeTextureClear();
+    }
 
     BackendResult ApplyPicture(void* shape, const std::uint16_t* path) noexcept override {
         if (!path || !*path) {
@@ -290,10 +298,11 @@ public:
             IDispatch* dispatch = RequireDispatchShape(shape);
             struct Release {
                 IDispatch* value;
-                ~Release() { value->Release(); }
+                ~Release() {
+                    value->Release();
+                }
             } release{dispatch};
-            office::ApplyPictureCached(dispatch,
-                                       reinterpret_cast<const wchar_t*>(path));
+            office::ApplyPictureCached(dispatch, reinterpret_cast<const wchar_t*>(path));
         });
     }
 
@@ -302,15 +311,20 @@ public:
             IDispatch* dispatch = RequireDispatchShape(shape);
             struct Release {
                 IDispatch* value;
-                ~Release() { value->Release(); }
+                ~Release() {
+                    value->Release();
+                }
             } release{dispatch};
             office::InvalidateShapeCache(dispatch);
         });
     }
 
-    void ClearPictureCache() noexcept override { office::ClearPictureCache(); }
+    void ClearPictureCache() noexcept override {
+        office::ClearPictureCache();
+    }
 
-    void PictureCacheStats(std::size_t* textures, std::size_t* shapes,
+    void PictureCacheStats(std::size_t* textures,
+                           std::size_t* shapes,
                            std::uint64_t* skipped) const noexcept override {
         const office::PictureCacheStats stats = office::GetPictureCacheStats();
         if (textures) {

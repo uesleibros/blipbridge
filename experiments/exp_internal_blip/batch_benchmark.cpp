@@ -16,10 +16,9 @@
 
 #include "../experiment_api.hpp"
 
+#include <algorithm>
 #include <blipbridge/blipbridge.h>
 #include <blipbridge/dispatch.hpp>
-
-#include <algorithm>
 #include <sstream>
 #include <vector>
 
@@ -84,9 +83,10 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
         // A grid that stays on the slide; geometry is irrelevant to the timing.
         const double left = 10.0 + static_cast<double>(index % 20) * 24.0;
         const double top = 10.0 + static_cast<double>(index / 20) * 24.0;
-        bb::Value shape = bb::call(shapes.obj(), L"AddShape",
-                                   {bb::Value(1L), bb::Value(left), bb::Value(top),
-                                    bb::Value(20.0), bb::Value(20.0)});
+        bb::Value shape = bb::call(
+            shapes.obj(),
+            L"AddShape",
+            {bb::Value(1L), bb::Value(left), bb::Value(top), bb::Value(20.0), bb::Value(20.0)});
         pointers.push_back(shape.obj());
         created.push_back(std::move(shape));
     }
@@ -97,12 +97,11 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
         // A 1x1 PNG keeps this self-contained. The image only has to decode;
         // decoding happens once, before either leg is timed.
         static const unsigned char kOnePixelPng[] = {
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-            0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-            0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
-            0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-            0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
-            0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+            0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+            0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
         if (BB_LoadTexture(kOnePixelPng, sizeof(kOnePixelPng), &texture) != BB_OK) {
             char message[512]{};
             BB_GetLastError(message, sizeof(message));
@@ -121,8 +120,8 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
             BB_ApplyTexture(shape, texture);
         }
         uint32_t applied = 0;
-        BB_ApplyTextureBatch(pointers.data(), handles.data(),
-                             static_cast<uint32_t>(shapeCount), &applied);
+        BB_ApplyTextureBatch(
+            pointers.data(), handles.data(), static_cast<uint32_t>(shapeCount), &applied);
 
         for (long round = 0; round < iterations; ++round) {
             const long long start = Now();
@@ -136,8 +135,9 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
 
         for (long round = 0; round < iterations; ++round) {
             const long long start = Now();
-            if (BB_ApplyTextureBatch(pointers.data(), handles.data(),
-                                     static_cast<uint32_t>(shapeCount), &applied) != BB_OK) {
+            if (BB_ApplyTextureBatch(
+                    pointers.data(), handles.data(), static_cast<uint32_t>(shapeCount), &applied) !=
+                BB_OK) {
                 throw bb::Error(E_FAIL, "BB_ApplyTextureBatch failed during the benchmark");
             }
             batched.push_back((Now() - start) * tick * 1000.0);
@@ -151,17 +151,14 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
         out.setf(std::ios::fixed);
         out.precision(4);
         out << L"shapes=" << shapeCount << L";iterations=" << iterations << L';'
-            << L"individualMeanMs=" << loop.meanMs << L";individualMedianMs="
-            << loop.medianMs << L';'
-            << L"batchMeanMs=" << batch.meanMs << L";batchMedianMs=" << batch.medianMs
-            << L';'
-            << L"perShapeIndividualMs=" << (loop.meanMs / shapeCount)
+            << L"individualMeanMs=" << loop.meanMs << L";individualMedianMs=" << loop.medianMs
+            << L';' << L"batchMeanMs=" << batch.meanMs << L";batchMedianMs=" << batch.medianMs
+            << L';' << L"perShapeIndividualMs=" << (loop.meanMs / shapeCount)
             << L";perShapeBatchMs=" << (batch.meanMs / shapeCount) << L';';
         if (batch.meanMs > 0.0) {
             out << L"batchSpeedup=" << (loop.meanMs / batch.meanMs) << L';';
         }
-        out << L"savedPerShapeUs=" << ((loop.meanMs - batch.meanMs) / shapeCount * 1000.0)
-            << L';';
+        out << L"savedPerShapeUs=" << ((loop.meanMs - batch.meanMs) / shapeCount * 1000.0) << L';';
     } catch (...) {
         if (texture) {
             BB_ReleaseTexture(texture);

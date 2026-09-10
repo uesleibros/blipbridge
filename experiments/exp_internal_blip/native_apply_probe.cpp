@@ -14,14 +14,12 @@
  * Research only. STA, PowerPoint host. Nothing is retained after the call.
  */
 
-#include "../experiment_api.hpp"
-
 #include "../../src/backend/windows_office/native_apply.hpp"
 #include "../../src/backend/windows_office/oart_layout.hpp"
+#include "../experiment_api.hpp"
 
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <sstream>
 #include <string>
 #include <utility>
@@ -40,23 +38,27 @@ namespace {
  * be the reason something in the shipping path has to become public.
  */
 class OwnedReference {
-public:
+  public:
     OwnedReference() = default;
     OwnedReference(const OwnedReference&) = delete;
     OwnedReference& operator=(const OwnedReference&) = delete;
-    ~OwnedReference() { bb::oart::ReleaseIntrusive(value); }
+
+    ~OwnedReference() {
+        bb::oart::ReleaseIntrusive(value);
+    }
 
     void* value = nullptr;
 };
 
-
 /// Records the cached image's count at each stage so deltas can be explained.
 class CountTimeline {
-public:
+  public:
     explicit CountTimeline(const void* object) : object_(object) {}
 
     /// Distinguishes one Shape's samples from the next when reusing an image.
-    void SetGroup(long group) { group_ = group; }
+    void SetGroup(long group) {
+        group_ = group;
+    }
 
     void Sample(const wchar_t* label) {
         std::wstring name;
@@ -73,7 +75,7 @@ public:
         }
     }
 
-private:
+  private:
     const void* object_ = nullptr;
     long group_ = -1;
     std::vector<std::pair<std::wstring, std::uint32_t>> samples_;
@@ -103,14 +105,13 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes) {
 
     CountTimeline timeline(cached.value);
     timeline.Sample(L"create");
-    bb::oart::ApplyCachedImage(functions, target, cached.value,
-                               [&](const wchar_t* label) { timeline.Sample(label); });
+    bb::oart::ApplyCachedImage(
+        functions, target, cached.value, [&](const wchar_t* label) { timeline.Sample(label); });
 
     std::wostringstream out;
     out << L"build=" << bb::oart::kSupportedVersionText << L';';
     out << L"receiver=0x" << std::hex << reinterpret_cast<std::uintptr_t>(target.receiver)
-        << L";cached=0x" << reinterpret_cast<std::uintptr_t>(cached.value) << std::dec
-        << L';';
+        << L";cached=0x" << reinterpret_cast<std::uintptr_t>(cached.value) << std::dec << L';';
     out << L"usedUserPicture=0;usedDonorShape=0;usedSourceFile=0;fromMemoryStream=1;";
     timeline.Append(out);
     return out.str();
@@ -150,8 +151,8 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes) {
 
     std::wostringstream out;
     out << L"build=" << bb::oart::kSupportedVersionText << L";cached=0x" << std::hex
-        << reinterpret_cast<std::uintptr_t>(cached.value) << std::dec
-        << L";creations=1;shapes=" << (upper - lower + 1) << L';';
+        << reinterpret_cast<std::uintptr_t>(cached.value) << std::dec << L";creations=1;shapes="
+        << (upper - lower + 1) << L';';
 
     VARTYPE elementType = VT_EMPTY;
     bb::check(SafeArrayGetVartype(fills, &elementType), "SafeArrayGetVartype");
@@ -167,7 +168,7 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes) {
             bb::check(SafeArrayGetElement(fills, &index, &raw), "SafeArrayGetElement");
             element = bb::Value(raw);
             if (raw) {
-                raw->Release();   // SafeArrayGetElement already AddRef'd for us
+                raw->Release(); // SafeArrayGetElement already AddRef'd for us
             }
         } else {
             bb::check(SafeArrayGetElement(fills, &index, &element.v), "SafeArrayGetElement");
@@ -175,8 +176,8 @@ std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes) {
         // Re-resolved per Shape; never cached across applies.
         const FillTarget target = bb::oart::ResolveFillTarget(element.obj());
         const ApplyFunctions functions = bb::oart::ResolveApplyFunctions(target.oartBase);
-        bb::oart::ApplyCachedImage(functions, target, cached.value,
-                                   [&](const wchar_t* label) { timeline.Sample(label); });
+        bb::oart::ApplyCachedImage(
+            functions, target, cached.value, [&](const wchar_t* label) { timeline.Sample(label); });
         out << L"shape" << (index - lower) << L"Receiver=0x" << std::hex
             << reinterpret_cast<std::uintptr_t>(target.receiver) << std::dec << L';';
     }

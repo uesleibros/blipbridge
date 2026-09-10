@@ -17,7 +17,6 @@
 
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <cstddef>
 #include <sstream>
 
@@ -40,14 +39,14 @@ constexpr long kMsoTrue = -1;
  * msoAutoShape - which is exactly why the connector check below exists.
  */
 constexpr long kNativeShapeTypes[] = {
-    1,    // msoAutoShape - also WordArt and group children
-    2,    // msoCallout
-    5,    // msoFreeform
-    6,    // msoGroup
-    13,   // msoPicture
-    14,   // msoPlaceholder
-    16,   // msoMedia
-    17,   // msoTextBox
+    1,  // msoAutoShape - also WordArt and group children
+    2,  // msoCallout
+    5,  // msoFreeform
+    6,  // msoGroup
+    13, // msoPicture
+    14, // msoPlaceholder
+    16, // msoMedia
+    17, // msoTextBox
 };
 
 /**
@@ -57,10 +56,10 @@ constexpr long kNativeShapeTypes[] = {
  * is a statement about the class, never a response to a failure.
  */
 constexpr long kFallbackShapeTypes[] = {
-    7,    // msoEmbeddedOLEObject
-    19,   // msoTable
-    24,   // msoIgraphic - what SmartArt reports on this build
-    21,   // msoDiagram - the older SmartArt reporting, refused the same way
+    7,  // msoEmbeddedOLEObject
+    19, // msoTable
+    24, // msoIgraphic - what SmartArt reports on this build
+    21, // msoDiagram - the older SmartArt reporting, refused the same way
 };
 
 /// Deduces the table's size, so adding a class cannot silently break the lookup.
@@ -121,10 +120,9 @@ ShapeClassification ClassifyShapeForNativePictureFill(IDispatch* shape) noexcept
     }
     if (result.connector) {
         result.eligibility = ShapeEligibility::Unsupported;
-        result.reason =
-            "Connectors and lines have no fillable interior. Office's own "
-            "Fill.UserPicture refuses them, and a native apply terminates PowerPoint, "
-            "so this Shape is refused before any internal call is made";
+        result.reason = "Connectors and lines have no fillable interior. Office's own "
+                        "Fill.UserPicture refuses them, and a native apply terminates PowerPoint, "
+                        "so this Shape is refused before any internal call is made";
         return result;
     }
 
@@ -135,9 +133,8 @@ ShapeClassification ClassifyShapeForNativePictureFill(IDispatch* shape) noexcept
     }
     if (Contains(kFallbackShapeTypes, result.shapeType)) {
         result.eligibility = ShapeEligibility::FallbackSupported;
-        result.reason =
-            "This Shape class has no validated native picture-fill path, but Office's "
-            "own Fill.UserPicture accepts it";
+        result.reason = "This Shape class has no validated native picture-fill path, but Office's "
+                        "own Fill.UserPicture accepts it";
         return result;
     }
 

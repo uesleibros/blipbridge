@@ -1,6 +1,8 @@
 #include "engine.hpp"
-#include "server.hpp"
+
 #include "../backend/windows_office/native_texture.hpp"
+#include "server.hpp"
+
 #include <blipbridge/errors.hpp>
 #include <cstring>
 
@@ -49,8 +51,7 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"InvalidateShape", DispatchId::InvalidateShape},
     {L"ClearPictureCache", DispatchId::ClearPictureCache},
     {L"PictureCacheStats", DispatchId::PictureCacheStats},
-    {L"ProbeShapePolicy", DispatchId::ProbeShapePolicy}
-};
+    {L"ProbeShapePolicy", DispatchId::ProbeShapePolicy}};
 
 /**
  * Highest DISPID GetIDsOfNames can hand out. Invoke must accept every one of
@@ -137,8 +138,7 @@ HRESULT Engine::GetTypeInfo(UINT, LCID, ITypeInfo**) {
     return E_NOTIMPL;
 }
 
-HRESULT Engine::GetIDsOfNames(
-    REFIID interfaceId, LPOLESTR* names, UINT count, LCID, DISPID* ids) {
+HRESULT Engine::GetIDsOfNames(REFIID interfaceId, LPOLESTR* names, UINT count, LCID, DISPID* ids) {
     if (interfaceId != IID_NULL) {
         return DISP_E_UNKNOWNINTERFACE;
     }
@@ -163,9 +163,14 @@ HRESULT Engine::GetIDsOfNames(
     return S_OK;
 }
 
-HRESULT Engine::Invoke(
-    DISPID id, REFIID interfaceId, LCID, WORD flags, DISPPARAMS* parameters,
-    VARIANT* result, EXCEPINFO* exception, UINT*) {
+HRESULT Engine::Invoke(DISPID id,
+                       REFIID interfaceId,
+                       LCID,
+                       WORD flags,
+                       DISPPARAMS* parameters,
+                       VARIANT* result,
+                       EXCEPINFO* exception,
+                       UINT*) {
     if (interfaceId != IID_NULL) {
         return DISP_E_UNKNOWNINTERFACE;
     }

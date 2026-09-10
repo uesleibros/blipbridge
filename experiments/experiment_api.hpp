@@ -1,7 +1,7 @@
 #pragma once
-#include <windows.h>
 #include <oleauto.h>
 #include <string>
+#include <windows.h>
 
 // The texture store is production code and lives with the backend. The research
 // harnesses below drive it; it does not know they exist.
@@ -48,14 +48,13 @@ std::wstring nativeApplyExperiment(IDispatch* fill, SAFEARRAY* bytes);
  */
 std::wstring nativeApplyReuseExperiment(SAFEARRAY* fills, SAFEARRAY* bytes);
 
-
 /**
  * In-process comparison of Fill.UserPicture against LoadTexture once plus
  * repeated ApplyTexture, on one Shape of the supplied Slide. Reports the load
  * cost separately from the hot-path apply cost. Leaves the document as found.
  */
-std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath,
-                                    long iterations);
+std::wstring
+benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath, long iterations);
 /**
  * Compares one BB_ApplyTextureBatch call against the same number of individual
  * BB_ApplyTexture calls, through the real C ABI, in process. Creates and deletes
@@ -68,8 +67,8 @@ std::wstring benchmarkTextureBatch(IDispatch* slide, long shapeCount, long itera
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.
  */
-std::wstring pixelTextureExperiment(IDispatch* fill, SAFEARRAY* pixels, long width,
-                                    long height, long stride, long surfaceFormat);
+std::wstring pixelTextureExperiment(
+    IDispatch* fill, SAFEARRAY* pixels, long width, long height, long stride, long surfaceFormat);
 
 /**
  * Research: reports how far a Shape gets along the validated fill chain, naming
@@ -111,9 +110,8 @@ std::wstring pictureCacheStatsThroughAbi();
  * Answers where the difference between applying an existing texture and
  * creating new content actually goes. See stage_profiler.cpp.
  */
-std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
-                               long iterations);
+std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath, long iterations);
 
 /** Compares encoded-image loading against raw-pixel loading at one size. */
-std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long height,
-                                long iterations);
+std::wstring
+benchmarkPixelLoad(const std::wstring& imagePath, long width, long height, long iterations);

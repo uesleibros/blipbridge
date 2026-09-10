@@ -29,16 +29,14 @@
  * Read-only, borrows every pointer, retains nothing. STA, PowerPoint host.
  */
 
-#include "../experiment_api.hpp"
-
 #include "../../src/backend/windows_office/native_apply.hpp"
 #include "../../src/backend/windows_office/native_texture.hpp"
-#include "../../src/backend/windows_office/shape_policy.hpp"
 #include "../../src/backend/windows_office/oart_layout.hpp"
+#include "../../src/backend/windows_office/shape_policy.hpp"
+#include "../experiment_api.hpp"
 
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <sstream>
 #include <string>
 
@@ -57,26 +55,34 @@ constexpr std::size_t kInnerProbeSize = 0x68;
  * support the class - an apply still has to be attempted and verified.
  */
 enum class Step {
-    NoShapeType,      ///< Shape.Type could not be read; not a usable Shape.
-    NoFillProperty,   ///< The object has no Fill at all.
-    FillNotReadable,  ///< Fill returned something that is not committed memory.
-    NotWrapper,       ///< Fill is not a PPCORE delegating wrapper.
-    InnerNotReadable, ///< The wrapper's inner pointer is not committed memory.
+    NoShapeType,        ///< Shape.Type could not be read; not a usable Shape.
+    NoFillProperty,     ///< The object has no Fill at all.
+    FillNotReadable,    ///< Fill returned something that is not committed memory.
+    NotWrapper,         ///< Fill is not a PPCORE delegating wrapper.
+    InnerNotReadable,   ///< The wrapper's inner pointer is not committed memory.
     InnerNotFillFormat, ///< The inner object is some other OART type.
-    NoReceiver,       ///< The control block or receiver did not check out.
-    Complete          ///< The full validated chain is present.
+    NoReceiver,         ///< The control block or receiver did not check out.
+    Complete            ///< The full validated chain is present.
 };
 
 const wchar_t* StepName(Step step) {
     switch (step) {
-    case Step::NoShapeType: return L"NoShapeType";
-    case Step::NoFillProperty: return L"NoFillProperty";
-    case Step::FillNotReadable: return L"FillNotReadable";
-    case Step::NotWrapper: return L"NotWrapper";
-    case Step::InnerNotReadable: return L"InnerNotReadable";
-    case Step::InnerNotFillFormat: return L"InnerNotFillFormat";
-    case Step::NoReceiver: return L"NoReceiver";
-    case Step::Complete: return L"Complete";
+    case Step::NoShapeType:
+        return L"NoShapeType";
+    case Step::NoFillProperty:
+        return L"NoFillProperty";
+    case Step::FillNotReadable:
+        return L"FillNotReadable";
+    case Step::NotWrapper:
+        return L"NotWrapper";
+    case Step::InnerNotReadable:
+        return L"InnerNotReadable";
+    case Step::InnerNotFillFormat:
+        return L"InnerNotFillFormat";
+    case Step::NoReceiver:
+        return L"NoReceiver";
+    case Step::Complete:
+        return L"Complete";
     }
     return L"Unknown";
 }
@@ -124,8 +130,8 @@ std::wstring probeShapeCompatibility(IDispatch* shape) {
         out << L"shapeType=" << shapeType << L';';
         reached = Step::NoFillProperty;
     } catch (const bb::Error& error) {
-        out << L"shapeType=?;error=" << Sanitise(error.what()) << L';'
-            << L"step=" << StepName(reached) << L";agrees=1;";
+        out << L"shapeType=?;error=" << Sanitise(error.what()) << L';' << L"step="
+            << StepName(reached) << L";agrees=1;";
         return out.str();
     }
 
@@ -135,8 +141,8 @@ std::wstring probeShapeCompatibility(IDispatch* shape) {
     try {
         fill = bb::get(shape, L"Fill");
     } catch (const bb::Error& error) {
-        out << L"fillError=" << Sanitise(error.what()) << L";step="
-            << StepName(reached) << L";agrees=1;";
+        out << L"fillError=" << Sanitise(error.what()) << L";step=" << StepName(reached)
+            << L";agrees=1;";
         return out.str();
     }
     if (fill.v.vt != VT_DISPATCH || !fill.obj()) {
@@ -168,8 +174,8 @@ std::wstring probeShapeCompatibility(IDispatch* shape) {
                 << L";wrapperThunks=" << wrapper.identityThunks << L';';
 
             reached = Step::InnerNotReadable;
-            auto* inner = reinterpret_cast<void*>(
-                bb::oart::LoadPointer(fillObject, wrapper.innerOffset));
+            auto* inner =
+                reinterpret_cast<void*>(bb::oart::LoadPointer(fillObject, wrapper.innerOffset));
             if (bb::oart::IsReadable(inner, kInnerProbeSize)) {
                 const std::uintptr_t innerVtable = bb::oart::LoadPointer(inner, 0);
                 out << L"innerVtable=0x" << std::hex << innerVtable << std::dec << L';';
@@ -185,8 +191,8 @@ std::wstring probeShapeCompatibility(IDispatch* shape) {
             // Still worth recording what it *is*, so a class that turns out to
             // wrap something else is identifiable rather than just "not a
             // wrapper".
-            out << L"fillVtable=0x" << std::hex << bb::oart::LoadPointer(fillObject, 0)
-                << std::dec << L';';
+            out << L"fillVtable=0x" << std::hex << bb::oart::LoadPointer(fillObject, 0) << std::dec
+                << L';';
         }
     }
 
@@ -219,8 +225,8 @@ std::wstring probeShapeCompatibility(IDispatch* shape) {
     // A violation means this classifier is wrong about the layout, so the
     // harness must discard the row rather than publish it as a matrix result.
     const bool agrees = couldStillResolve || !resolved;
-    out << L"step=" << StepName(reached) << L";resolved=" << (resolved ? 1 : 0)
-        << L";agrees=" << (agrees ? 1 : 0) << L';';
+    out << L"step=" << StepName(reached) << L";resolved=" << (resolved ? 1 : 0) << L";agrees="
+        << (agrees ? 1 : 0) << L';';
     if (!guardMessage.empty()) {
         out << L"guard=" << guardMessage << L';';
     }
@@ -292,15 +298,23 @@ std::wstring probeShapePolicy(IDispatch* shape) {
         bb::office::ClassifyShapeForNativePictureFill(shape);
     const wchar_t* name = L"Invalid";
     switch (classification.eligibility) {
-    case bb::office::ShapeEligibility::NativeSupported: name = L"NativeSupported"; break;
-    case bb::office::ShapeEligibility::FallbackSupported: name = L"FallbackSupported"; break;
-    case bb::office::ShapeEligibility::Unsupported: name = L"Unsupported"; break;
-    case bb::office::ShapeEligibility::Invalid: name = L"Invalid"; break;
+    case bb::office::ShapeEligibility::NativeSupported:
+        name = L"NativeSupported";
+        break;
+    case bb::office::ShapeEligibility::FallbackSupported:
+        name = L"FallbackSupported";
+        break;
+    case bb::office::ShapeEligibility::Unsupported:
+        name = L"Unsupported";
+        break;
+    case bb::office::ShapeEligibility::Invalid:
+        name = L"Invalid";
+        break;
     }
     std::wostringstream out;
-    out << L"eligibility=" << name << L";shapeType=" << classification.shapeType
-        << L";connector=" << (classification.connector ? 1 : 0) << L";applyEntries="
-        << bb::oart::NativeApplyEntryCount() << L";reason="
-        << Sanitise(classification.reason) << L';';
+    out << L"eligibility=" << name << L";shapeType=" << classification.shapeType << L";connector="
+        << (classification.connector ? 1 : 0) << L";applyEntries="
+        << bb::oart::NativeApplyEntryCount() << L";reason=" << Sanitise(classification.reason)
+        << L';';
     return out.str();
 }

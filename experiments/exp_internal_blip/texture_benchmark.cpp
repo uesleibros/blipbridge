@@ -23,16 +23,13 @@
  * QueryPerformanceCounter around the call only.
  */
 
-#include "../experiment_api.hpp"
-
-#include <blipbridge/blipbridge.h>
-
 #include "../../src/backend/windows_office/native_apply.hpp"
 #include "../../src/backend/windows_office/oart_layout.hpp"
-
-#include <blipbridge/dispatch.hpp>
+#include "../experiment_api.hpp"
 
 #include <algorithm>
+#include <blipbridge/blipbridge.h>
+#include <blipbridge/dispatch.hpp>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -99,17 +96,19 @@ Timing Summarise(std::vector<double>& samples) {
 }
 
 void Append(std::wostringstream& out, const wchar_t* label, const Timing& timing) {
-    out << label << L"Calls=" << timing.calls << L';' << label << L"MeanMs="
-        << timing.meanMs << L';' << label << L"MedianMs=" << timing.medianMs << L';'
-        << label << L"P95Ms=" << timing.p95Ms << L';' << label << L"P99Ms="
-        << timing.p99Ms << L';' << label << L"MaxMs=" << timing.maxMs << L';' << label
-        << L"TotalMs=" << timing.totalMs << L';';
+    out << label << L"Calls=" << timing.calls << L';' << label << L"MeanMs=" << timing.meanMs
+        << L';' << label << L"MedianMs=" << timing.medianMs << L';' << label << L"P95Ms="
+        << timing.p95Ms << L';' << label << L"P99Ms=" << timing.p99Ms << L';' << label << L"MaxMs="
+        << timing.maxMs << L';' << label << L"TotalMs=" << timing.totalMs << L';';
 }
 
 /// Frees a SAFEARRAY built for one benchmark leg.
 struct ArrayGuard {
     SAFEARRAY* value;
-    ~ArrayGuard() { SafeArrayDestroy(value); }
+
+    ~ArrayGuard() {
+        SafeArrayDestroy(value);
+    }
 };
 
 } // namespace
@@ -122,8 +121,8 @@ struct ArrayGuard {
  * `UserPicture` leg - the native legs read the same file into memory once and
  * never touch the filesystem again.
  */
-std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath,
-                                    long iterations) {
+std::wstring
+benchmarkNativeTexture(IDispatch* slide, const std::wstring& imagePath, long iterations) {
     if (iterations <= 0) {
         iterations = kDefaultIterations;
     }
@@ -155,9 +154,10 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
     // One Shape reused for every leg, so geometry and slide state are identical
     // across the comparison.
     bb::Value shapes = bb::get(slide, L"Shapes");
-    bb::Value shape = bb::call(shapes.obj(), L"AddShape",
-                               {bb::Value(1L), bb::Value(20.0), bb::Value(20.0),
-                                bb::Value(120.0), bb::Value(120.0)});
+    bb::Value shape = bb::call(
+        shapes.obj(),
+        L"AddShape",
+        {bb::Value(1L), bb::Value(20.0), bb::Value(20.0), bb::Value(120.0), bb::Value(120.0)});
     const double tick = SecondsPerTick();
     std::vector<double> userPicture;
     std::vector<double> applyTexture;
@@ -272,9 +272,7 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
         out << L"alternatingMeanSpeedup=" << (picture.meanMs / alternate.meanMs) << L';';
     }
     out << L"loadAmortisedOverCalls="
-        << (apply.meanMs < picture.meanMs
-                ? load.meanMs / (picture.meanMs - apply.meanMs)
-                : 0.0)
+        << (apply.meanMs < picture.meanMs ? load.meanMs / (picture.meanMs - apply.meanMs) : 0.0)
         << L';';
     out << cachedReport;
     return out.str();
@@ -292,8 +290,8 @@ std::wstring benchmarkNativeTexture(IDispatch* slide, const std::wstring& imageP
  * question is what a caller pays to get pixels it already holds into Office,
  * versus what it pays to hand over an encoded file of comparable size.
  */
-std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long height,
-                                long iterations) {
+std::wstring
+benchmarkPixelLoad(const std::wstring& imagePath, long width, long height, long iterations) {
     if (width <= 0 || height <= 0 || iterations <= 0) {
         throw bb::Error(E_INVALIDARG, "Size and iterations must be positive");
     }
@@ -333,8 +331,10 @@ std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long 
     if (BB_LoadTexture(encoded.data(), static_cast<uint32_t>(encoded.size()), &warm) == BB_OK) {
         BB_ReleaseTexture(warm);
     }
-    if (BB_LoadTexturePixels(pixels.data(), static_cast<uint32_t>(width),
-                             static_cast<uint32_t>(height), static_cast<int32_t>(stride),
+    if (BB_LoadTexturePixels(pixels.data(),
+                             static_cast<uint32_t>(width),
+                             static_cast<uint32_t>(height),
+                             static_cast<int32_t>(stride),
                              &warm) == BB_OK) {
         BB_ReleaseTexture(warm);
     }
@@ -354,9 +354,11 @@ std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long 
     for (long index = 0; index < iterations; ++index) {
         BB_Handle handle = 0;
         const long long start = Now();
-        const BB_Result status = BB_LoadTexturePixels(
-            pixels.data(), static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-            static_cast<int32_t>(stride), &handle);
+        const BB_Result status = BB_LoadTexturePixels(pixels.data(),
+                                                      static_cast<uint32_t>(width),
+                                                      static_cast<uint32_t>(height),
+                                                      static_cast<int32_t>(stride),
+                                                      &handle);
         pixelSamples.push_back((Now() - start) * tick * 1000.0);
         if (status != BB_OK) {
             char message[512]{};
@@ -372,8 +374,8 @@ std::wstring benchmarkPixelLoad(const std::wstring& imagePath, long width, long 
     std::wostringstream out;
     out.setf(std::ios::fixed);
     out.precision(4);
-    out << L"size=" << width << L"x" << height << L";iterations=" << iterations
-        << L";encodedBytes=" << encoded.size() << L";pixelBytes=" << pixels.size() << L';';
+    out << L"size=" << width << L"x" << height << L";iterations=" << iterations << L";encodedBytes="
+        << encoded.size() << L";pixelBytes=" << pixels.size() << L';';
     Append(out, L"encodedLoad", encodedTiming);
     Append(out, L"pixelLoad", pixelTiming);
     if (pixelTiming.meanMs > 0.0) {

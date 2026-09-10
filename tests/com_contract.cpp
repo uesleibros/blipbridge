@@ -1,8 +1,9 @@
+#include "../src/com/server.hpp"
+
+#include <bit>
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-#include "../src/com/server.hpp"
 #include <iostream>
-#include <bit>
 #include <thread>
 
 namespace {
@@ -13,9 +14,10 @@ void Require(bool condition, const char* message) {
 }
 
 /** Test-owned COM references must die before the loaded server module. */
-template<class Interface>
+template <class Interface>
 struct OwnedInterface {
     Interface* value = nullptr;
+
     ~OwnedInterface() {
         if (value) {
             value->Release();
@@ -25,6 +27,7 @@ struct OwnedInterface {
 
 struct LoadedModule {
     HMODULE value;
+
     ~LoadedModule() {
         if (value) {
             FreeLibrary(value);
@@ -37,9 +40,14 @@ void ExpectAutomationError(IDispatch* engine, DISPID id, HRESULT expected) {
     bb::Value handle(123L);
     DISPPARAMS parameters{&handle.v, nullptr, 1, 0};
     bb::ScopedExceptionInfo exception;
-    const HRESULT status = engine->Invoke(
-        id, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &parameters,
-        nullptr, &exception.value, nullptr);
+    const HRESULT status = engine->Invoke(id,
+                                          IID_NULL,
+                                          LOCALE_USER_DEFAULT,
+                                          DISPATCH_METHOD,
+                                          &parameters,
+                                          nullptr,
+                                          &exception.value,
+                                          nullptr);
     Require(status == DISP_E_EXCEPTION, "Expected Automation exception");
     Require(exception.value.scode == expected, "Incorrect underlying HRESULT");
 }
@@ -69,25 +77,27 @@ int wmain(int argc, wchar_t** argv) {
         Require(argc == 2, "Expected DLL path");
         LoadedModule module{LoadLibraryW(argv[1])};
         Require(module.value != nullptr, "Cannot load BlipBridge");
-        using GetClassObject = HRESULT (__stdcall*)(REFCLSID, REFIID, void**);
-        using CanUnload = HRESULT (__stdcall*)();
+        using GetClassObject = HRESULT(__stdcall*)(REFCLSID, REFIID, void**);
+        using CanUnload = HRESULT(__stdcall*)();
         // These are our documented COM export signatures, not private Office ABIs.
-        auto getClass = std::bit_cast<GetClassObject>(
-            GetProcAddress(module.value, "DllGetClassObject"));
-        auto canUnload = std::bit_cast<CanUnload>(
-            GetProcAddress(module.value, "DllCanUnloadNow"));
+        auto getClass =
+            std::bit_cast<GetClassObject>(GetProcAddress(module.value, "DllGetClassObject"));
+        auto canUnload = std::bit_cast<CanUnload>(GetProcAddress(module.value, "DllCanUnloadNow"));
         Require(getClass && canUnload, "Missing COM exports");
         Require(canUnload() == S_OK, "Fresh server cannot unload");
         {
             OwnedInterface<IClassFactory> factory;
-            bb::check(getClass(bb::kEngineClsid, IID_IClassFactory,
-                              reinterpret_cast<void**>(&factory.value)), "Get factory");
+            bb::check(getClass(bb::kEngineClsid,
+                               IID_IClassFactory,
+                               reinterpret_cast<void**>(&factory.value)),
+                      "Get factory");
             Require(canUnload() == S_FALSE, "Factory must retain server");
             Require(factory.value->QueryInterface(IID_IUnknown, nullptr) == E_POINTER,
                     "Factory must reject null output");
             OwnedInterface<IDispatch> engine;
-            bb::check(factory.value->CreateInstance(nullptr, IID_IDispatch,
-                      reinterpret_cast<void**>(&engine.value)), "Create Engine");
+            bb::check(factory.value->CreateInstance(
+                          nullptr, IID_IDispatch, reinterpret_cast<void**>(&engine.value)),
+                      "Create Engine");
             Require(engine.value->QueryInterface(IID_IUnknown, nullptr) == E_POINTER,
                     "Engine must reject null output");
             Require(bb::call(engine.value, L"GetBackendName").str() == L"PickupApplyFallback",
@@ -102,17 +112,33 @@ int wmain(int argc, wchar_t** argv) {
             ExpectAutomationError(engine.value, 11, E_NOTIMPL);
 
             // Covers the whole published surface, research members included.
-            for (const wchar_t* name : {
-                     L"GetVersion", L"GetBackendName", L"GetCapabilities",
-                     L"RegisterTextureShape", L"ApplyTexture", L"ReleaseTexture",
-                     L"ClearTextures", L"GetTextureCount", L"GetLastError",
-                     L"LoadTexture", L"SetImageBytes", L"RunBenchmarks",
-                     L"GetHostProcessId", L"TraceUserPicture", L"RunFocusedBenchmarks",
-                     L"MemoryFillExperiment", L"RunStress", L"TraceCachedApply",
-                     L"InspectFillReceiver", L"LoadCachedImageExperiment",
-                     L"NativeApplyExperiment", L"NativeApplyReuseExperiment",
-                     L"InspectTexture", L"BenchmarkNativeTexture",
-                     L"BenchmarkTextureBatch", L"PixelTextureExperiment", L"BenchmarkPixelLoad"}) {
+            for (const wchar_t* name : {L"GetVersion",
+                                        L"GetBackendName",
+                                        L"GetCapabilities",
+                                        L"RegisterTextureShape",
+                                        L"ApplyTexture",
+                                        L"ReleaseTexture",
+                                        L"ClearTextures",
+                                        L"GetTextureCount",
+                                        L"GetLastError",
+                                        L"LoadTexture",
+                                        L"SetImageBytes",
+                                        L"RunBenchmarks",
+                                        L"GetHostProcessId",
+                                        L"TraceUserPicture",
+                                        L"RunFocusedBenchmarks",
+                                        L"MemoryFillExperiment",
+                                        L"RunStress",
+                                        L"TraceCachedApply",
+                                        L"InspectFillReceiver",
+                                        L"LoadCachedImageExperiment",
+                                        L"NativeApplyExperiment",
+                                        L"NativeApplyReuseExperiment",
+                                        L"InspectTexture",
+                                        L"BenchmarkNativeTexture",
+                                        L"BenchmarkTextureBatch",
+                                        L"PixelTextureExperiment",
+                                        L"BenchmarkPixelLoad"}) {
                 ExpectNameReachableThroughInvoke(engine.value, name);
             }
 
@@ -133,8 +159,10 @@ int wmain(int argc, wchar_t** argv) {
         Require(canUnload() == S_FALSE, "Server lock was lost with factory");
         {
             OwnedInterface<IClassFactory> factory;
-            bb::check(getClass(bb::kEngineClsid, IID_IClassFactory,
-                              reinterpret_cast<void**>(&factory.value)), "Get factory");
+            bb::check(getClass(bb::kEngineClsid,
+                               IID_IClassFactory,
+                               reinterpret_cast<void**>(&factory.value)),
+                      "Get factory");
             factory.value->LockServer(FALSE);
         }
         Require(canUnload() == S_OK, "COM references or locks leaked");

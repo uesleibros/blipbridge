@@ -32,14 +32,14 @@ namespace bb {
 /// Why a backend refused, in terms the C ABI can map to an error code.
 enum class BackendStatus {
     Ok,
-    UnsupportedHost,    ///< not running inside the host application
-    UnsupportedBuild,   ///< host present, but its version is not validated
+    UnsupportedHost,  ///< not running inside the host application
+    UnsupportedBuild, ///< host present, but its version is not validated
     InvalidArgument,
     InvalidHandle,
     InvalidShape,
-    UnsupportedShapeClass,  ///< the Shape's class has no picture-fill path at all
-    FileNotFound,           ///< the image path could not be read
-    FallbackFailed,         ///< Fill.UserPicture itself refused
+    UnsupportedShapeClass, ///< the Shape's class has no picture-fill path at all
+    FileNotFound,          ///< the image path could not be read
+    FallbackFailed,        ///< Fill.UserPicture itself refused
     DecodeFailed,
     ApplyFailed,
     OutOfMemory,
@@ -51,22 +51,28 @@ struct BackendResult {
     BackendStatus status = BackendStatus::Ok;
     std::string message;
 
-    static BackendResult Success() { return BackendResult{}; }
+    static BackendResult Success() {
+        return BackendResult{};
+    }
+
     static BackendResult Failure(BackendStatus status, std::string message) {
         return BackendResult{status, std::move(message)};
     }
-    bool ok() const { return status == BackendStatus::Ok; }
+
+    bool ok() const {
+        return status == BackendStatus::Ok;
+    }
 };
 
 /// Capability bits, mirroring the BB_CAP_* values in the public header.
 struct BackendCapabilities {
-    bool applyPicture = false;   ///< BB_ApplyPicture and its caches are usable
+    bool applyPicture = false; ///< BB_ApplyPicture and its caches are usable
     bool nativeBackend = false;
     bool memoryImage = false;
     bool cachedTexture = false;
     bool batchApply = false;
     bool pickUpFallback = false;
-    bool rawPixels = false;     ///< LoadTexturePixels is implemented
+    bool rawPixels = false; ///< LoadTexturePixels is implemented
 };
 
 /**
@@ -76,7 +82,7 @@ struct BackendCapabilities {
  * The C ABI depends on that, because exceptions may not cross it.
  */
 class Backend {
-public:
+  public:
     virtual ~Backend() = default;
 
     /// Human-readable identifier, for example "windows-office-native".
@@ -88,15 +94,16 @@ public:
     virtual BackendCapabilities Capabilities() const noexcept = 0;
 
     /// Decodes @p bytes; on success writes a non-zero handle to @p out.
-    virtual BackendResult LoadTexture(const std::uint8_t* bytes, std::size_t length,
-                                      std::uint64_t* out) noexcept = 0;
+    virtual BackendResult
+    LoadTexture(const std::uint8_t* bytes, std::size_t length, std::uint64_t* out) noexcept = 0;
 
     /**
      * Builds a texture from raw 32-bit BGRA pixels, skipping image decoding.
      * @p stride is bytes per row and may exceed width*4.
      */
     virtual BackendResult LoadTexturePixels(const std::uint8_t* pixels,
-                                            std::uint32_t width, std::uint32_t height,
+                                            std::uint32_t width,
+                                            std::uint32_t height,
                                             std::int32_t stride,
                                             std::uint64_t* out) noexcept = 0;
 
@@ -117,7 +124,8 @@ public:
     /// Releases every path-keyed texture and forgets every Shape.
     virtual void ClearPictureCache() noexcept = 0;
     /// Cached textures, remembered Shapes, and applies skipped since Init.
-    virtual void PictureCacheStats(std::size_t* textures, std::size_t* shapes,
+    virtual void PictureCacheStats(std::size_t* textures,
+                                   std::size_t* shapes,
                                    std::uint64_t* skipped) const noexcept = 0;
     virtual std::size_t TextureCount() const noexcept = 0;
 };

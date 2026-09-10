@@ -26,7 +26,7 @@ namespace bb {
 namespace {
 
 class UnsupportedBackend final : public Backend {
-public:
+  public:
     const char* Name() const noexcept override {
 #if defined(_WIN32) && !defined(_WIN64)
         return "windows-x86-unvalidated";
@@ -35,38 +35,55 @@ public:
 #endif
     }
 
-    BackendResult Probe() noexcept override { return Refuse(); }
+    BackendResult Probe() noexcept override {
+        return Refuse();
+    }
 
     BackendCapabilities Capabilities() const noexcept override {
-        return BackendCapabilities{};   // everything false, including the fallback
+        return BackendCapabilities{}; // everything false, including the fallback
     }
 
-    BackendResult LoadTexture(const std::uint8_t*, std::size_t,
-                              std::uint64_t* out) noexcept override {
+    BackendResult
+    LoadTexture(const std::uint8_t*, std::size_t, std::uint64_t* out) noexcept override {
         if (out) {
             *out = 0;
         }
         return Refuse();
     }
 
-    BackendResult LoadTexturePixels(const std::uint8_t*, std::uint32_t, std::uint32_t,
-                                    std::int32_t, std::uint64_t* out) noexcept override {
+    BackendResult LoadTexturePixels(const std::uint8_t*,
+                                    std::uint32_t,
+                                    std::uint32_t,
+                                    std::int32_t,
+                                    std::uint64_t* out) noexcept override {
         if (out) {
             *out = 0;
         }
         return Refuse();
     }
 
-    BackendResult ApplyTexture(void*, std::uint64_t) noexcept override { return Refuse(); }
-    BackendResult ReleaseTexture(std::uint64_t) noexcept override { return Refuse(); }
+    BackendResult ApplyTexture(void*, std::uint64_t) noexcept override {
+        return Refuse();
+    }
+
+    BackendResult ReleaseTexture(std::uint64_t) noexcept override {
+        return Refuse();
+    }
+
     void ClearTextures() noexcept override {}
 
     BackendResult ApplyPicture(void*, const std::uint16_t*) noexcept override {
         return Refuse();
     }
-    BackendResult InvalidateShape(void*) noexcept override { return Refuse(); }
+
+    BackendResult InvalidateShape(void*) noexcept override {
+        return Refuse();
+    }
+
     void ClearPictureCache() noexcept override {}
-    void PictureCacheStats(std::size_t* textures, std::size_t* shapes,
+
+    void PictureCacheStats(std::size_t* textures,
+                           std::size_t* shapes,
                            std::uint64_t* skipped) const noexcept override {
         if (textures) {
             *textures = 0;
@@ -78,9 +95,12 @@ public:
             *skipped = 0;
         }
     }
-    std::size_t TextureCount() const noexcept override { return 0; }
 
-private:
+    std::size_t TextureCount() const noexcept override {
+        return 0;
+    }
+
+  private:
     static BackendResult Refuse() {
         return BackendResult::Failure(BackendStatus::UnsupportedHost, kReason);
     }

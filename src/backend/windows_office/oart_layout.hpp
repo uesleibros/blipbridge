@@ -19,17 +19,16 @@
  * docs/receiver_lookup.md, docs/record_construction.md and docs/oart_abi.md.
  */
 
-#include <windows.h>
-#include <oleauto.h>
-
 #include <cstddef>
 #include <cstdint>
+#include <oleauto.h>
 #include <string>
+#include <windows.h>
 
 namespace bb::oart {
 
 /// The single Office build every offset in this module was derived from.
-inline constexpr DWORD kSupportedVersionHigh = 0x00100000;   // 16.0
+inline constexpr DWORD kSupportedVersionHigh = 0x00100000; // 16.0
 inline constexpr DWORD kSupportedVersionLow = (14334u << 16) | 20848u;
 inline constexpr wchar_t kSupportedVersionText[] = L"16.0.14334.20848";
 
@@ -56,8 +55,8 @@ struct GuardedFunction {
 };
 
 template <std::size_t N>
-constexpr GuardedFunction MakeGuarded(std::uintptr_t rva, const char* name,
-                                      const std::uint8_t (&signature)[N]) {
+constexpr GuardedFunction
+MakeGuarded(std::uintptr_t rva, const char* name, const std::uint8_t (&signature)[N]) {
     return GuardedFunction{rva, name, signature, N};
 }
 
@@ -71,19 +70,19 @@ constexpr GuardedFunction MakeGuarded(std::uintptr_t rva, const char* name,
  * sibling classes and could change between builds.
  */
 struct DelegatingWrapper {
-    std::size_t innerOffset = 0;      ///< read out of the thunks, not assumed
-    unsigned identityThunks = 0;      ///< how many slots delegate that way
-    std::uintptr_t vtableRva = 0;     ///< for diagnostics only
+    std::size_t innerOffset = 0;  ///< read out of the thunks, not assumed
+    unsigned identityThunks = 0;  ///< how many slots delegate that way
+    std::uintptr_t vtableRva = 0; ///< for diagnostics only
 };
 
 /// Borrowed Office objects for one Shape. Valid only for the current call.
 struct FillTarget {
     std::uintptr_t oartBase = 0;
     std::uintptr_t ppcoreBase = 0;
-    void* publicFill = nullptr;   ///< PPCORE FillFormat, the argument itself
-    void* handler = nullptr;      ///< OART FillFormat at publicFill + wrapper.innerOffset
-    void* token = nullptr;        ///< control block at handler+0x58
-    void* receiver = nullptr;     ///< OART receiver at token+0x10
+    void* publicFill = nullptr; ///< PPCORE FillFormat, the argument itself
+    void* handler = nullptr;    ///< OART FillFormat at publicFill + wrapper.innerOffset
+    void* token = nullptr;      ///< control block at handler+0x58
+    void* receiver = nullptr;   ///< OART receiver at token+0x10
     std::uint32_t tokenStrong = 0;
     std::uint8_t handlerFlag = 0; ///< handler+0x60, the transaction's bool argument
     DelegatingWrapper wrapper;    ///< how the public object was recognised
@@ -97,8 +96,10 @@ std::wstring ModuleVersionText(const wchar_t* moduleName);
  * any. Returns false when the object is not a delegating wrapper at all, which
  * is the normal answer for, say, a Shape passed where a FillFormat was meant.
  */
-bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
-                               std::size_t moduleSize, DelegatingWrapper& wrapper);
+bool DescribeDelegatingWrapper(const void* object,
+                               std::uintptr_t moduleBase,
+                               std::size_t moduleSize,
+                               DelegatingWrapper& wrapper);
 
 /// True when every page spanning [address, address+size) is committed and readable.
 bool IsReadable(const void* address, std::size_t size);

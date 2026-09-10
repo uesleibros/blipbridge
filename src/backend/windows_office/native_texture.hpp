@@ -18,10 +18,9 @@
  * so one ApplyTexture can serve both.
  */
 
-#include <windows.h>
 #include <oleauto.h>
-
 #include <string>
+#include <windows.h>
 
 /**
  * True when the native backend can actually run in this process: PowerPoint
@@ -35,15 +34,16 @@ bool nativeTextureBackendAvailable() noexcept;
 // bb::office::RequireNativePictureFillTarget in shape_policy.hpp. It is not
 // re-declared here: one authority, asked by every entry point.
 
-
 long nativeTextureLoad(SAFEARRAY* bytes);
 
 /**
  * Loads a texture from a raw 32-bit BGRA buffer instead of an encoded image.
  * Same handles, same lifetime rules; only the decode is skipped.
  */
-long nativeTextureLoadPixels(const void* pixels, unsigned long width,
-                             unsigned long height, long stride);
+long nativeTextureLoadPixels(const void* pixels,
+                             unsigned long width,
+                             unsigned long height,
+                             long stride);
 
 void nativeTextureApply(IDispatch* fill, long handle);
 void nativeTextureRelease(long handle);

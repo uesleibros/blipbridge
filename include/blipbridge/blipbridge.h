@@ -45,13 +45,13 @@
 #include <stdint.h>
 
 #if defined(_WIN32)
-#  if defined(BLIPBRIDGE_BUILD)
-#    define BB_API __declspec(dllexport)
-#  else
-#    define BB_API __declspec(dllimport)
-#  endif
+#if defined(BLIPBRIDGE_BUILD)
+#define BB_API __declspec(dllexport)
 #else
-#  define BB_API __attribute__((visibility("default")))
+#define BB_API __declspec(dllimport)
+#endif
+#else
+#define BB_API __attribute__((visibility("default")))
 #endif
 
 /*
@@ -71,9 +71,9 @@
  * it the export would be `_BB_Init@0` and no `Declare` would find it.
  */
 #if defined(_WIN32) && !defined(_WIN64)
-#  define BB_CALL __stdcall
+#define BB_CALL __stdcall
 #else
-#  define BB_CALL
+#define BB_CALL
 #endif
 
 #ifdef __cplusplus
@@ -128,30 +128,30 @@ typedef uint64_t BB_Handle;
 /** Result of every entry point. Zero is success; negative values are failures. */
 typedef int32_t BB_Result;
 
-#define BB_OK                     0   /* succeeded                              */
-#define BB_E_INVALID_ARG         -1   /* a null or out-of-range argument        */
-#define BB_E_NOT_INITIALIZED     -2   /* BB_Init has not run on this thread     */
-#define BB_E_WRONG_THREAD        -3   /* called from a thread other than Init's */
-#define BB_E_UNSUPPORTED_HOST    -4   /* not running inside PowerPoint          */
-#define BB_E_UNSUPPORTED_BUILD   -5   /* Office build not validated             */
-#define BB_E_INVALID_HANDLE      -6   /* unknown or already released handle     */
-#define BB_E_INVALID_SHAPE       -7   /* not a Shape this backend can fill      */
-#define BB_E_DECODE_FAILED       -8   /* the image bytes could not be decoded   */
-#define BB_E_APPLY_FAILED        -9   /* the fill could not be applied          */
-#define BB_E_OUT_OF_MEMORY      -10   /* allocation failed                      */
-#define BB_E_UNSUPPORTED_SHAPE  -11   /* Shape class has no picture-fill path    */
-#define BB_E_FILE_NOT_FOUND     -12   /* the image path could not be read        */
-#define BB_E_FALLBACK_FAILED    -13   /* Fill.UserPicture itself refused         */
-#define BB_E_INTERNAL           -99   /* unexpected internal failure            */
+#define BB_OK 0                    /* succeeded                              */
+#define BB_E_INVALID_ARG -1        /* a null or out-of-range argument        */
+#define BB_E_NOT_INITIALIZED -2    /* BB_Init has not run on this thread     */
+#define BB_E_WRONG_THREAD -3       /* called from a thread other than Init's */
+#define BB_E_UNSUPPORTED_HOST -4   /* not running inside PowerPoint          */
+#define BB_E_UNSUPPORTED_BUILD -5  /* Office build not validated             */
+#define BB_E_INVALID_HANDLE -6     /* unknown or already released handle     */
+#define BB_E_INVALID_SHAPE -7      /* not a Shape this backend can fill      */
+#define BB_E_DECODE_FAILED -8      /* the image bytes could not be decoded   */
+#define BB_E_APPLY_FAILED -9       /* the fill could not be applied          */
+#define BB_E_OUT_OF_MEMORY -10     /* allocation failed                      */
+#define BB_E_UNSUPPORTED_SHAPE -11 /* Shape class has no picture-fill path    */
+#define BB_E_FILE_NOT_FOUND -12    /* the image path could not be read        */
+#define BB_E_FALLBACK_FAILED -13   /* Fill.UserPicture itself refused         */
+#define BB_E_INTERNAL -99          /* unexpected internal failure            */
 
 /** Capability bits returned by BB_GetCapabilities. */
-#define BB_CAP_NATIVE_BACKEND   0x0001u /* the accelerated backend is usable    */
-#define BB_CAP_MEMORY_IMAGE     0x0002u /* bytes reach a fill with no temp file */
-#define BB_CAP_CACHED_TEXTURE   0x0004u /* one decode serves many applies       */
-#define BB_CAP_BATCH_APPLY      0x0008u /* BB_ApplyTextureBatch is implemented  */
-#define BB_CAP_PICKUP_FALLBACK  0x0010u /* the donor COM fallback exists        */
-#define BB_CAP_RAW_PIXELS       0x0020u /* BB_LoadTexturePixels is implemented  */
-#define BB_CAP_APPLY_PICTURE    0x0040u /* BB_ApplyPicture and its caches exist */
+#define BB_CAP_NATIVE_BACKEND 0x0001u  /* the accelerated backend is usable    */
+#define BB_CAP_MEMORY_IMAGE 0x0002u    /* bytes reach a fill with no temp file */
+#define BB_CAP_CACHED_TEXTURE 0x0004u  /* one decode serves many applies       */
+#define BB_CAP_BATCH_APPLY 0x0008u     /* BB_ApplyTextureBatch is implemented  */
+#define BB_CAP_PICKUP_FALLBACK 0x0010u /* the donor COM fallback exists        */
+#define BB_CAP_RAW_PIXELS 0x0020u      /* BB_LoadTexturePixels is implemented  */
+#define BB_CAP_APPLY_PICTURE 0x0040u   /* BB_ApplyPicture and its caches exist */
 
 /**
  * Prepares the library on the calling thread and probes the host.
@@ -178,8 +178,7 @@ BB_API BB_Result BB_CALL BB_Shutdown(void);
  * @param length number of bytes.
  * @param out    receives the handle; set to 0 on failure.
  */
-BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length,
-                                        BB_Handle* out);
+BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length, BB_Handle* out);
 
 /**
  * Builds a texture from raw pixels, skipping image decoding entirely.
@@ -198,9 +197,8 @@ BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length,
  *
  * The handle behaves exactly like one from BB_LoadTexture in every other way.
  */
-BB_API BB_Result BB_CALL BB_LoadTexturePixels(const uint8_t* pixels, uint32_t width,
-                                              uint32_t height, int32_t stride,
-                                              BB_Handle* out);
+BB_API BB_Result BB_CALL BB_LoadTexturePixels(
+    const uint8_t* pixels, uint32_t width, uint32_t height, int32_t stride, BB_Handle* out);
 
 /**
  * Fills one Shape with a texture.
@@ -226,7 +224,8 @@ BB_API BB_Result BB_CALL BB_ApplyTexture(void* shape, BB_Handle texture);
  */
 BB_API BB_Result BB_CALL BB_ApplyTextureBatch(void* const* shapes,
                                               const BB_Handle* textures,
-                                              uint32_t count, uint32_t* applied);
+                                              uint32_t count,
+                                              uint32_t* applied);
 
 /** Releases one texture. A handle is never valid again afterwards. */
 BB_API BB_Result BB_CALL BB_ReleaseTexture(BB_Handle texture);
@@ -326,7 +325,8 @@ BB_API BB_Result BB_CALL BB_ClearPictureCache(void);
  * number of Shapes with a remembered fill, @p skipped the running total of
  * applies avoided since BB_Init. Any pointer may be NULL.
  */
-BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures, uint32_t* shapes,
+BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures,
+                                                 uint32_t* shapes,
                                                  uint64_t* skipped);
 
 /**

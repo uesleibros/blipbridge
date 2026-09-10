@@ -18,17 +18,16 @@
  * bb::Backend.
  */
 
-#include <blipbridge/blipbridge.h>
-
 #include "../backend/backend.hpp"
 
+#include <blipbridge/blipbridge.h>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
 
 #if defined(_WIN32)
-#  include <windows.h>
+#include <windows.h>
 #endif
 
 namespace {
@@ -100,19 +99,32 @@ BB_Result Fail(BB_Result code, std::string message) {
 /// Maps the backend vocabulary onto the public error codes.
 BB_Result CodeFor(bb::BackendStatus status) {
     switch (status) {
-    case bb::BackendStatus::Ok:              return BB_OK;
-    case bb::BackendStatus::UnsupportedHost: return BB_E_UNSUPPORTED_HOST;
-    case bb::BackendStatus::UnsupportedBuild:return BB_E_UNSUPPORTED_BUILD;
-    case bb::BackendStatus::InvalidArgument: return BB_E_INVALID_ARG;
-    case bb::BackendStatus::InvalidHandle:   return BB_E_INVALID_HANDLE;
-    case bb::BackendStatus::InvalidShape:    return BB_E_INVALID_SHAPE;
-    case bb::BackendStatus::UnsupportedShapeClass: return BB_E_UNSUPPORTED_SHAPE;
-    case bb::BackendStatus::FileNotFound:    return BB_E_FILE_NOT_FOUND;
-    case bb::BackendStatus::FallbackFailed:  return BB_E_FALLBACK_FAILED;
-    case bb::BackendStatus::DecodeFailed:    return BB_E_DECODE_FAILED;
-    case bb::BackendStatus::ApplyFailed:     return BB_E_APPLY_FAILED;
-    case bb::BackendStatus::OutOfMemory:     return BB_E_OUT_OF_MEMORY;
-    case bb::BackendStatus::Internal:        break;
+    case bb::BackendStatus::Ok:
+        return BB_OK;
+    case bb::BackendStatus::UnsupportedHost:
+        return BB_E_UNSUPPORTED_HOST;
+    case bb::BackendStatus::UnsupportedBuild:
+        return BB_E_UNSUPPORTED_BUILD;
+    case bb::BackendStatus::InvalidArgument:
+        return BB_E_INVALID_ARG;
+    case bb::BackendStatus::InvalidHandle:
+        return BB_E_INVALID_HANDLE;
+    case bb::BackendStatus::InvalidShape:
+        return BB_E_INVALID_SHAPE;
+    case bb::BackendStatus::UnsupportedShapeClass:
+        return BB_E_UNSUPPORTED_SHAPE;
+    case bb::BackendStatus::FileNotFound:
+        return BB_E_FILE_NOT_FOUND;
+    case bb::BackendStatus::FallbackFailed:
+        return BB_E_FALLBACK_FAILED;
+    case bb::BackendStatus::DecodeFailed:
+        return BB_E_DECODE_FAILED;
+    case bb::BackendStatus::ApplyFailed:
+        return BB_E_APPLY_FAILED;
+    case bb::BackendStatus::OutOfMemory:
+        return BB_E_OUT_OF_MEMORY;
+    case bb::BackendStatus::Internal:
+        break;
     }
     return BB_E_INTERNAL;
 }
@@ -160,8 +172,7 @@ BB_API BB_Result BB_CALL BB_Init(void) {
         Library& library = Library::Instance();
         const unsigned long thread = CurrentThread();
         if (library.owningThread != 0 && library.owningThread != thread) {
-            return Fail(BB_E_WRONG_THREAD,
-                        "BlipBridge is already initialised on another thread");
+            return Fail(BB_E_WRONG_THREAD, "BlipBridge is already initialised on another thread");
         }
         bb::Backend& backend = library.Ensure();
         const bb::BackendResult probe = backend.Probe();
@@ -190,8 +201,7 @@ BB_API BB_Result BB_CALL BB_Shutdown(void) {
     }
 }
 
-BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length,
-                                        BB_Handle* out) {
+BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length, BB_Handle* out) {
     try {
         if (out) {
             *out = 0;
@@ -217,9 +227,8 @@ BB_API BB_Result BB_CALL BB_LoadTexture(const uint8_t* bytes, uint32_t length,
     }
 }
 
-BB_API BB_Result BB_CALL BB_LoadTexturePixels(const uint8_t* pixels, uint32_t width,
-                                              uint32_t height, int32_t stride,
-                                              BB_Handle* out) {
+BB_API BB_Result BB_CALL BB_LoadTexturePixels(
+    const uint8_t* pixels, uint32_t width, uint32_t height, int32_t stride, BB_Handle* out) {
     try {
         if (out) {
             *out = 0;
@@ -232,8 +241,8 @@ BB_API BB_Result BB_CALL BB_LoadTexturePixels(const uint8_t* pixels, uint32_t wi
                         "BB_LoadTexturePixels needs pixels, dimensions and an output handle");
         }
         std::uint64_t handle = 0;
-        const bb::BackendResult result = Library::Instance().Ensure().LoadTexturePixels(
-            pixels, width, height, stride, &handle);
+        const bb::BackendResult result =
+            Library::Instance().Ensure().LoadTexturePixels(pixels, width, height, stride, &handle);
         if (!result.ok()) {
             return Translate(result);
         }
@@ -263,7 +272,8 @@ BB_API BB_Result BB_CALL BB_ApplyTexture(void* shape, BB_Handle texture) {
 }
 
 BB_API BB_Result BB_CALL BB_ApplyTextureBatch(void* const* shapes,
-                                              const BB_Handle* textures, uint32_t count,
+                                              const BB_Handle* textures,
+                                              uint32_t count,
                                               uint32_t* applied) {
     try {
         if (applied) {
@@ -285,8 +295,7 @@ BB_API BB_Result BB_CALL BB_ApplyTextureBatch(void* const* shapes,
             if (!shapes[index] || textures[index] == 0) {
                 return Fail(BB_E_INVALID_ARG, "A batch entry has a null Shape or handle 0");
             }
-            const bb::BackendResult result =
-                backend.ApplyTexture(shapes[index], textures[index]);
+            const bb::BackendResult result = backend.ApplyTexture(shapes[index], textures[index]);
             if (!result.ok()) {
                 // Shapes already filled stay filled; the caller learns how far
                 // the batch got from `applied`.
@@ -381,7 +390,8 @@ BB_API BB_Result BB_CALL BB_ClearPictureCache(void) {
     }
 }
 
-BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures, uint32_t* shapes,
+BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures,
+                                                 uint32_t* shapes,
                                                  uint64_t* skipped) {
     try {
         if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
@@ -390,8 +400,7 @@ BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures, uint32_t* s
         std::size_t textureCount = 0;
         std::size_t shapeCount = 0;
         std::uint64_t skippedCount = 0;
-        Library::Instance().Ensure().PictureCacheStats(&textureCount, &shapeCount,
-                                                       &skippedCount);
+        Library::Instance().Ensure().PictureCacheStats(&textureCount, &shapeCount, &skippedCount);
         if (textures) {
             *textures = static_cast<uint32_t>(textureCount);
         }
@@ -409,8 +418,7 @@ BB_API BB_Result BB_CALL BB_GetPictureCacheStats(uint32_t* textures, uint32_t* s
 
 BB_API uint32_t BB_CALL BB_GetCapabilities(void) {
     try {
-        const bb::BackendCapabilities capabilities =
-            Library::Instance().Ensure().Capabilities();
+        const bb::BackendCapabilities capabilities = Library::Instance().Ensure().Capabilities();
         uint32_t bits = 0;
         bits |= capabilities.nativeBackend ? BB_CAP_NATIVE_BACKEND : 0u;
         bits |= capabilities.memoryImage ? BB_CAP_MEMORY_IMAGE : 0u;
@@ -446,9 +454,8 @@ BB_API uint32_t BB_CALL BB_GetVersion(void) {
 
 BB_API uint32_t BB_CALL BB_GetVersionString(char* buffer, uint32_t capacity) {
     try {
-        std::string text = std::to_string(kVersionMajor) + "." +
-                           std::to_string(kVersionMinor) + "." +
-                           std::to_string(kVersionPatch) + " (" + kBuildTag + ", " +
+        std::string text = std::to_string(kVersionMajor) + "." + std::to_string(kVersionMinor) +
+                           "." + std::to_string(kVersionPatch) + " (" + kBuildTag + ", " +
                            Library::Instance().Ensure().Name() + ")";
         return CopyOut(text, buffer, capacity);
     } catch (...) {

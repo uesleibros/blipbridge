@@ -1,6 +1,7 @@
 #include "server.hpp"
-#include <unknwn.h>
+
 #include <new>
+#include <unknwn.h>
 
 namespace bb {
 ServerLifetime& GetServerLifetime() noexcept {
@@ -10,9 +11,14 @@ ServerLifetime& GetServerLifetime() noexcept {
 
 /** Standard nonaggregating COM factory; each live factory prevents DLL unload. */
 class ClassFactory final : public IClassFactory {
-public:
-    ClassFactory() { ++GetServerLifetime().objects; }
-    ~ClassFactory() { --GetServerLifetime().objects; }
+  public:
+    ClassFactory() {
+        ++GetServerLifetime().objects;
+    }
+
+    ~ClassFactory() {
+        --GetServerLifetime().objects;
+    }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID interfaceId, void** result) override {
         if (!result) {
@@ -27,7 +33,9 @@ public:
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return ++references_;
+    }
 
     ULONG STDMETHODCALLTYPE Release() override {
         const ULONG remaining = --references_;
@@ -37,8 +45,9 @@ public:
         return remaining;
     }
 
-    HRESULT STDMETHODCALLTYPE CreateInstance(
-        IUnknown* outer, REFIID interfaceId, void** result) override {
+    HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* outer,
+                                             REFIID interfaceId,
+                                             void** result) override {
         if (!result) {
             return E_POINTER;
         }
@@ -57,14 +66,15 @@ public:
         }
         return S_OK;
     }
-private:
+
+  private:
     std::atomic<ULONG> references_{1};
 };
 } // namespace bb
 
 /** COM activation entry point. Transfers one factory interface reference. */
-extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(
-    REFCLSID classId, REFIID interfaceId, void** result) {
+extern "C" __declspec(dllexport) HRESULT __stdcall
+DllGetClassObject(REFCLSID classId, REFIID interfaceId, void** result) {
     if (!result) {
         return E_POINTER;
     }

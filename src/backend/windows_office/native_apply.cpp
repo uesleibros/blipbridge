@@ -46,10 +46,10 @@
  */
 
 #include "native_apply.hpp"
+
 #include "oart_layout.hpp"
 
 #include <blipbridge/dispatch.hpp>
-
 #include <cstring>
 #include <sstream>
 #include <string>
@@ -66,41 +66,29 @@ using bb::oart::MakeGuarded;
 // each function's ABI was derived. See docs/oart_abi.md.
 
 constexpr std::uint8_t kRecordConstructorBytes[] = {
-    0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10,
-    0x57, 0x48, 0x83, 0xec, 0x30, 0x48};
+    0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xec, 0x30, 0x48};
 constexpr std::uint8_t kClearSlotsBytes[] = {
-    0xba, 0xfa, 0xff, 0xff, 0xff, 0x21, 0x11, 0x21, 0x51, 0x08,
-    0x21, 0x51, 0x28, 0x8d, 0x42, 0x08};
+    0xba, 0xfa, 0xff, 0xff, 0xff, 0x21, 0x11, 0x21, 0x51, 0x08, 0x21, 0x51, 0x28, 0x8d, 0x42, 0x08};
 constexpr std::uint8_t kImageRecordConstructorBytes[] = {
-    0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c, 0x24, 0x10,
-    0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+    0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
 constexpr std::uint8_t kInstallCachedImageBytes[] = {
-    0x48, 0x89, 0x5c, 0x24, 0x20, 0x56, 0x57, 0x41, 0x56, 0x48,
-    0x83, 0xec, 0x30, 0x83, 0x64, 0x24};
+    0x48, 0x89, 0x5c, 0x24, 0x20, 0x56, 0x57, 0x41, 0x56, 0x48, 0x83, 0xec, 0x30, 0x83, 0x64, 0x24};
 constexpr std::uint8_t kTransferImageSlotBytes[] = {
-    0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48,
-    0x83, 0xc1, 0x08, 0xe8, 0x6a, 0x4b};
+    0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48, 0x83, 0xc1, 0x08, 0xe8, 0x6a, 0x4b};
 constexpr std::uint8_t kTransactionConstructorBytes[] = {
-    0x48, 0x89, 0x5c, 0x24, 0x10, 0x48, 0x89, 0x6c, 0x24, 0x18,
-    0x48, 0x89, 0x4c, 0x24, 0x08, 0x56};
+    0x48, 0x89, 0x5c, 0x24, 0x10, 0x48, 0x89, 0x6c, 0x24, 0x18, 0x48, 0x89, 0x4c, 0x24, 0x08, 0x56};
 constexpr std::uint8_t kRecordDestructorBytes[] = {
-    0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10,
-    0x57, 0x48, 0x83, 0xec, 0x20, 0x48};
+    0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xec, 0x20, 0x48};
 constexpr std::uint8_t kImageRecordDestructorBytes[] = {
-    0x48, 0x89, 0x4c, 0x24, 0x08, 0x53, 0x56, 0x57, 0x41, 0x54,
-    0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+    0x48, 0x89, 0x4c, 0x24, 0x08, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
 constexpr std::uint8_t kTransactionDestructorBytes[] = {
-    0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48,
-    0x83, 0xc1, 0x18, 0xe8, 0xe6, 0xeb};
+    0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48, 0x83, 0xc1, 0x18, 0xe8, 0xe6, 0xeb};
 constexpr std::uint8_t kStretchHolderBuilderBytes[] = {
-    0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x30,
-    0x48, 0x8b, 0xf9, 0x48, 0x8d, 0x05};
+    0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x30, 0x48, 0x8b, 0xf9, 0x48, 0x8d, 0x05};
 constexpr std::uint8_t kSetCountedSlotBytes[] = {
-    0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48,
-    0x83, 0xc1, 0x08, 0xe8, 0x7e, 0xec};
+    0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48, 0x83, 0xc1, 0x08, 0xe8, 0x7e, 0xec};
 constexpr std::uint8_t kHolderDestructorBytes[] = {
-    0x48, 0x83, 0xec, 0x28, 0x48, 0x8b, 0x41, 0x08, 0x48, 0x83,
-    0xf8, 0x01, 0x77, 0x05, 0x48, 0x83};
+    0x48, 0x83, 0xec, 0x28, 0x48, 0x8b, 0x41, 0x08, 0x48, 0x83, 0xf8, 0x01, 0x77, 0x05, 0x48, 0x83};
 
 constexpr GuardedFunction kRecordConstructor =
     MakeGuarded(0x14110, "property record constructor", kRecordConstructorBytes);
@@ -131,11 +119,11 @@ constexpr GuardedFunction kHolderDestructor =
 // Constructor write ranges and one heap allocation site give these; the buffers
 // below add margin because over-allocating a local costs nothing and a short
 // buffer would be memory corruption.
-constexpr std::size_t kRecordSize = 0x4E8;          // +0x14110 writes through +0x4E4
+constexpr std::size_t kRecordSize = 0x4E8; // +0x14110 writes through +0x4E4
 constexpr std::size_t kRecordBufferSize = 0x520;
-constexpr std::size_t kImageRecordSize = 0x200;     // heap allocation at OART +0xD9A62
+constexpr std::size_t kImageRecordSize = 0x200; // heap allocation at OART +0xD9A62
 constexpr std::size_t kImageRecordBufferSize = 0x220;
-constexpr std::size_t kTransactionSize = 0x510;     // +0x48870 writes through +0x508
+constexpr std::size_t kTransactionSize = 0x510; // +0x48870 writes through +0x508
 constexpr std::size_t kTransactionBufferSize = 0x600;
 
 // -- record field layout ---------------------------------------------------
@@ -192,12 +180,16 @@ struct CountedHolder {
 
 /// Destroys a CountedHolder through Office's own destructor on scope exit.
 class HolderGuard {
-public:
+  public:
     HolderGuard(CountedHolder* holder, Destructor destructor)
         : holder_(holder), destructor_(destructor) {}
+
     HolderGuard(const HolderGuard&) = delete;
     HolderGuard& operator=(const HolderGuard&) = delete;
-    ~HolderGuard() { Destroy(); }
+
+    ~HolderGuard() {
+        Destroy();
+    }
 
     void Destroy() {
         if (holder_ && destructor_) {
@@ -209,7 +201,7 @@ public:
         }
     }
 
-private:
+  private:
     CountedHolder* holder_ = nullptr;
     Destructor destructor_ = nullptr;
 };
@@ -219,9 +211,12 @@ struct CountedPointer {
     void* value = nullptr;
 };
 
-using CreateCachedImageFromStream = CountedPointer*(__stdcall*)(
-    CountedPointer* returnStorage, CountedPointer* imageInOut, IStream* stream,
-    int copyInstruction, const void* uid, bool flag);
+using CreateCachedImageFromStream = CountedPointer*(__stdcall*)(CountedPointer * returnStorage,
+                                                                CountedPointer* imageInOut,
+                                                                IStream* stream,
+                                                                int copyInstruction,
+                                                                const void* uid,
+                                                                bool flag);
 
 constexpr char kCreateFromPixelsSymbol[] =
     "?Create@ICachedImage@GEL@@SA?AV?$TCntPtr@UICachedImage@GEL@@@Ofc@@"
@@ -240,28 +235,35 @@ struct Vector2 {
     float y = 96.0f;
 };
 
-using CreateCachedImageFromPixelBuffer = CountedPointer*(__stdcall*)(
-    CountedPointer* returnStorage, CountedPointer* imageInOut, const void* pixels,
-    unsigned int width, unsigned int height, int stride, int surfaceFormat,
-    const Vector2* dpi);
+using CreateCachedImageFromPixelBuffer = CountedPointer*(__stdcall*)(CountedPointer * returnStorage,
+                                                                     CountedPointer* imageInOut,
+                                                                     const void* pixels,
+                                                                     unsigned int width,
+                                                                     unsigned int height,
+                                                                     int stride,
+                                                                     int surfaceFormat,
+                                                                     const Vector2* dpi);
 
 constexpr char kCreateFromStreamSymbol[] =
     "?Create@ICachedImage@GEL@@SA?AV?$TCntPtr@UICachedImage@GEL@@@Ofc@@"
     "AEAV?$TCntPtr@UIImage@GEL@@@4@PEAUIStream@@W4IStreamCopyInstruction@12@"
     "PEBVMD4UID@4@_N@Z";
 
-constexpr std::uintptr_t kCachedImageVtableRva = 0x409DC0;   // gfx.dll
+constexpr std::uintptr_t kCachedImageVtableRva = 0x409DC0; // gfx.dll
 constexpr int kStreamCopyInstruction = 0;
 constexpr bool kCreateFlag = false;
 constexpr std::size_t kUidSize = 16;
 
 /// Releases one intrusive GFX reference when it goes out of scope.
 class CountedReference {
-public:
+  public:
     CountedReference() = default;
     CountedReference(const CountedReference&) = delete;
     CountedReference& operator=(const CountedReference&) = delete;
-    ~CountedReference() { bb::oart::ReleaseIntrusive(storage.value); }
+
+    ~CountedReference() {
+        bb::oart::ReleaseIntrusive(storage.value);
+    }
 
     CountedPointer storage;
 };
@@ -272,12 +274,16 @@ public:
  * handler uses: transaction, image sub-record, property record.
  */
 class ConstructedObject {
-public:
+  public:
     ConstructedObject(void* object, Destructor destructor)
         : object_(object), destructor_(destructor) {}
+
     ConstructedObject(const ConstructedObject&) = delete;
     ConstructedObject& operator=(const ConstructedObject&) = delete;
-    ~ConstructedObject() { Destroy(); }
+
+    ~ConstructedObject() {
+        Destroy();
+    }
 
     /// Runs the destructor once. Safe to call explicitly and then again on scope
     /// exit, which is how the success path destroys in a chosen order while the
@@ -292,13 +298,14 @@ public:
         }
     }
 
-private:
+  private:
     void* object_ = nullptr;
     Destructor destructor_ = nullptr;
 };
 
 struct OwnedStream {
     IStream* value = nullptr;
+
     ~OwnedStream() {
         if (value) {
             value->Release();
@@ -371,12 +378,12 @@ ApplyFunctions ResolveApplyFunctions(std::uintptr_t oart) {
         reinterpret_cast<ClearSlots>(bb::oart::GuardedAddress(oart, kClearSlots));
     functions.constructImageRecord = reinterpret_cast<ImageRecordConstructor>(
         bb::oart::GuardedAddress(oart, kImageRecordConstructor));
-    functions.installCachedImage = reinterpret_cast<InstallCachedImage>(
-        bb::oart::GuardedAddress(oart, kInstallCachedImage));
-    functions.transferImageSlot = reinterpret_cast<TransferImageSlot>(
-        bb::oart::GuardedAddress(oart, kTransferImageSlot));
-    functions.buildStretchHolder = reinterpret_cast<BuildStretchHolder>(
-        bb::oart::GuardedAddress(oart, kStretchHolderBuilder));
+    functions.installCachedImage =
+        reinterpret_cast<InstallCachedImage>(bb::oart::GuardedAddress(oart, kInstallCachedImage));
+    functions.transferImageSlot =
+        reinterpret_cast<TransferImageSlot>(bb::oart::GuardedAddress(oart, kTransferImageSlot));
+    functions.buildStretchHolder =
+        reinterpret_cast<BuildStretchHolder>(bb::oart::GuardedAddress(oart, kStretchHolderBuilder));
     functions.setCountedSlot =
         reinterpret_cast<SetCountedSlot>(bb::oart::GuardedAddress(oart, kSetCountedSlot));
     functions.constructTransaction = reinterpret_cast<TransactionConstructor>(
@@ -418,8 +425,10 @@ unsigned long NativeApplyEntryCount() noexcept {
     return g_applyEntries;
 }
 
-void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
-                      void* cachedImage, const StageSampler& sample) {
+void ApplyCachedImage(const ApplyFunctions& functions,
+                      const FillTarget& target,
+                      void* cachedImage,
+                      const StageSampler& sample) {
     // Counted at the top: entering at all is what the test is asking about.
     ++g_applyEntries;
     CountedPointer cachedStorage;
@@ -432,7 +441,9 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
     static_assert(sizeof(imageRecordBuffer) >= kImageRecordSize, "sub-record buffer too small");
     static_assert(sizeof(transactionBuffer) >= kTransactionSize, "transaction buffer too small");
 
-    if (sample) { sample(L"enter"); }
+    if (sample) {
+        sample(L"enter");
+    }
 
     void* record = recordBuffer;
     functions.constructRecord(record);
@@ -444,16 +455,22 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
     std::memcpy(recordBuffer + kFillKindPayloadOffset, &picture, sizeof(picture));
     std::uint32_t fillKindTag = MarkSlotSet(bb::oart::LoadDword(record, kFillKindSlotOffset));
     std::memcpy(recordBuffer + kFillKindSlotOffset, &fillKindTag, sizeof(fillKindTag));
-    if (sample) { sample(L"record"); }
+    if (sample) {
+        sample(L"record");
+    }
 
     void* imageRecord = imageRecordBuffer;
     functions.constructImageRecord(imageRecord);
     ConstructedObject imageRecordGuard(imageRecord, functions.destroyImageRecord);
-    if (sample) { sample(L"subrecord"); }
+    if (sample) {
+        sample(L"subrecord");
+    }
 
     // +0x8F94C AddRefs the cached image, so our own reference stays ours.
     functions.installCachedImage(imageRecord, cached);
-    if (sample) { sample(L"install"); }
+    if (sample) {
+        sample(L"install");
+    }
     if (bb::oart::LoadPointer(imageRecord, kCachedImageInSubRecordOffset) !=
         reinterpret_cast<std::uintptr_t>(cached->value)) {
         throw bb::Error(E_FAIL, "Cached image did not reach the image sub-record");
@@ -461,9 +478,10 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
 
     // Copies the sub-record into the record's image slot and AddRefs again.
     functions.transferImageSlot(recordBuffer + kImageSlotOffset, imageRecord);
-    if (sample) { sample(L"transfer"); }
-    if (bb::oart::LoadPointer(record,
-                              kImageSubRecordOffset + kCachedImageInSubRecordOffset) !=
+    if (sample) {
+        sample(L"transfer");
+    }
+    if (bb::oart::LoadPointer(record, kImageSubRecordOffset + kCachedImageInSubRecordOffset) !=
         reinterpret_cast<std::uintptr_t>(cached->value)) {
         throw bb::Error(E_FAIL, "Cached image did not reach the property record");
     }
@@ -478,26 +496,30 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
 
     // Trailing tagged flag, written exactly as the handler writes it.
     const std::uint8_t trailingPayload = 1;
-    std::memcpy(recordBuffer + kTrailingFlagPayloadOffset, &trailingPayload,
-                sizeof(trailingPayload));
-    std::uint32_t trailingTag =
-        MarkSlotSet(bb::oart::LoadDword(record, kTrailingFlagSlotOffset));
+    std::memcpy(
+        recordBuffer + kTrailingFlagPayloadOffset, &trailingPayload, sizeof(trailingPayload));
+    std::uint32_t trailingTag = MarkSlotSet(bb::oart::LoadDword(record, kTrailingFlagSlotOffset));
     std::memcpy(recordBuffer + kTrailingFlagSlotOffset, &trailingTag, sizeof(trailingTag));
-    if (sample) { sample(L"holder"); }
+    if (sample) {
+        sample(L"holder");
+    }
 
     void* transaction = transactionBuffer;
-    functions.constructTransaction(transaction, record, kTransactionFlags,
-                                   target.handlerFlag != 0, kPictureFillIdentifier);
+    functions.constructTransaction(
+        transaction, record, kTransactionFlags, target.handlerFlag != 0, kPictureFillIdentifier);
     ConstructedObject transactionGuard(transaction, functions.destroyTransaction);
-    if (sample) { sample(L"transaction"); }
+    if (sample) {
+        sample(L"transaction");
+    }
 
     // The apply itself: the same receiver vtable slot the handler calls.
     auto vtable = reinterpret_cast<void* const*>(bb::oart::LoadPointer(target.receiver, 0));
-    auto applyTransaction = reinterpret_cast<ApplyTransaction>(
-        *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(vtable) +
-                                        kApplyTransactionSlot));
+    auto applyTransaction = reinterpret_cast<ApplyTransaction>(*reinterpret_cast<void* const*>(
+        reinterpret_cast<const std::uint8_t*>(vtable) + kApplyTransactionSlot));
     applyTransaction(target.receiver, transaction);
-    if (sample) { sample(L"apply"); }
+    if (sample) {
+        sample(L"apply");
+    }
 
     // Destroy in the handler's own reverse order, sampling after each step so an
     // unexplained delta is visible rather than averaged away. Each guard is
@@ -506,11 +528,15 @@ void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
     imageRecordGuard.Destroy();
     recordGuard.Destroy();
     stretchGuard.Destroy();
-    if (sample) { sample(L"released"); }
+    if (sample) {
+        sample(L"released");
+    }
 }
 
-CreatedImage CreateCachedImageFromPixels(const void* pixels, std::uint32_t width,
-                                         std::uint32_t height, std::int32_t stride) {
+CreatedImage CreateCachedImageFromPixels(const void* pixels,
+                                         std::uint32_t width,
+                                         std::uint32_t height,
+                                         std::int32_t stride) {
     if (!pixels || width == 0 || height == 0) {
         throw bb::Error(E_INVALIDARG, "Pixel buffer, width and height are required");
     }
@@ -525,13 +551,13 @@ CreatedImage CreateCachedImageFromPixels(const void* pixels, std::uint32_t width
     const Vector2 dpi;
     CountedReference cached;
     CountedReference image;
-    create(&cached.storage, &image.storage, pixels, width, height, stride,
-           kSurfaceFormatBgra32, &dpi);
+    create(
+        &cached.storage, &image.storage, pixels, width, height, stride, kSurfaceFormatBgra32, &dpi);
     if (!cached.storage.value) {
         throw bb::Error(E_FAIL, "Creator returned no cached image for these pixels");
     }
     if (bb::oart::LoadPointer(cached.storage.value, 0) != gfxBase + kCachedImageVtableRva) {
-        cached.storage.value = nullptr;   // unknown layout: leak rather than corrupt
+        cached.storage.value = nullptr; // unknown layout: leak rather than corrupt
         image.storage.value = nullptr;
         throw bb::Error(E_NOTIMPL, "Cached image vtable does not match the validated layout");
     }
@@ -554,13 +580,13 @@ CreatedImage CreateCachedImageFromBytes(SAFEARRAY* bytes) {
 
     OwnedStream stream = CreateStreamOverBytes(bytes);
     const std::uint8_t uid[kUidSize]{};
-    createCachedImage(&cached.storage, &image.storage, stream.value, kStreamCopyInstruction,
-                      uid, kCreateFlag);
+    createCachedImage(
+        &cached.storage, &image.storage, stream.value, kStreamCopyInstruction, uid, kCreateFlag);
     if (!cached.storage.value) {
         throw bb::Error(E_FAIL, "Creator returned no cached image for these bytes");
     }
     if (bb::oart::LoadPointer(cached.storage.value, 0) != gfxBase + kCachedImageVtableRva) {
-        cached.storage.value = nullptr;   // unknown layout: leak rather than corrupt
+        cached.storage.value = nullptr; // unknown layout: leak rather than corrupt
         image.storage.value = nullptr;
         throw bb::Error(E_NOTIMPL, "Cached image vtable does not match the validated layout");
     }
@@ -572,4 +598,3 @@ CreatedImage CreateCachedImageFromBytes(SAFEARRAY* bytes) {
 }
 
 } // namespace bb::oart
-

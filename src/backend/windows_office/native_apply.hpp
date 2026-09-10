@@ -29,8 +29,10 @@ using ClearSlots = void(__stdcall*)(void* record);
 using ImageRecordConstructor = void(__stdcall*)(void* imageRecord);
 using InstallCachedImage = void(__stdcall*)(void* imageRecord, void* countedCachedImage);
 using TransferImageSlot = void*(__stdcall*)(void* destinationSlot, void* imageRecord);
-using TransactionConstructor = void*(__stdcall*)(void* transaction, const void* record,
-                                                 std::uint32_t flags, bool flag,
+using TransactionConstructor = void*(__stdcall*)(void* transaction,
+                                                 const void* record,
+                                                 std::uint32_t flags,
+                                                 bool flag,
                                                  std::uint32_t identifier);
 using Destructor = void(__stdcall*)(void* object);
 using BuildStretchHolder = void(__stdcall*)(void* holder, const void* sixteenBytes);
@@ -82,8 +84,10 @@ using StageSampler = std::function<void(const wchar_t*)>;
  *
  * @p cachedImage is borrowed; the caller keeps its own reference.
  */
-void ApplyCachedImage(const ApplyFunctions& functions, const FillTarget& target,
-                      void* cachedImage, const StageSampler& sample = {});
+void ApplyCachedImage(const ApplyFunctions& functions,
+                      const FillTarget& target,
+                      void* cachedImage,
+                      const StageSampler& sample = {});
 
 /**
  * How many times ApplyCachedImage has been entered this process.
@@ -121,7 +125,9 @@ CreatedImage CreateCachedImageFromBytes(SAFEARRAY* bytes);
  * @p pixels is borrowed for the duration of the call. Both returned pointers
  * carry one reference each and belong to the caller.
  */
-CreatedImage CreateCachedImageFromPixels(const void* pixels, std::uint32_t width,
-                                         std::uint32_t height, std::int32_t stride);
+CreatedImage CreateCachedImageFromPixels(const void* pixels,
+                                         std::uint32_t width,
+                                         std::uint32_t height,
+                                         std::int32_t stride);
 
 } // namespace bb::oart

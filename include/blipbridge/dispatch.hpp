@@ -1,19 +1,18 @@
 #pragma once
 
-#include <windows.h>
-#include <oleauto.h>
 #include <algorithm>
+#include <oleauto.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <windows.h>
 
 namespace bb {
 /** Internal exception carrying an HRESULT; translate at every COM/C ABI boundary. */
 struct Error : std::runtime_error {
     HRESULT hr;
 
-    Error(HRESULT status, const std::string& message)
-        : std::runtime_error(message), hr(status) {}
+    Error(HRESULT status, const std::string& message) : std::runtime_error(message), hr(status) {}
 };
 
 inline void check(HRESULT status, const char* context) {
@@ -30,7 +29,9 @@ inline void check(HRESULT status, const char* context) {
 struct Value {
     VARIANT v;
 
-    Value() { VariantInit(&v); }
+    Value() {
+        VariantInit(&v);
+    }
 
     explicit Value(long value) : Value() {
         v.vt = VT_I4;
@@ -72,7 +73,9 @@ struct Value {
         return *this;
     }
 
-    ~Value() { VariantClear(&v); }
+    ~Value() {
+        VariantClear(&v);
+    }
 
     IDispatch* obj() const {
         if (v.vt != VT_DISPATCH || !v.pdispVal) {
@@ -83,25 +86,22 @@ struct Value {
 
     long integer() const {
         Value converted;
-        check(VariantChangeType(&converted.v, const_cast<VARIANT*>(&v), 0, VT_I4),
-              "integer");
+        check(VariantChangeType(&converted.v, const_cast<VARIANT*>(&v), 0, VT_I4), "integer");
         return converted.v.lVal;
     }
 
     double number() const {
         Value converted;
-        check(VariantChangeType(&converted.v, const_cast<VARIANT*>(&v), 0, VT_R8),
-              "number");
+        check(VariantChangeType(&converted.v, const_cast<VARIANT*>(&v), 0, VT_R8), "number");
         return converted.v.dblVal;
     }
 
     std::wstring str() const {
         Value converted;
-        check(VariantChangeType(&converted.v, const_cast<VARIANT*>(&v), 0, VT_BSTR),
-              "string");
+        check(VariantChangeType(&converted.v, const_cast<VARIANT*>(&v), 0, VT_BSTR), "string");
         return converted.v.bstrVal
-            ? std::wstring(converted.v.bstrVal, SysStringLen(converted.v.bstrVal))
-            : L"";
+                   ? std::wstring(converted.v.bstrVal, SysStringLen(converted.v.bstrVal))
+                   : L"";
     }
 };
 
@@ -125,8 +125,8 @@ struct ScopedExceptionInfo {
  * Argument Values own storage; raw variants below only borrow it during Invoke.
  * Name resolution remains per call, preserving the measured fallback behavior.
  */
-inline Value invoke(
-    IDispatch* object, const wchar_t* name, WORD flags, std::vector<Value> arguments = {}) {
+inline Value
+invoke(IDispatch* object, const wchar_t* name, WORD flags, std::vector<Value> arguments = {}) {
     if (!object) {
         throw Error(E_POINTER, "Missing dispatch object");
     }
@@ -143,8 +143,7 @@ inline Value invoke(
     }
 
     DISPID propertyPut = DISPID_PROPERTYPUT;
-    DISPPARAMS parameters{
-        rawArguments.data(), nullptr, static_cast<UINT>(rawArguments.size()), 0};
+    DISPPARAMS parameters{rawArguments.data(), nullptr, static_cast<UINT>(rawArguments.size()), 0};
     if (flags & DISPATCH_PROPERTYPUT) {
         parameters.rgdispidNamedArgs = &propertyPut;
         parameters.cNamedArgs = 1;
@@ -153,9 +152,14 @@ inline Value invoke(
     Value result;
     ScopedExceptionInfo exception;
     UINT badArgument = 0;
-    const HRESULT status = object->Invoke(
-        id, IID_NULL, LOCALE_USER_DEFAULT, flags, &parameters, &result.v,
-        &exception.value, &badArgument);
+    const HRESULT status = object->Invoke(id,
+                                          IID_NULL,
+                                          LOCALE_USER_DEFAULT,
+                                          flags,
+                                          &parameters,
+                                          &result.v,
+                                          &exception.value,
+                                          &badArgument);
     // Avoid building diagnostic strings on successful hot-path calls.
     if (FAILED(status)) {
         std::string message = "Invoke ";

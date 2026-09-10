@@ -29,11 +29,9 @@
 #include "oart_layout.hpp"
 
 #include <blipbridge/dispatch.hpp>
-
-#include <psapi.h>
-
 #include <cstring>
 #include <map>
+#include <psapi.h>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -42,7 +40,7 @@ namespace bb::oart {
 namespace {
 
 /// The wrapper vtable observed for Shape.Fill on the tested build; diagnostics only.
-constexpr std::uintptr_t kObservedFillFormatVtableRva = 0x1464478;   // ppcore.dll
+constexpr std::uintptr_t kObservedFillFormatVtableRva = 0x1464478; // ppcore.dll
 constexpr std::size_t kPublicFillFormatSize = 0x10;
 /// How many identity thunks a vtable must have before it counts as a wrapper.
 /// The observed Shape.Fill table has 23; the sibling wrappers have 10 to 31.
@@ -77,7 +75,8 @@ namespace {
  *
  * Returns false for anything else, including a real method implementation.
  */
-bool DecodeIdentityThunk(const std::uint8_t* code, std::size_t& innerOffset,
+bool DecodeIdentityThunk(const std::uint8_t* code,
+                         std::size_t& innerOffset,
                          std::size_t& slotOffset) {
     std::size_t cursor = 0;
     if (code[0] == 0x48 && code[1] == 0x83 && code[2] == 0xEC) {
@@ -130,7 +129,7 @@ namespace {
  * checks and a stale receiver would be a use-after-free.
  */
 class ValidationCache {
-public:
+  public:
     static ValidationCache& Instance() {
         static ValidationCache cache;
         return cache;
@@ -141,7 +140,9 @@ public:
         return validatedModules_.find(module) != validatedModules_.end();
     }
 
-    void RememberModule(HMODULE module) { validatedModules_.insert(module); }
+    void RememberModule(HMODULE module) {
+        validatedModules_.insert(module);
+    }
 
     /// Looks up a previously validated vtable shape, keyed by its address.
     const DelegatingWrapper* FindWrapper(std::uintptr_t vtable) const {
@@ -164,8 +165,7 @@ public:
             return found->second;
         }
         MODULEINFO information{};
-        if (!GetModuleInformation(GetCurrentProcess(), module, &information,
-                                  sizeof(information))) {
+        if (!GetModuleInformation(GetCurrentProcess(), module, &information, sizeof(information))) {
             return 0;
         }
         imageSizes_.emplace(module, information.SizeOfImage);
@@ -185,7 +185,7 @@ public:
         gfx_ = gfx;
     }
 
-private:
+  private:
     ValidationCache() = default;
 
     std::set<HMODULE> validatedModules_;
@@ -226,8 +226,10 @@ std::wstring ModuleVersionText(const wchar_t* moduleName) {
     return out.str();
 }
 
-bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
-                               std::size_t moduleSize, DelegatingWrapper& wrapper) {
+bool DescribeDelegatingWrapper(const void* object,
+                               std::uintptr_t moduleBase,
+                               std::size_t moduleSize,
+                               DelegatingWrapper& wrapper) {
     if (!IsReadable(object, sizeof(void*))) {
         return false;
     }
@@ -243,8 +245,7 @@ bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
     }
     wrapper = DelegatingWrapper{};
     wrapper.vtableRva = vtable - moduleBase;
-    if (!IsReadable(reinterpret_cast<const void*>(vtable),
-                    kWrapperSlotsExamined * sizeof(void*))) {
+    if (!IsReadable(reinterpret_cast<const void*>(vtable), kWrapperSlotsExamined * sizeof(void*))) {
         return false;
     }
 
@@ -263,12 +264,12 @@ bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
         }
         std::size_t innerOffset = 0;
         std::size_t slotOffset = 0;
-        if (!DecodeIdentityThunk(reinterpret_cast<const std::uint8_t*>(entry), innerOffset,
-                                 slotOffset)) {
+        if (!DecodeIdentityThunk(
+                reinterpret_cast<const std::uint8_t*>(entry), innerOffset, slotOffset)) {
             continue;
         }
         if (slotOffset != slot * sizeof(void*)) {
-            continue;   // delegates, but not to the matching slot
+            continue; // delegates, but not to the matching slot
         }
         if (haveOffset && innerOffset != wrapper.innerOffset) {
             return false;
@@ -278,7 +279,7 @@ bool DescribeDelegatingWrapper(const void* object, std::uintptr_t moduleBase,
         ++wrapper.identityThunks;
     }
     if (!haveOffset || wrapper.identityThunks < kMinimumIdentityThunks) {
-        return false;   // not a wrapper; nothing worth remembering
+        return false; // not a wrapper; nothing worth remembering
     }
     ValidationCache::Instance().RememberWrapper(vtable, wrapper);
     return true;
@@ -305,8 +306,8 @@ bool IsReadable(const void* address, std::size_t size) {
             (information.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
             return false;
         }
-        cursor = reinterpret_cast<const std::uint8_t*>(information.BaseAddress) +
-                 information.RegionSize;
+        cursor =
+            reinterpret_cast<const std::uint8_t*>(information.BaseAddress) + information.RegionSize;
     }
     return true;
 }
@@ -327,7 +328,8 @@ std::string DescribeAddress(std::uintptr_t address) {
     HMODULE owner = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                 GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCWSTR>(address), &owner) ||
+                            reinterpret_cast<LPCWSTR>(address),
+                            &owner) ||
         !owner) {
         std::ostringstream out;
         out << "0x" << std::hex << address;
@@ -341,7 +343,6 @@ std::string DescribeAddress(std::uintptr_t address) {
         << (address - reinterpret_cast<std::uintptr_t>(owner));
     return out.str();
 }
-
 
 HMODULE EnsureOfficeModule(const wchar_t* moduleName) {
     if (HMODULE loaded = GetModuleHandleW(moduleName)) {
@@ -398,7 +399,7 @@ HMODULE RequireValidatedModule(HMODULE module, const char* description) {
     }
     ValidationCache& cache = ValidationCache::Instance();
     if (cache.IsModuleValidated(module)) {
-        return module;   // same loaded image; its version cannot have changed
+        return module; // same loaded image; its version cannot have changed
     }
 
     wchar_t modulePath[MAX_PATH * 4]{};
@@ -460,8 +461,8 @@ FillTarget ResolveFillTarget(IDispatch* fill) {
     if (ppcoreSize == 0) {
         throw bb::Error(E_NOTIMPL, "Cannot measure the PPCORE image");
     }
-    if (!DescribeDelegatingWrapper(target.publicFill, target.ppcoreBase, ppcoreSize,
-                                   target.wrapper)) {
+    if (!DescribeDelegatingWrapper(
+            target.publicFill, target.ppcoreBase, ppcoreSize, target.wrapper)) {
         std::ostringstream out;
         out << "The object passed is not a PowerPoint automation wrapper: its vtable "
             << DescribeAddress(LoadPointer(target.publicFill, 0))
@@ -483,14 +484,14 @@ FillTarget ResolveFillTarget(IDispatch* fill) {
     if (handlerVtable != target.oartBase + kFillFormatVtableRva) {
         std::ostringstream out;
         out << "The wrapper at " << DescribeAddress(LoadPointer(target.publicFill, 0))
-            << " delegates through this+0x" << std::hex << target.wrapper.innerOffset
-            << " to " << DescribeAddress(handlerVtable) << ", not the validated OART+0x"
+            << " delegates through this+0x" << std::hex << target.wrapper.innerOffset << " to "
+            << DescribeAddress(handlerVtable) << ", not the validated OART+0x"
             << kFillFormatVtableRva
             << " FillFormat layout. Shape.Line and Shape.TextFrame look like this.";
         throw bb::Error(E_NOTIMPL, out.str());
     }
-    target.handlerFlag = static_cast<std::uint8_t>(
-        LoadDword(target.handler, kFillFormatFlagOffset) & 0xFF);
+    target.handlerFlag =
+        static_cast<std::uint8_t>(LoadDword(target.handler, kFillFormatFlagOffset) & 0xFF);
 
     // Step 3: the control block held at +0x58.
     target.token = reinterpret_cast<void*>(LoadPointer(target.handler, kFillFormatTokenOffset));
@@ -500,8 +501,8 @@ FillTarget ResolveFillTarget(IDispatch* fill) {
     target.tokenStrong = LoadDword(target.token, kControlBlockStrongOffset);
 
     // Step 4: the receiver, confirmed by its own vtable before any field read.
-    target.receiver = reinterpret_cast<void*>(
-        LoadPointer(target.token, kControlBlockPointeeOffset));
+    target.receiver =
+        reinterpret_cast<void*>(LoadPointer(target.token, kControlBlockPointeeOffset));
     if (!IsReadable(target.receiver, kReceiverInspectedSize)) {
         throw bb::Error(E_NOTIMPL, "Receiver storage is not readable");
     }
@@ -517,8 +518,7 @@ FillTarget ResolveFillTarget(IDispatch* fill) {
 void RequireSignature(std::uintptr_t moduleBase, const GuardedFunction& function) {
     const auto* code = reinterpret_cast<const std::uint8_t*>(moduleBase + function.rva);
     if (!IsReadable(code, function.signatureSize)) {
-        throw bb::Error(E_NOTIMPL,
-                        std::string("Code for ") + function.name + " is not readable");
+        throw bb::Error(E_NOTIMPL, std::string("Code for ") + function.name + " is not readable");
     }
     if (std::memcmp(code, function.signature, function.signatureSize) != 0) {
         std::ostringstream out;

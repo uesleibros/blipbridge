@@ -26,11 +26,10 @@
  * Threading: STA only, like everything else that touches these objects.
  */
 
-#include <windows.h>
-#include <oleauto.h>
-
 #include <cstdint>
+#include <oleauto.h>
 #include <string>
+#include <windows.h>
 
 namespace bb::office {
 

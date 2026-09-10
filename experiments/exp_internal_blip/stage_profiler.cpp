@@ -57,23 +57,19 @@
  * Research only. STA, PowerPoint host, and it leaves the document as found.
  */
 
-#include "../experiment_api.hpp"
-
-#include <blipbridge/blipbridge.h>
-
 #include "../../src/backend/windows_office/native_apply.hpp"
 #include "../../src/backend/windows_office/oart_layout.hpp"
-
-#include <blipbridge/dispatch.hpp>
-#include <blipbridge/errors.hpp>
-
-#include <psapi.h>
+#include "../experiment_api.hpp"
 
 #include <algorithm>
+#include <blipbridge/blipbridge.h>
+#include <blipbridge/dispatch.hpp>
+#include <blipbridge/errors.hpp>
 #include <cstring>
 #include <cwchar>
 #include <filesystem>
 #include <fstream>
+#include <psapi.h>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -132,8 +128,10 @@ double Percentile(const std::vector<double>& sorted, double fraction) {
  * than the stage itself costs.
  */
 class Stage {
-public:
-    void Add(double milliseconds) { samples_.push_back(milliseconds); }
+  public:
+    void Add(double milliseconds) {
+        samples_.push_back(milliseconds);
+    }
 
     double MeanMs() const {
         if (samples_.empty()) {
@@ -146,10 +144,15 @@ public:
         return total / static_cast<double>(samples_.size());
     }
 
-    double MedianMs() const { return Quantile(0.50); }
-    double P95Ms() const { return Quantile(0.95); }
+    double MedianMs() const {
+        return Quantile(0.50);
+    }
 
-private:
+    double P95Ms() const {
+        return Quantile(0.95);
+    }
+
+  private:
     double Quantile(double fraction) const {
         std::vector<double> sorted = samples_;
         std::sort(sorted.begin(), sorted.end());
@@ -164,7 +167,7 @@ private:
  * report reads in the same order as the code path it describes.
  */
 class LegProfile {
-public:
+  public:
     explicit LegProfile(const wchar_t* name) : name_(name) {}
 
     Stage& operator[](const wchar_t* stage) {
@@ -190,7 +193,7 @@ public:
         out << name_ << L".totalMeanMs=" << totalMean << L';';
     }
 
-private:
+  private:
     std::wstring name_;
     std::vector<std::pair<std::wstring, Stage>> stages_;
 };
@@ -202,7 +205,7 @@ private:
  * the baseline and is not itself a stage.
  */
 class ApplyTimer {
-public:
+  public:
     ApplyTimer(LegProfile& profile, double tick) : profile_(profile), tick_(tick) {}
 
     bb::oart::StageSampler Sampler() {
@@ -217,7 +220,7 @@ public:
         };
     }
 
-private:
+  private:
     LegProfile& profile_;
     double tick_ = 0.0;
     long long previous_ = 0;
@@ -225,18 +228,27 @@ private:
 
 struct ArrayGuard {
     SAFEARRAY* value;
-    ~ArrayGuard() { SafeArrayDestroy(value); }
+
+    ~ArrayGuard() {
+        SafeArrayDestroy(value);
+    }
 };
 
 /// Owns the two references CreateCachedImageFrom* hands back, so an exception
 /// anywhere in a leg still releases them.
 class OwnedImage {
-public:
+  public:
     OwnedImage() = default;
+
     explicit OwnedImage(bb::oart::CreatedImage created) : created_(created) {}
+
     OwnedImage(const OwnedImage&) = delete;
     OwnedImage& operator=(const OwnedImage&) = delete;
-    OwnedImage(OwnedImage&& other) noexcept : created_(other.created_) { other.created_ = {}; }
+
+    OwnedImage(OwnedImage&& other) noexcept : created_(other.created_) {
+        other.created_ = {};
+    }
+
     OwnedImage& operator=(OwnedImage&& other) noexcept {
         if (this != &other) {
             Release();
@@ -245,9 +257,14 @@ public:
         }
         return *this;
     }
-    ~OwnedImage() { Release(); }
 
-    void* cached() const { return created_.cached; }
+    ~OwnedImage() {
+        Release();
+    }
+
+    void* cached() const {
+        return created_.cached;
+    }
 
     void Release() {
         // Same order as the texture store: the companion image first, then the
@@ -257,7 +274,7 @@ public:
         created_ = {};
     }
 
-private:
+  private:
     bb::oart::CreatedImage created_{};
 };
 
@@ -276,10 +293,10 @@ std::vector<std::uint8_t> MakeFrame(long id) {
         for (std::uint32_t x = 0; x < kFrameWidth; ++x) {
             std::uint8_t* pixel =
                 pixels.data() + (static_cast<std::size_t>(y) * kFrameWidth + x) * 4;
-            pixel[0] = static_cast<std::uint8_t>(x + id);       // B
-            pixel[1] = static_cast<std::uint8_t>(y + id * 3);   // G
-            pixel[2] = static_cast<std::uint8_t>(id);           // R
-            pixel[3] = 0xFF;                                    // A
+            pixel[0] = static_cast<std::uint8_t>(x + id);     // B
+            pixel[1] = static_cast<std::uint8_t>(y + id * 3); // G
+            pixel[2] = static_cast<std::uint8_t>(id);         // R
+            pixel[3] = 0xFF;                                  // A
         }
     }
     const auto unique = static_cast<std::uint32_t>(id);
@@ -313,8 +330,7 @@ std::size_t PrivateBytes() {
  * legs synthesise their own pixels. The Shape is created and deleted here, so
  * the caller's document is left as it was found.
  */
-std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
-                               long iterations) {
+std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath, long iterations) {
     if (iterations <= 0) {
         iterations = kDefaultIterations;
     }
@@ -346,10 +362,10 @@ std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
     const double tick = SecondsPerTick();
 
     bb::Value shapes = bb::get(slide, L"Shapes");
-    bb::Value shape =
-        bb::call(shapes.obj(), L"AddShape",
-                 {bb::Value(1L), bb::Value(20.0), bb::Value(20.0), bb::Value(120.0),
-                  bb::Value(120.0)});
+    bb::Value shape = bb::call(
+        shapes.obj(),
+        L"AddShape",
+        {bb::Value(1L), bb::Value(20.0), bb::Value(20.0), bb::Value(120.0), bb::Value(120.0)});
 
     LegProfile reuse(L"reuse");
     LegProfile newSame(L"newSame");
@@ -467,7 +483,9 @@ std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
                     bb::oart::ResolveApplyFunctions(target.oartBase);
                 pool[L"resolve"].Add(static_cast<double>(Now() - resolveStart) * tick * 1000.0);
                 bb::oart::ApplyCachedImage(
-                    functions, target, ring[static_cast<std::size_t>(index % kPoolSize)].cached(),
+                    functions,
+                    target,
+                    ring[static_cast<std::size_t>(index % kPoolSize)].cached(),
                     sampler);
             }
             privateAfter = PrivateBytes();
@@ -554,8 +572,8 @@ std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
                 const long long functionsStart = Now();
                 const bb::oart::ApplyFunctions functions =
                     bb::oart::ResolveApplyFunctions(target.oartBase);
-                overhead[L"resolveFunctions"].Add(
-                    static_cast<double>(Now() - functionsStart) * tick * 1000.0);
+                overhead[L"resolveFunctions"].Add(static_cast<double>(Now() - functionsStart) *
+                                                  tick * 1000.0);
                 if (!functions.constructRecord) {
                     throw bb::Error(E_FAIL, "Apply functions did not resolve during the profile");
                 }
@@ -579,8 +597,10 @@ std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
 
                 const long long infoStart = Now();
                 MODULEINFO moduleInfo{};
-                GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(L"ppcore.dll"),
-                                     &moduleInfo, sizeof(moduleInfo));
+                GetModuleInformation(GetCurrentProcess(),
+                                     GetModuleHandleW(L"ppcore.dll"),
+                                     &moduleInfo,
+                                     sizeof(moduleInfo));
                 overhead[L"getModuleInformation"].Add(static_cast<double>(Now() - infoStart) *
                                                       tick * 1000.0);
 
@@ -592,8 +612,10 @@ std::wstring profileFillStages(IDispatch* slide, const std::wstring& imagePath,
                 const long long wrapperStart = Now();
                 bb::oart::DelegatingWrapper wrapper;
                 bb::oart::DescribeDelegatingWrapper(
-                    fetched.obj(), reinterpret_cast<std::uintptr_t>(GetModuleHandleW(L"ppcore.dll")),
-                    moduleInfo.SizeOfImage, wrapper);
+                    fetched.obj(),
+                    reinterpret_cast<std::uintptr_t>(GetModuleHandleW(L"ppcore.dll")),
+                    moduleInfo.SizeOfImage,
+                    wrapper);
                 overhead[L"describeWrapper"].Add(static_cast<double>(Now() - wrapperStart) * tick *
                                                  1000.0);
                 if (!oart) {

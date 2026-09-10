@@ -19,7 +19,6 @@
 #include <blipbridge/blipbridge.h>
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -41,13 +40,20 @@ std::string LastAbiError() {
 /// Maps an ABI result onto the HRESULT space the Engine reports through EXCEPINFO.
 HRESULT HresultFor(BB_Result result) {
     switch (result) {
-    case BB_E_INVALID_ARG:        return E_INVALIDARG;
-    case BB_E_UNSUPPORTED_SHAPE:  return bb::BB_E_SHAPE_CLASS_UNSUPPORTED;
-    case BB_E_FILE_NOT_FOUND:     return bb::BB_E_IMAGE_FILE_MISSING;
-    case BB_E_FALLBACK_FAILED:    return bb::BB_E_FALLBACK_REFUSED;
-    case BB_E_INVALID_HANDLE:     return bb::BB_E_TEXTURE_NOT_FOUND;
-    case BB_E_DECODE_FAILED:      return bb::BB_E_INVALID_IMAGE;
-    default:                      return E_FAIL;
+    case BB_E_INVALID_ARG:
+        return E_INVALIDARG;
+    case BB_E_UNSUPPORTED_SHAPE:
+        return bb::BB_E_SHAPE_CLASS_UNSUPPORTED;
+    case BB_E_FILE_NOT_FOUND:
+        return bb::BB_E_IMAGE_FILE_MISSING;
+    case BB_E_FALLBACK_FAILED:
+        return bb::BB_E_FALLBACK_REFUSED;
+    case BB_E_INVALID_HANDLE:
+        return bb::BB_E_TEXTURE_NOT_FOUND;
+    case BB_E_DECODE_FAILED:
+        return bb::BB_E_INVALID_IMAGE;
+    default:
+        return E_FAIL;
     }
 }
 
@@ -91,10 +97,8 @@ std::wstring pictureCacheStatsThroughAbi() {
     std::uint32_t textures = 0;
     std::uint32_t shapes = 0;
     std::uint64_t skipped = 0;
-    RequireOk(BB_GetPictureCacheStats(&textures, &shapes, &skipped),
-              "BB_GetPictureCacheStats");
+    RequireOk(BB_GetPictureCacheStats(&textures, &shapes, &skipped), "BB_GetPictureCacheStats");
     std::wostringstream out;
-    out << L"textures=" << textures << L";shapes=" << shapes << L";skipped=" << skipped
-        << L';';
+    out << L"textures=" << textures << L";shapes=" << shapes << L";skipped=" << skipped << L';';
     return out.str();
 }
