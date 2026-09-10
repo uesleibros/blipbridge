@@ -56,6 +56,8 @@ On a machine with the validated Office build:
 .\tools\test_shape_lifecycle_cache.ps1  # duplicate, group, delete, undo
 .\tools\test_native_texture.ps1         # lifetime matrix
 .\tools\test_undo_harness.ps1           # undo and redo
+.\tools\test_apply_if_changed.ps1       # the skip: what it skips, and what it must not
+.\tools\test_range_apply.ps1            # the multi-Shape apply, and its undo finding
 ```
 
 Each writes a transcript under `artifacts/`; `tools/archive_evidence.ps1` copies

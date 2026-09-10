@@ -138,11 +138,12 @@ try {
 }
 
 # --- multiple presentations --------------------------------------------------
-$handles = @()
-for ($h = 0x1000000; $h -lt 0x1000000 + 2000; $h++) {
-    try { $null = $engine.InspectTexture($h); $handles += $h } catch { }
-    if ($handles.Count -ge 2) { break }
-}
+# The handles used below are loaded here rather than discovered by scanning the
+# handle space. Scanning worked only while this process had allocated fewer than
+# a couple of thousand textures; handles are never recycled, so once another
+# harness had run in the same PowerPoint the live ones sat past the end of the
+# window and the scan silently found nothing.
+$handles = @($engine.LoadTexture($bytesA), $engine.LoadTexture($bytesB))
 $decks = @()
 try {
     foreach ($index in 0..2) {

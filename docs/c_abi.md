@@ -13,7 +13,7 @@ BB_Init / BB_Shutdown
 BB_ApplyPicture                                       <- what most callers want
 BB_InvalidateShape / BB_ClearPictureCache / BB_GetPictureCacheStats
 BB_LoadTexture / BB_LoadTexturePixels
-BB_ApplyTexture / BB_ApplyTextureBatch
+BB_ApplyTexture / BB_ApplyTextureBatch / BB_ApplyTextureIfChanged
 BB_ReleaseTexture / BB_ClearTextures / BB_GetTextureCount
 BB_GetCapabilities / BB_GetLastError
 BB_GetVersion / BB_GetVersionString / BB_GetAbiVersion
@@ -25,8 +25,9 @@ calling convention, so exports are undecorated - which is what lets VBA bind by
 plain name:
 
 ```text
-BB_ApplyTexture   BB_ApplyTextureBatch  BB_ClearTextures  BB_GetAbiVersion
-BB_GetCapabilities BB_GetLastError      BB_GetTextureCount BB_GetVersion
+BB_ApplyTexture   BB_ApplyTextureBatch  BB_ApplyTextureIfChanged
+BB_ClearTextures  BB_GetAbiVersion      BB_GetCapabilities
+BB_GetLastError   BB_GetTextureCount    BB_GetVersion
 BB_GetVersionString BB_Init             BB_LoadTexture    BB_LoadTexturePixels
 BB_ReleaseTexture BB_Shutdown
 ```
@@ -219,6 +220,33 @@ reached only through `bb::Backend`, and its exceptions are converted to
 benchmarks, and the stage profiler. The dependency runs one way - a probe
 includes `src/backend/windows_office/...`, and nothing under `src/` includes a
 probe - so the shipping path cannot acquire instrumentation by accident.
+
+## Skipping an apply that would change nothing
+
+`BB_ApplyTextureIfChanged(shape, texture, &skipped)` accepts exactly what
+`BB_ApplyTexture` accepts, runs the same semantic gate before anything internal
+is touched, and leaves the same document behind. The difference is that a Shape
+already carrying that image is left completely alone: no edit, no undo entry, no
+invalidation. `skipped` receives 1 in that case and 0 when the fill really was
+applied; it may be `NULL`, and it is written to zero before any work so a
+caller reading it after a failure cannot see a stale 1.
+
+Measured over 5000 iterations x 3 runs: 0.022 ms against 0.189, **8.5x**. A
+caller who never gets to skip pays 4.9 microseconds for the Shape key.
+
+Images are compared by internal identity, not by handle - two handles for the
+same picture compare equal, and a released handle cannot alias a new one.
+Before granting a skip the Shape's `Fill.Type` is re-read and must still be a
+picture fill, so a fill cleared or recoloured elsewhere is re-applied. What that
+cannot see is a fill replaced with a *different* picture by something outside
+BlipBridge; call `BB_InvalidateShape` after such a change, or use
+`BB_ApplyTexture`, which never skips.
+
+The record is shared with `BB_ApplyPicture`'s cache, and every path that writes
+a fill updates it, so the two can be mixed freely on the same Shape.
+
+See `docs/apply_fast_path.md` for where the 0.189 ms goes and why this is the
+only part of it that can be avoided.
 
 ## The batch API, measured
 
