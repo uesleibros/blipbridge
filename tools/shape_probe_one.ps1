@@ -99,8 +99,23 @@ if (-not $factories.ContainsKey($Category)) {
 Set-Field 'class' 'Crashed'
 Set-Field 'step' 'HostDiedDuringTest'
 Save-Result
+<#
+Connecting can land on a PowerPoint that a previous run is still shutting down,
+which fails with 0x800706B5. That says nothing about BlipBridge, so it waits for
+the dying host and retries.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
 
-$app = New-Object -ComObject PowerPoint.Application
+
+$app = Connect-PowerPoint
 $app.COMAddIns.Update()
 $addin = $app.COMAddIns.Item('BlipBridge.Engine')
 $addin.Connect = $true

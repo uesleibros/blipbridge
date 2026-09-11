@@ -20,7 +20,23 @@ $results = New-Object System.Collections.Generic.List[string]
  textures also refuses to exit, the harness is at fault rather than the store.
 #>
 function Invoke-Host([bool]$loadTextures) {
-    $app = New-Object -ComObject PowerPoint.Application
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+    $app = Connect-PowerPoint
     $app.COMAddIns.Update()
     $addin = $app.COMAddIns.Item('BlipBridge.Engine')
     $addin.Connect = $true
@@ -88,7 +104,7 @@ if ($survivor) {
 $results.Add('PowerPoint exited cleanly with five textures still loaded.')
 
 # A fresh host must still work.
-$again = New-Object -ComObject PowerPoint.Application
+$again = Connect-PowerPoint
 try {
     $again.COMAddIns.Update()
     $addin2 = $again.COMAddIns.Item('BlipBridge.Engine')

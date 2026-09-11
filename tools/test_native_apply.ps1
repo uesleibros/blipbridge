@@ -26,8 +26,24 @@ function Get-Identity($shape) {
     @($shape.Id, $shape.Name, $shape.Type, $shape.Left, $shape.Top, $shape.Width,
       $shape.Height, $shape.Rotation, $shape.ZOrderPosition) -join '|'
 }
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
 
-$app = New-Object -ComObject PowerPoint.Application
+
+$app = Connect-PowerPoint
 $app.COMAddIns.Update()
 $addin = $app.COMAddIns.Item('BlipBridge.Engine')
 $addin.Connect = $true

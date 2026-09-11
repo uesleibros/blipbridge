@@ -42,8 +42,24 @@ function Get-NativeText([scriptblock]$getter) {
     [void](& $getter $builder 512)
     return $builder.ToString()
 }
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
 
-$app = New-Object -ComObject PowerPoint.Application
+
+$app = Connect-PowerPoint
 $presentation = $app.Presentations.Add(0)
 try {
     # This must run inside the PowerPoint process to reach the backend, so the
