@@ -445,7 +445,7 @@ jobs:
 
           for doc in c_abi.md picture_cache.md resampling.md \
                      shape_compatibility.md safety_model.md \
-                     benchmarks.md windows_x86.md; do
+                     benchmarks.md windows_x86.md apply_fast_path.md; do
             if [ -f "docs/$doc" ]; then
               cp "docs/$doc" "universal/$name/docs/"
             fi
@@ -464,12 +464,47 @@ jobs:
           echo "$listing"
 
           for required in "$name/BlipBridge-x64.dll" "$name/BlipBridge-x86.dll" \
-                          "$name/BlipBridge.bas" "$name/README.md" "$name/LICENSE"; do
+                          "$name/BlipBridge.bas" "$name/blipbridge.h" \
+                          "$name/README.md" "$name/LICENSE" \
+                          "$name/docs/c_abi.md" "$name/docs/apply_fast_path.md"; do
             if ! grep -qxF "$required" <<< "$listing"; then
               echo "::error::Package is missing $required"
               exit 1
             fi
           done
+
+          # The header and wrapper inside the archive are what a caller compiles
+          # and imports against, so they have to be the ones this release was
+          # gated on rather than something stale that was lying around. Read from
+          # the zip, not from the checkout.
+          unzip -p "staged/${name}.zip" "$name/blipbridge.h" > shipped.h
+          unzip -p "staged/${name}.zip" "$name/BlipBridge.bas" > shipped.bas
+
+          shipped_abi="$(grep -oP '#define\s+BB_ABI_VERSION\s+\K\d+' shipped.h)"
+          shipped_wrapper_abi="$(grep -oP 'BB_EXPECTED_ABI\s+As\s+Long\s+=\s+\K\d+' shipped.bas)"
+
+          if [ "$shipped_abi" != "$shipped_wrapper_abi" ]; then
+            echo "::error::Packaged header is ABI $shipped_abi, wrapper expects $shipped_wrapper_abi"
+            exit 1
+          fi
+
+          if [ "$shipped_abi" -ge 4 ]; then
+            if ! grep -q 'BB_ApplyTextureRange' shipped.h; then
+              echo "::error::Packaged ABI $shipped_abi header does not declare BB_ApplyTextureRange"
+              exit 1
+            fi
+            if ! grep -q 'BB_CAP_RANGE_APPLY' shipped.h; then
+              echo "::error::Packaged ABI $shipped_abi header does not define BB_CAP_RANGE_APPLY"
+              exit 1
+            fi
+            if ! grep -q 'ApplyTextureRange' shipped.bas; then
+              echo "::error::Packaged wrapper has no ApplyTextureRange"
+              exit 1
+            fi
+          fi
+
+          rm -f shipped.h shipped.bas
+          echo "Packaged header and wrapper both declare ABI $shipped_abi.
 
           # Anything from the build tree or the research surface is a packaging
           # bug, not a cosmetic one: the shipped DLL is what runs in someone's

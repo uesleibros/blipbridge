@@ -108,9 +108,10 @@ std::wstring applyChangeOnly(IDispatch* shape, long handle);
 std::wstring applyCachedImageToFill(IDispatch* fill, long handle, long iterations);
 
 /**
- * Research: fills every Shape in a ShapeRange with one private apply, after
- * classifying every member. The multi-Shape batch that does exist; see
- * range_apply.cpp for why the transaction-level one cannot.
+ * Benchmarks the three public ways to fill N Shapes - N x BB_ApplyTexture,
+ * BB_ApplyTextureBatch and BB_ApplyTextureRange - over one ShapeRange, all
+ * through the C ABI in process. The API itself is production; only this timing
+ * harness is research. See range_apply.cpp.
  */
 std::wstring applyTextureToRange(IDispatch* range, long handle, long iterations);
 

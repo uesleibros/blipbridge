@@ -59,7 +59,24 @@ function Get-ApplyEntries($engine, $shape) {
 
 $saved = Join-Path ([IO.Path]::GetTempPath()) ("bb_if_changed_" + [Guid]::NewGuid().ToString('N') + '.pptx')
 
-$app = New-Object -ComObject PowerPoint.Application
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 ("unknown interface") or leaves a presentation
+that disappears underneath the run. Neither says anything about BlipBridge, so
+the connection waits for a dying host to finish and then retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+$app = Connect-PowerPoint
 $app.COMAddIns.Update()
 $addin = $app.COMAddIns.Item('BlipBridge.Engine')
 $addin.Connect = $true
@@ -228,8 +245,18 @@ try {
     Assert ((Get-Field ($engine.ApplyTextureIfChanged($reopened, $handleA)) 'skipped') -eq '0') `
         'a reopened Shape is not skipped on the strength of the closed document'
 } finally {
-    $presentation.Saved = $msoTrue
-    $presentation.Close()
+    # Closing is cleanup, not an assertion. Run back to back with other suites
+    # this can arrive at a presentation the host has already taken down - seen as
+    # "Presentation.Saved : Object does not exist" - and a tidy-up that cannot
+    # find its document must not turn a run whose every check passed into a
+    # failure. Anything that goes wrong here is reported and counted as noise.
+    try {
+        $presentation.Saved = $msoTrue
+        $presentation.Close()
+    } catch {
+        $results.Add("  note could not close the presentation: " +
+                     $_.Exception.Message.Split("`n")[0])
+    }
     if (Test-Path $saved) { Remove-Item $saved -Force }
 }
 

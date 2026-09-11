@@ -2,6 +2,15 @@
 
 **Status: the library builds and fails closed. There is no accelerated backend.**
 
+Two statements that are easy to run together, and must not be:
+
+| | |
+|---|---|
+| **x86 build** | Validated in CI. Debug and Release both compile, link, and produce a non-empty `BlipBridge-x86.dll` of the right machine type (`pei-i386`) exporting the full undecorated C ABI - `BB_ApplyTextureRange` and `BB_ApplyTextureIfChanged` included - and the ABI contract test runs against it. |
+| **x86 Office runtime** | **Not validated.** No build of BlipBridge has ever been run inside a real 32-bit PowerPoint. The x86 backend refuses every texture call by design, so there is nothing there to accelerate; but "CI is green" is a statement about the build, never about the host. |
+
+Nothing below claims otherwise.
+
 A 32-bit build of BlipBridge loads, exports the full C ABI, reports its version
 and capabilities, and answers every texture call with a specific refusal. It will
 not fill anything. That is deliberate, and this page explains why it is not

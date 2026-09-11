@@ -57,8 +57,19 @@ On a machine with the validated Office build:
 .\tools\test_native_texture.ps1         # lifetime matrix
 .\tools\test_undo_harness.ps1           # undo and redo
 .\tools\test_apply_if_changed.ps1       # the skip: what it skips, and what it must not
-.\tools\test_range_apply.ps1            # the multi-Shape apply, and its undo finding
+.\tools\test_range_apply.ps1            # the multi-Shape apply, and its undo behaviour
 ```
+
+Or run the whole Office matrix in one go, which is what a release gate wants:
+
+```powershell
+.\tools\run_office_matrix.ps1
+```
+
+It waits for PowerPoint to be gone between suites rather than sleeping and
+hoping. Started back to back, a suite can otherwise connect to a host the
+previous one is still shutting down, which fails with 0x800706B5 "unknown
+interface" and says nothing about BlipBridge.
 
 Each writes a transcript under `artifacts/`; `tools/archive_evidence.ps1` copies
 the ones worth keeping into `docs/evidence/`.
