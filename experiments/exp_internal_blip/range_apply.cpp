@@ -1,71 +1,29 @@
 /**
  * @file range_apply.cpp
- * One private apply that fills every Shape in a ShapeRange.
+ * Benchmarks the three ways to fill N Shapes with one texture.
  *
- * ## Why this is the batch, and the earlier idea was not
+ * All three go through the **public C ABI**, in this process, so what is
+ * compared is what a caller actually gets:
  *
- * The transaction handed to the receiver carries no target: the receiver *is*
- * the target. So a transaction holding several picture fills for several Shapes
- * cannot exist, and looking for one was looking in the wrong place. What can
- * exist is a receiver that stands for several Shapes - and that is exactly what
- * `ShapeRange.Fill` resolves to. It is the same PPCORE delegating wrapper as
- * `Shape.Fill`, over the same OART FillFormat, over a control block whose
- * receiver carries the whole range, so the existing structural walk accepts it
- * unchanged and one apply fills all of them.
+ *   - N x `BB_ApplyTexture`   - one apply per Shape
+ *   - `BB_ApplyTextureBatch`  - one ABI crossing, still N applies
+ *   - `BB_ApplyTextureRange`  - one apply through Office's own range receiver
  *
- * Measured on 16.0.14334.20848, 200 rounds x 3 runs, gate and per-Shape record
- * included on both sides, both legs in this process:
+ * Both comparison legs have to run in this process. Driven from PowerShell they
+ * read about 5.9 ms per Shape, which is a cross-process Automation round trip
+ * rather than Office, and would make the range look twenty-five times better
+ * than it is.
  *
- *                 range      one at a time
- *      1 Shape    0.232 ms   0.229 ms
- *      2 Shapes   0.299 ms   0.449 ms
- *      8 Shapes   0.632 ms   1.771 ms
- *     32 Shapes   1.876 ms   6.650 ms      3.5x
- *    100 Shapes   5.549 ms  20.935 ms      3.8x
- *
- * so 0.059 ms per Shape at 32 against 0.208, and no gain at all at one - the
- * range machinery has its own fixed cost, and only sharing it pays.
- *
- * ## Why this is not simply better
- *
- * **Undo takes one step per member, not one step.** Counted by putting a marker
- * Shape on the undo stack and undoing until it goes:
- *
- *     nothing                                        0 entries
- *     4 x native ApplyTexture                        4 entries, reverted after 4
- *     native apply to a range of 4                   6 entries, reverted after 6
- *     Office's own ShapeRange.Fill.UserPicture       1 entry,  reverted after 1
- *
- * The fills do come back, completely, and Redo restores them - so this is a
- * granularity difference rather than a correctness hole. Office coalesces a
- * range fill into one entry above the receiver; reaching the receiver directly
- * leaves one per member plus two.
- *
- * It still is not something to make the default: a user who fills 100 Shapes and
- * presses Ctrl+Z once sees one Shape revert. But it is a smaller objection than
- * it first appeared, and it is not data loss.
- *
- * ## The part that is not free
- *
- * A ShapeRange is a bag of whatever the caller put in it, and the fill goes to
- * every member. A Connector in that bag would reach the private backend, and a
- * native picture fill on a Connector terminates PowerPoint - so **every member
- * is classified before anything internal is touched**, and one ineligible member
- * refuses the whole range by name. That check costs two Automation reads per
- * member, which is why the timing above is the apply alone and the numbers this
- * file reports include the gate.
+ * The implementation under test lives in
+ * `src/backend/windows_office/range_texture.cpp`, which also explains why the
+ * API takes a ShapeRange rather than an array of Shapes. Nothing here
+ * reimplements it.
  */
 
 #include "../experiment_api.hpp"
 
-#include "../../src/backend/windows_office/apply_skip_cache.hpp"
-#include "../../src/backend/windows_office/native_apply.hpp"
-#include "../../src/backend/windows_office/native_texture.hpp"
-#include "../../src/backend/windows_office/oart_layout.hpp"
-#include "../../src/backend/windows_office/shape_identity.hpp"
-#include "../../src/backend/windows_office/shape_policy.hpp"
-
 #include <algorithm>
+#include <blipbridge/blipbridge.h>
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
 #include <sstream>
@@ -86,62 +44,56 @@ long long Now() {
     return counter.QuadPart;
 }
 
-/**
- * Classifies every member of @p range, refusing the whole range if any member
- * has no validated native path.
- *
- * Returns each member's `Shape.Type`, in order, so the caller can key them
- * afterwards without asking Office a second time.
- *
- * This is the gate. It runs to completion before any internal object is touched,
- * because the failure it prevents is not an error message - it is PowerPoint
- * closing with the user's document in it.
- */
-std::vector<long> RequireEveryMemberEligible(IDispatch* range) {
-    const long count = bb::get(range, L"Count").integer();
-    if (count <= 0) {
-        throw bb::Error(E_INVALIDARG, "The range holds no Shapes");
-    }
-
-    std::vector<long> types;
-    types.reserve(static_cast<std::size_t>(count));
-    for (long index = 1; index <= count; ++index) {
-        bb::Value member = bb::call(range, L"Item", {bb::Value(index)});
-        if (member.v.vt != VT_DISPATCH || !member.obj()) {
-            throw bb::Error(E_INVALIDARG, "A range member is not a Shape");
-        }
-        const bb::office::ShapeClassification verdict =
-            bb::office::ClassifyShapeForNativePictureFill(member.obj());
-        if (!verdict.native()) {
-            std::ostringstream out;
-            out << "Range member " << index << " of " << count << " is refused: " << verdict.reason
-                << ". The fill would reach every member, so the range is refused whole.";
-            throw bb::Error(verdict.eligibility == bb::office::ShapeEligibility::Invalid
-                                ? E_INVALIDARG
-                                : bb::BB_E_SHAPE_CLASS_UNSUPPORTED,
-                            out.str());
-        }
-        types.push_back(verdict.shapeType);
-    }
-    return types;
+[[noreturn]] void Fail(const char* what) {
+    char message[512]{};
+    BB_GetLastError(message, sizeof(message));
+    throw bb::Error(E_FAIL, std::string(what) + ": " + message);
 }
 
-/// Records what every member now carries, so a later skip cannot be wrong.
-void RememberEveryMember(IDispatch* range,
-                         const std::vector<long>& types,
-                         std::uint64_t textureId) {
-    for (std::size_t index = 0; index < types.size(); ++index) {
-        bb::Value member = bb::call(range, L"Item", {bb::Value(static_cast<long>(index) + 1)});
-        if (member.v.vt != VT_DISPATCH || !member.obj()) {
-            continue;
-        }
-        bb::office::RememberApplied(bb::office::DescribeShape(member.obj(), types[index]),
-                                    textureId);
+/// One timed leg. Samples reserved up front, summarised after the loop.
+class Leg {
+  public:
+    explicit Leg(long capacity) {
+        samples_.reserve(static_cast<std::size_t>(capacity));
     }
-}
+
+    void Add(double ms) {
+        samples_.push_back(ms);
+    }
+
+    double MeanMs() const {
+        if (samples_.empty()) {
+            return 0.0;
+        }
+        double total = 0.0;
+        for (double sample : samples_) {
+            total += sample;
+        }
+        return total / static_cast<double>(samples_.size());
+    }
+
+    void Write(std::wostringstream& out, const wchar_t* name) {
+        if (samples_.empty()) {
+            return;
+        }
+        std::sort(samples_.begin(), samples_.end());
+        out << name << L"MeanMs=" << MeanMs() << L';' << name << L"MedianMs="
+            << samples_[samples_.size() / 2] << L';' << name << L"MinMs=" << samples_.front()
+            << L';';
+    }
+
+  private:
+    std::vector<double> samples_;
+};
 
 } // namespace
 
+/**
+ * Times the three routes over @p range, @p iterations rounds each.
+ *
+ * The members are read once for the per-Shape legs; the range apply is handed
+ * the ShapeRange itself, which is the whole point of it.
+ */
 std::wstring applyTextureToRange(IDispatch* range, long handle, long iterations) {
     if (!range) {
         throw bb::Error(E_POINTER, "Missing ShapeRange");
@@ -149,105 +101,86 @@ std::wstring applyTextureToRange(IDispatch* range, long handle, long iterations)
     if (iterations <= 0) {
         throw bb::Error(E_INVALIDARG, "Iterations must be positive");
     }
-
-    const bb::office::TextureRef texture = bb::office::LookupTexture(handle);
-    void* cached = bb::office::CachedImageOf(texture);
-    if (!cached) {
-        throw bb::Error(E_FAIL, "No image behind that handle");
+    if (BB_Init() != BB_OK) {
+        Fail("BB_Init failed");
     }
-    const std::uint64_t textureId = bb::office::TextureIdOf(texture);
+    const auto texture = static_cast<BB_Handle>(handle);
+
+    // The members, held for the per-Shape legs. The Values keep them alive for
+    // the duration of the call and nothing is retained afterwards.
+    const long count = bb::get(range, L"Count").integer();
+    std::vector<bb::Value> members;
+    std::vector<void*> pointers;
+    members.reserve(static_cast<std::size_t>(count));
+    pointers.reserve(static_cast<std::size_t>(count));
+    for (long index = 1; index <= count; ++index) {
+        bb::Value member = bb::call(range, L"Item", {bb::Value(index)});
+        pointers.push_back(member.obj());
+        members.push_back(std::move(member));
+    }
+    std::vector<BB_Handle> handles(static_cast<std::size_t>(count), texture);
 
     const double tick = SecondsPerTick();
-    std::vector<double> gateSamples;
-    std::vector<double> applySamples;
-    std::vector<double> totalSamples;
-    std::vector<double> loopSamples;
-    gateSamples.reserve(static_cast<std::size_t>(iterations));
-    applySamples.reserve(static_cast<std::size_t>(iterations));
-    totalSamples.reserve(static_cast<std::size_t>(iterations));
-    loopSamples.reserve(static_cast<std::size_t>(iterations));
+    Leg loop(iterations);
+    Leg batch(iterations);
+    Leg ranged(iterations);
 
-    // Warm every cache the path uses, so the samples are the steady state.
-    std::vector<long> warmTypes = RequireEveryMemberEligible(range);
-    {
-        bb::Value fill = bb::get(range, L"Fill");
-        const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill.obj());
-        bb::oart::ApplyCachedImage(
-            bb::oart::ResolveApplyFunctions(target.oartBase), target, cached);
+    // Warm all three, so none pays first-call setup inside its samples.
+    std::uint32_t applied = 0;
+    for (void* shape : pointers) {
+        if (BB_ApplyTexture(shape, texture) != BB_OK) {
+            Fail("BB_ApplyTexture failed while warming");
+        }
+    }
+    if (BB_ApplyTextureBatch(
+            pointers.data(), handles.data(), static_cast<uint32_t>(count), &applied) != BB_OK) {
+        Fail("BB_ApplyTextureBatch failed while warming");
+    }
+    if (BB_ApplyTextureRange(range, texture, &applied) != BB_OK) {
+        Fail("BB_ApplyTextureRange failed while warming");
+    }
+    if (applied != static_cast<std::uint32_t>(count)) {
+        throw bb::Error(E_FAIL, "The range apply reported fewer Shapes than the range holds");
     }
 
     for (long round = 0; round < iterations; ++round) {
-        const long long start = Now();
-        const std::vector<long> types = RequireEveryMemberEligible(range);
-        const long long gated = Now();
-
-        bb::Value fill = bb::get(range, L"Fill");
-        const bb::oart::FillTarget target = bb::oart::ResolveFillTarget(fill.obj());
-        const bb::oart::ApplyFunctions functions =
-            bb::oart::ResolveApplyFunctions(target.oartBase);
-        bb::oart::ApplyCachedImage(functions, target, cached);
-        const long long applied = Now();
-
-        RememberEveryMember(range, types, textureId);
-        const long long done = Now();
-
-        gateSamples.push_back(static_cast<double>(gated - start) * tick * 1000.0);
-        applySamples.push_back(static_cast<double>(applied - gated) * tick * 1000.0);
-        totalSamples.push_back(static_cast<double>(done - start) * tick * 1000.0);
-
-        /*
-         * The same fills, one Shape at a time, in this process.
-         *
-         * It has to be measured here rather than from the harness: driving it
-         * from PowerShell adds a cross-process Automation round trip per Shape,
-         * which is about 5.9 ms and would swamp the 0.19 ms being compared. A
-         * comparison like that would flatter the range by twenty-five times for
-         * reasons that have nothing to do with Office.
-         */
-        const long long loopStart = Now();
-        for (long index = 1; index <= static_cast<long>(types.size()); ++index) {
-            bb::Value member = bb::call(range, L"Item", {bb::Value(index)});
-            if (member.v.vt != VT_DISPATCH || !member.obj()) {
-                continue;
+        long long start = Now();
+        for (void* shape : pointers) {
+            if (BB_ApplyTexture(shape, texture) != BB_OK) {
+                Fail("BB_ApplyTexture failed during the benchmark");
             }
-            bb::office::RequireNativePictureFillTarget(member.obj());
-            bb::Value memberFill = bb::get(member.obj(), L"Fill");
-            const bb::oart::FillTarget memberTarget =
-                bb::oart::ResolveFillTarget(memberFill.obj());
-            bb::oart::ApplyCachedImage(
-                bb::oart::ResolveApplyFunctions(memberTarget.oartBase), memberTarget, cached);
-            bb::office::RememberApplied(
-                bb::office::DescribeShape(member.obj(), types[static_cast<std::size_t>(index) - 1]),
-                textureId);
         }
-        loopSamples.push_back(static_cast<double>(Now() - loopStart) * tick * 1000.0);
-    }
+        loop.Add(static_cast<double>(Now() - start) * tick * 1000.0);
 
-    const auto summarise = [&](std::vector<double>& samples, const wchar_t* name,
-                               std::wostringstream& out) {
-        std::sort(samples.begin(), samples.end());
-        double total = 0.0;
-        for (double sample : samples) {
-            total += sample;
+        start = Now();
+        if (BB_ApplyTextureBatch(
+                pointers.data(), handles.data(), static_cast<uint32_t>(count), &applied) !=
+            BB_OK) {
+            Fail("BB_ApplyTextureBatch failed during the benchmark");
         }
-        const double mean = total / static_cast<double>(samples.size());
-        out << name << L"MeanMs=" << mean << L';' << name << L"MedianMs="
-            << samples[samples.size() / 2] << L';';
-        return mean;
-    };
+        batch.Add(static_cast<double>(Now() - start) * tick * 1000.0);
+
+        start = Now();
+        if (BB_ApplyTextureRange(range, texture, &applied) != BB_OK) {
+            Fail("BB_ApplyTextureRange failed during the benchmark");
+        }
+        ranged.Add(static_cast<double>(Now() - start) * tick * 1000.0);
+    }
 
     std::wostringstream out;
     out.setf(std::ios::fixed);
     out.precision(5);
-    const auto shapes = static_cast<double>(warmTypes.size());
-    out << L"iterations=" << iterations << L";shapes=" << warmTypes.size() << L';';
-    const double gateMean = summarise(gateSamples, L"gate", out);
-    const double applyMean = summarise(applySamples, L"apply", out);
-    const double totalMean = summarise(totalSamples, L"total", out);
-    const double loopMean = summarise(loopSamples, L"loop", out);
-    out << L"perShapeApplyMs=" << (applyMean / shapes) << L';' << L"perShapeTotalMs="
-        << (totalMean / shapes) << L';' << L"perShapeLoopMs=" << (loopMean / shapes) << L';'
-        << L"gateShare=" << (totalMean > 0.0 ? 100.0 * gateMean / totalMean : 0.0) << L';'
-        << L"speedup=" << (totalMean > 0.0 ? loopMean / totalMean : 0.0) << L';';
+    const auto shapes = static_cast<double>(count);
+    out << L"iterations=" << iterations << L";shapes=" << count << L';';
+    loop.Write(out, L"loop");
+    batch.Write(out, L"batch");
+    ranged.Write(out, L"range");
+    const double rangeMean = ranged.MeanMs();
+    out << L"perShapeLoopMs=" << (loop.MeanMs() / shapes) << L';' << L"perShapeBatchMs="
+        << (batch.MeanMs() / shapes) << L';' << L"perShapeRangeMs=" << (rangeMean / shapes) << L';';
+    if (rangeMean > 0.0) {
+        out << L"speedupVsLoop=" << (loop.MeanMs() / rangeMean) << L';' << L"speedupVsBatch="
+            << (batch.MeanMs() / rangeMean) << L';';
+    }
     return out.str();
 }

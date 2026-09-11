@@ -96,6 +96,9 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(benchmarkTextureBatch(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
                          .c_str());
+    case DispatchId::ApplyTextureRange:
+        return Value(
+            applyTextureRangeThroughAbi(target.obj(), arguments.At(1).integer()).c_str());
     case DispatchId::ApplyTextureToRange:
         return Value(applyTextureToRange(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())

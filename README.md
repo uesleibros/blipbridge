@@ -33,6 +33,23 @@ BlipBridge.ApplyTexture shp, texture      ' ~0.19 ms, no file, no donor Shape
 BlipBridge.ReleaseTexture texture
 ```
 
+Filling many Shapes at once is one call, and one Office edit rather than N:
+
+```vb
+Dim rng As PowerPoint.ShapeRange
+Set rng = ActivePresentation.Slides(1).Shapes.Range(names)
+
+BlipBridge.ApplyTextureRange rng, texture  ' 32 Shapes in ~1.9 ms, not ~6.6
+```
+
+Skip the work entirely when nothing would change:
+
+```vb
+If BlipBridge.ApplyTextureIfChanged(shp, texture) Then
+    ' the Shape already had this image; Office was not touched at all
+End If
+```
+
 The public API is strongly typed on both architectures: `PowerPoint.Shape` for
 Shapes and `BlipBridgeTexture` for handles, with no `Object`, no `Variant` and no
 `LongLong` in any public signature. Raw BGRA pixels can also be resampled on the
@@ -132,11 +149,33 @@ figure was a measurement artefact of the PowerShell harness and is corrected in
 [docs/cost_profile.md](docs/cost_profile.md). BlipBridge is best for a fixed set
 of images reused many times, and workable for a video-like workload.
 
-**`BB_ApplyTextureBatch` is not faster.** Measured at 10/50/100/200 Shapes it
-lands within noise of the same number of individual calls, because each Shape
-costs ~190 microseconds of real work and an ABI entry costs well under one. Use
-it because one call is tidier, not because it is quicker. See
-[docs/c_abi.md](docs/c_abi.md).
+**Filling a ShapeRange is one Office edit, not N.** `ApplyTextureRange` goes
+through Office's own range receiver, so the per-Shape cost falls from ~0.19 ms
+to well under a tenth of that at useful sizes:
+
+| Shapes | one at a time | `ApplyTextureRange` | speed-up |
+|---:|---:|---:|---:|
+| 1 | 0.224 ms | 0.233 ms | 1.0x |
+| 8 | 1.77 ms | 0.63 ms | 2.8x |
+| 32 | 6.65 ms | 1.88 ms | 3.5x |
+| 100 | 20.9 ms | 5.55 ms | 3.8x |
+
+One range apply is one undo entry, the same as Office's own
+`ShapeRange.Fill.UserPicture`. A ShapeRange cannot span slides, so several
+slides means one call per slide. One member with no validated native path - a
+Connector, a Line, a Chart - refuses the whole call before anything internal is
+touched. See [docs/apply_fast_path.md](docs/apply_fast_path.md).
+
+**`BB_ApplyTextureBatch` is not faster**, and is a different thing. It takes an
+array of Shapes and still makes one Office edit per Shape, so it lands within
+noise of the same number of individual calls: it saves ABI crossings, not work.
+Use it because one call is tidier; use `ApplyTextureRange` when you want it
+quicker. See [docs/c_abi.md](docs/c_abi.md).
+
+**Repeating an apply that changes nothing is nearly free.**
+`ApplyTextureIfChanged` costs 0.022 ms against 0.189 when the Shape already
+carries the image - 8.5x - and 4.9 microseconds more than `ApplyTexture` when it
+cannot skip.
 
 ## Supported builds
 

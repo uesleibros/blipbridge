@@ -67,6 +67,7 @@ struct BackendResult {
 /// Capability bits, mirroring the BB_CAP_* values in the public header.
 struct BackendCapabilities {
     bool applyPicture = false; ///< BB_ApplyPicture and its caches are usable
+    bool rangeApply = false;   ///< BB_ApplyTextureRange fills a whole ShapeRange
     bool scaledPixels = false; ///< LoadTexturePixelsScaled is implemented
     bool nativeBackend = false;
     bool memoryImage = false;
@@ -119,6 +120,20 @@ class Backend {
      */
     virtual BackendResult
     ApplyTextureIfChanged(void* shape, std::uint64_t texture, bool* skipped) noexcept = 0;
+
+    /**
+     * Fills every Shape in one ShapeRange with @p texture, through Office's own
+     * range receiver rather than one apply per Shape.
+     *
+     * @p shapeRange is a PowerPoint `ShapeRange`, borrowed for the call.
+     * @p applied receives how many member Shapes were filled.
+     *
+     * All or nothing: every member is classified first, and one member without a
+     * validated native path refuses the whole range with nothing applied.
+     */
+    virtual BackendResult ApplyTextureRange(void* shapeRange,
+                                            std::uint64_t texture,
+                                            std::uint32_t* applied) noexcept = 0;
 
     virtual BackendResult ReleaseTexture(std::uint64_t texture) noexcept = 0;
     virtual void ClearTextures() noexcept = 0;

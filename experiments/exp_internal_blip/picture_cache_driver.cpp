@@ -92,6 +92,16 @@ std::wstring applyTextureIfChangedThroughAbi(IDispatch* shape, long handle) {
     return out.str();
 }
 
+std::wstring applyTextureRangeThroughAbi(IDispatch* range, long handle) {
+    RequireInitialised();
+    std::uint32_t applied = 0;
+    RequireOk(BB_ApplyTextureRange(range, static_cast<BB_Handle>(handle), &applied),
+              "BB_ApplyTextureRange");
+    std::wostringstream out;
+    out << L"applied=" << applied << L';';
+    return out.str();
+}
+
 std::wstring invalidateShapeThroughAbi(IDispatch* shape) {
     RequireInitialised();
     RequireOk(BB_InvalidateShape(shape), "BB_InvalidateShape");

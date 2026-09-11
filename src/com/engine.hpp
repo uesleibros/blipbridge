@@ -41,6 +41,7 @@ enum class DispatchId : DISPID {
     ApplyChangeOnly,
     ApplyCachedImageToFill,
     ApplyTextureToRange,
+    ApplyTextureRange,
     PixelTextureExperiment,
     BenchmarkPixelLoad,
     ProfileFillStages,

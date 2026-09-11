@@ -19,6 +19,7 @@
 #include "backend.hpp"
 #include "windows_office/native_texture.hpp"
 #include "windows_office/picture_cache.hpp"
+#include "windows_office/range_texture.hpp"
 #include "windows_office/shape_policy.hpp"
 
 #include "../image/resample.hpp"
@@ -214,6 +215,9 @@ class WindowsOfficeBackend final : public Backend {
         capabilities.memoryImage = available;
         capabilities.cachedTexture = available;
         capabilities.batchApply = available;
+        // The range apply is the native path applied to a range receiver, so it
+        // exists exactly when the native path does.
+        capabilities.rangeApply = available;
         capabilities.rawPixels = available;
         capabilities.scaledPixels = available;
         return capabilities;
@@ -298,6 +302,29 @@ class WindowsOfficeBackend final : public Backend {
             IDispatch* dispatch = RequireFillableShape(shape, &shapeType);
             nativeTextureApplyIfChanged(
                 dispatch, static_cast<long>(texture), shapeType, skipped);
+        });
+    }
+
+    BackendResult ApplyTextureRange(void* shapeRange,
+                                    std::uint64_t texture,
+                                    std::uint32_t* applied) noexcept override {
+        return Guarded([&] {
+            // A ShapeRange is not a Shape, so the Shape-class gate cannot be
+            // asked about it here: the pointer is checked, and every *member* is
+            // classified inside, before anything internal is touched.
+            IDispatch* dispatch = RequireDispatchShape(shapeRange);
+            struct Release {
+                IDispatch* value;
+                ~Release() {
+                    value->Release();
+                }
+            } release{dispatch};
+
+            const std::uint32_t filled =
+                office::ApplyTextureToRange(dispatch, static_cast<long>(texture));
+            if (applied) {
+                *applied = filled;
+            }
         });
     }
 

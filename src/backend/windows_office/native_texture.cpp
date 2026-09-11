@@ -342,6 +342,15 @@ std::uint64_t TextureIdOf(const TextureRef& texture) {
     return texture ? texture->id() : 0;
 }
 
+void CountTextureApplies(const TextureRef& texture, unsigned long times) {
+    if (!texture) {
+        return;
+    }
+    for (unsigned long index = 0; index < times; ++index) {
+        texture->countApply();
+    }
+}
+
 } // namespace bb::office
 
 long nativeTextureLoad(SAFEARRAY* bytes) {

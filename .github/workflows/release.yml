@@ -264,8 +264,8 @@ jobs:
           echo "header ABI  : $header_abi"
           echo "wrapper ABI : $wrapper_abi"
 
-          if [ "$header_abi" != "3" ]; then
-            echo "This release requires ABI 3, header says $header_abi"
+          if [ "$header_abi" != "4" ]; then
+            echo "This release requires ABI 4, header says $header_abi"
             exit 1
           fi
 

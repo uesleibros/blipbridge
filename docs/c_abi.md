@@ -13,7 +13,9 @@ BB_Init / BB_Shutdown
 BB_ApplyPicture                                       <- what most callers want
 BB_InvalidateShape / BB_ClearPictureCache / BB_GetPictureCacheStats
 BB_LoadTexture / BB_LoadTexturePixels
-BB_ApplyTexture / BB_ApplyTextureBatch / BB_ApplyTextureIfChanged
+BB_ApplyTexture / BB_ApplyTextureIfChanged            <- one Shape
+BB_ApplyTextureRange                                 <- one ShapeRange, one apply
+BB_ApplyTextureBatch                                 <- many Shapes, many applies
 BB_ReleaseTexture / BB_ClearTextures / BB_GetTextureCount
 BB_GetCapabilities / BB_GetLastError
 BB_GetVersion / BB_GetVersionString / BB_GetAbiVersion
@@ -26,10 +28,10 @@ plain name:
 
 ```text
 BB_ApplyTexture   BB_ApplyTextureBatch  BB_ApplyTextureIfChanged
-BB_ClearTextures  BB_GetAbiVersion      BB_GetCapabilities
-BB_GetLastError   BB_GetTextureCount    BB_GetVersion
-BB_GetVersionString BB_Init             BB_LoadTexture    BB_LoadTexturePixels
-BB_ReleaseTexture BB_Shutdown
+BB_ApplyTextureRange BB_ClearTextures   BB_GetAbiVersion
+BB_GetCapabilities BB_GetLastError      BB_GetTextureCount
+BB_GetVersion     BB_GetVersionString   BB_Init
+BB_LoadTexture    BB_LoadTexturePixels  BB_ReleaseTexture BB_Shutdown
 ```
 
 ## Versioning
@@ -247,6 +249,54 @@ a fill updates it, so the two can be mixed freely on the same Shape.
 
 See `docs/apply_fast_path.md` for where the 0.189 ms goes and why this is the
 only part of it that can be avoided.
+
+## Filling many Shapes at once
+
+`BB_ApplyTextureRange(shapeRange, texture, &applied)` fills every Shape in one
+PowerPoint `ShapeRange` with one cached texture, in **one** apply.
+
+The argument is a `ShapeRange` - `ObjPtr(Slide.Shapes.Range(names))` from VBA -
+not an array of Shape pointers, and that is the feature rather than a detail of
+the signature. A transaction handed to Office's fill receiver carries no target:
+the receiver *is* the target. So a transaction holding several Shapes' fills
+cannot exist, and any API shaped like a list of Shapes has to apply them one at a
+time - which is what `BB_ApplyTextureBatch` does. What *can* exist is a receiver
+that stands for several Shapes, and `ShapeRange.Fill` is one.
+
+Measured through this ABI, in process, one image, against the same fills one
+Shape at a time:
+
+| Shapes | one at a time | `BB_ApplyTextureRange` | speed-up |
+|---:|---:|---:|---:|
+| 1 | 0.229 ms | 0.232 ms | 1.0x |
+| 8 | 1.771 ms | 0.632 ms | 2.8x |
+| 32 | 6.650 ms | 1.876 ms | 3.5x |
+| 100 | 20.935 ms | 5.549 ms | 3.8x |
+
+One machine, one session. Absolute figures move by three to four times with
+machine load while the ratios hold; the full sweep at 1/2/8/16/32/64/100 Shapes,
+including `BB_ApplyTextureBatch`, is in `docs/apply_fast_path.md`.
+
+### What it guarantees
+
+- **All or nothing.** Every member is classified before any internal object is
+  touched. One member without a validated native picture-fill path - a
+  Connector, a Line, a Chart, a Table - refuses the whole call, names which
+  member in the error, applies nothing, and never enters the private backend.
+- **One slide.** A PowerPoint `ShapeRange` belongs to one slide's `Shapes`
+  collection and cannot span slides, so neither can this. Filling Shapes on
+  several slides is one call per slide, and the fixed cost is paid per slide.
+  There is no internal cross-slide pseudo-range and there will not be one.
+- **Undo.** One range apply is one undo entry, and one Undo reverts the whole
+  fill - the same as Office's own `ShapeRange.Fill.UserPicture`. Filling the same
+  Shapes one at a time leaves one entry each instead.
+- **Groups** may be members and are filled. They are never remembered for the
+  `BB_ApplyTextureIfChanged` skip, because a group's fill and its children's
+  fills change each other and no cheap property reveals it.
+- `applied` receives how many member Shapes were filled, and may be `NULL`.
+
+Passing a `Shape` rather than a `ShapeRange` is refused with a message saying so:
+a Shape cannot answer `Count`.
 
 ## The batch API, measured
 

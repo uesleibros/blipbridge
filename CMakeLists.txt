@@ -95,6 +95,7 @@ set(BB_BACKEND_SOURCES
     src/backend/windows_office/shape_policy.cpp
     src/backend/windows_office/shape_identity.cpp
     src/backend/windows_office/apply_skip_cache.cpp
+    src/backend/windows_office/range_texture.cpp
     src/backend/windows_office/picture_cache.cpp
 )
 

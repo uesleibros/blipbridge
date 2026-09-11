@@ -22,6 +22,83 @@ Callers written against 0.4.0 need the changes shown in the release notes.
 
 ## [Unreleased]
 
+### Fixed - correctness, independent of the new feature
+
+- **A fill written by one API could be skipped by another.** `BB_ApplyTexture`
+  changed a Shape's fill without telling `BB_ApplyPicture`'s cache, so a
+  following `BB_ApplyPicture` for the image the Shape *used* to carry could skip
+  as redundant and leave the wrong picture on screen. Every path that writes a
+  fill now writes one shared per-Shape record - `BB_ApplyPicture`,
+  `BB_ApplyTexture`, `BB_ApplyTextureIfChanged`, `BB_ApplyTextureRange` - and the
+  ordinary apply only pays for the Shape key once something has asked for a skip.
+  Nine assertions covering every order of those calls in
+  `tools/test_range_apply.ps1`.
+
+- **Freeforms could never be cached.** A Shape returned by
+  `FreeformBuilder.ConvertToShape` reports a *ShapeRange* as its `Parent` rather
+  than the Slide, and keeps doing so when fetched back out of the `Shapes`
+  collection, so it had no readable slide id and no cache key - in either cache.
+  Freeforms are a validated native class; they were uncacheable for a reason that
+  has nothing to do with them. The key now tries one level up when the parent
+  will not name a slide, and still refuses to key anything that names none.
+
+- **`tools/test_native_texture_stress.ps1` guessed at live handles** by scanning
+  the handle space for the first two that answer, which silently found nothing
+  once a process had allocated past the end of its window. It loads its own.
+
+### Added - ABI version 4
+
+- **`BB_ApplyTextureRange(shapeRange, texture, applied)`**: one cached texture,
+  one PowerPoint `ShapeRange`, one apply through Office's own range receiver.
+
+  This is not a loop and not `BB_ApplyTextureBatch` with different arguments. A
+  transaction carries no target - the receiver *is* the target - so a transaction
+  holding several Shapes' fills cannot exist; what can exist is a receiver that
+  stands for several Shapes, and `ShapeRange.Fill` is one. It presents the same
+  PPCORE wrapper, the same OART FillFormat and the same validated receiver
+  layout, so the existing structural walk accepts it unchanged.
+
+  Measured through the public ABI in process, one image, against the same fills
+  one Shape at a time: 32 Shapes in 1.9 ms against 6.6 ms, 100 in 5.5 ms against
+  20.9 ms. `BB_ApplyTextureBatch` sits with the per-Shape leg, because it saves
+  ABI crossings rather than Office work. Absolute figures move with machine load;
+  the full table is in `docs/apply_fast_path.md`.
+
+  - **All or nothing.** Every member is classified before any internal object is
+    touched. One member without a validated native path - Connector, Line, Chart,
+    Table - refuses the whole call, names which member, and never enters the
+    private backend.
+  - **One slide.** A PowerPoint `ShapeRange` cannot span slides, so neither can
+    this. Several slides means one call per slide.
+  - **Undo.** One range apply is one undo entry and one Undo reverts the whole
+    fill, the same as Office's own `ShapeRange.Fill.UserPicture`. Filling the
+    same Shapes one at a time leaves one entry each.
+  - **Groups** may be members and are filled, and are never remembered for the
+    skip, because a group's fill and its children's fills change each other.
+
+  46 assertions in `tools/test_range_apply.ps1`. Reported through
+  `BB_GetCapabilities` as `BB_CAP_RANGE_APPLY` (0x0100).
+
+- **`BB_ApplyTextureIfChanged(shape, texture, skipped)`**: applies only when the
+  Shape does not already carry that image. 0.022 ms against 0.189 - 8.5x - with
+  no edit, no undo entry and no invalidation when it skips, and 4.9 us of
+  overhead when it cannot. Images are compared by internal identity rather than
+  by handle, and `Fill.Type` is re-read before any skip is granted. 33 assertions
+  in `tools/test_apply_if_changed.ps1`.
+
+- **`BlipBridge.ApplyTextureRange`** and **`BlipBridge.ApplyTextureIfChanged`**
+  in the VBA wrapper, strongly typed against `PowerPoint.ShapeRange` and
+  `PowerPoint.Shape`.
+
+### Changed
+
+- The Office module handles are resolved once and **pinned** rather than looked
+  up on every apply. Three `GetModuleHandleW` calls, each taking the loader lock,
+  were 7.1 of the receiver resolution's 18.6 microseconds. A pinned module cannot
+  be unloaded, so its base cannot move - a stronger guarantee than the re-lookup
+  it replaces, which could only notice a swap after it had happened.
+
+
 ### Fixed
 
 - **`UserPicture2` broke after `ClearTextures`.** The texture store owned each

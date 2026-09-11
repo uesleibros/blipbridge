@@ -11,7 +11,7 @@ Attribute VB_Name = "BlipBridge"
 ' * Shapes are PowerPoint.Shape and texture handles are BlipBridgeTexture on both
 ' * architectures - no Object, no Variant, and no LongLong in any public signature.
 ' * @author UesleiDev
-' * @version ABI 3
+' * @version ABI 4
 ' * @remarks The architecture is selected from the PowerPoint process, not Windows.
 ' * Both native DLLs may safely live beside the same presentation.
 ' */
@@ -85,8 +85,11 @@ Public Const BB_CAP_APPLY_PICTURE As Long = &H40
 '/** @description LoadTexturePixelsScaled and its filters are available. */
 Public Const BB_CAP_SCALED_PIXELS As Long = &H80
 
+'/** @description ApplyTextureRange fills a whole ShapeRange in one apply. */
+Public Const BB_CAP_RANGE_APPLY As Long = &H100
+
 '/** @description Public ABI version required by this VBA wrapper. */
-Private Const BB_EXPECTED_ABI As Long = 3
+Private Const BB_EXPECTED_ABI As Long = 4
 
 '/** @description Base VBA error number used when translating native failures. */
 Private Const BB_ERROR_BASE As Long = vbObjectError + 500
@@ -226,6 +229,12 @@ Private Declare PtrSafe Function BB_ApplyTextureIfChanged Lib "BlipBridge-x64.dl
     ByRef skipped As Long _
 ) As Long
 
+Private Declare PtrSafe Function BB_ApplyTextureRange Lib "BlipBridge-x64.dll" ( _
+    ByVal shapeRangePtr As LongPtr, _
+    ByVal texture As LongLong, _
+    ByRef applied As Long _
+) As Long
+
 Private Declare PtrSafe Function BB_ApplyTextureBatch Lib "BlipBridge-x64.dll" ( _
     ByVal shapesPtr As LongPtr, _
     ByVal texturesPtr As LongPtr, _
@@ -311,6 +320,13 @@ Private Declare PtrSafe Function BB_ApplyTextureIfChanged Lib "BlipBridge-x86.dl
     ByVal textureLow As Long, _
     ByVal textureHigh As Long, _
     ByRef skipped As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_ApplyTextureRange Lib "BlipBridge-x86.dll" ( _
+    ByVal shapeRangePtr As LongPtr, _
+    ByVal textureLow As Long, _
+    ByVal textureHigh As Long, _
+    ByRef applied As Long _
 ) As Long
 
 Private Declare PtrSafe Function BB_ApplyTextureBatch Lib "BlipBridge-x86.dll" ( _
@@ -735,6 +751,51 @@ Public Sub ApplyTexture(ByVal shp As PowerPoint.Shape, ByRef texture As BlipBrid
     CheckResult BB_ApplyTexture(ObjPtr(shp), texture.Low, texture.High), "ApplyTexture"
 #End If
 End Sub
+
+'/**
+' * @function ApplyTextureRange
+' * @brief Applies one loaded texture to every Shape in one PowerPoint ShapeRange, in one operation.
+' * @param shapes Live PowerPoint.ShapeRange whose pointer is borrowed for this call only.
+' * @param texture Opaque handle returned by LoadTexture or LoadTexturePixels.
+' * @return The number of member Shapes filled.
+' * @remarks This is not a loop over ApplyTexture and not ApplyTextureBatch with different
+' * arguments. It is one cached texture, one ShapeRange and one apply through Office's own range
+' * receiver, which is what makes it faster: 1.876 ms for 32 Shapes against 6.650 ms one at a time
+' * on the validated build.
+' *
+' * All or nothing. Every member is checked for a validated native picture-fill path before any
+' * internal Office object is touched, and one unsupported member - a Connector, a Line, a Chart,
+' * a Table - refuses the whole call with nothing applied. The error names which member.
+' *
+' * One slide. A PowerPoint ShapeRange cannot span slides, so neither can this; fill several slides
+' * with one call per slide.
+' *
+' * Undo and Redo work as they do for Office's own ShapeRange.Fill.UserPicture: one range apply is
+' * one undo entry, and one Undo reverts the whole fill. Filling the same Shapes one at a time
+' * leaves one entry each instead. Undo changes fills without telling BlipBridge, so call
+' * InvalidateShape afterwards if you then rely on ApplyTextureIfChanged for those Shapes.
+' */
+Public Function ApplyTextureRange(ByVal shapes As PowerPoint.ShapeRange, _
+                                  ByRef texture As BlipBridgeTexture) As Long
+    Dim applied As Long
+
+    Initialize
+
+    If shapes Is Nothing Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.ApplyTextureRange", _
+                  "ApplyTextureRange requires a live ShapeRange."
+    End If
+
+#If Win64 Then
+    CheckResult BB_ApplyTextureRange(ObjPtr(shapes), TextureToNative(texture), applied), _
+                "ApplyTextureRange"
+#Else
+    CheckResult BB_ApplyTextureRange(ObjPtr(shapes), texture.Low, texture.High, applied), _
+                "ApplyTextureRange"
+#End If
+
+    ApplyTextureRange = applied
+End Function
 
 '/**
 ' * @function ApplyTextureIfChanged

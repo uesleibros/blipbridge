@@ -73,6 +73,13 @@ class UnsupportedBackend final : public Backend {
         return Refuse();
     }
 
+    BackendResult ApplyTextureRange(void*, std::uint64_t, std::uint32_t* applied) noexcept override {
+        if (applied) {
+            *applied = 0;
+        }
+        return Refuse();
+    }
+
     BackendResult ReleaseTexture(std::uint64_t) noexcept override {
         return Refuse();
     }

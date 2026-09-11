@@ -50,6 +50,7 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"ApplyChangeOnly", DispatchId::ApplyChangeOnly},
     {L"ApplyCachedImageToFill", DispatchId::ApplyCachedImageToFill},
     {L"ApplyTextureToRange", DispatchId::ApplyTextureToRange},
+    {L"ApplyTextureRange", DispatchId::ApplyTextureRange},
     {L"PixelTextureExperiment", DispatchId::PixelTextureExperiment},
     {L"BenchmarkPixelLoad", DispatchId::BenchmarkPixelLoad},
     {L"ProfileFillStages", DispatchId::ProfileFillStages},

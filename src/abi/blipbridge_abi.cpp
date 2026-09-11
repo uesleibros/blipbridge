@@ -304,6 +304,38 @@ BB_API BB_Result BB_CALL BB_ApplyTextureIfChanged(void* shape,
     }
 }
 
+BB_API BB_Result BB_CALL BB_ApplyTextureRange(void* shapeRange,
+                                              BB_Handle texture,
+                                              uint32_t* applied) {
+    try {
+        if (applied) {
+            *applied = 0;
+        }
+        if (const BB_Result ready = RequireReadyThread(); ready != BB_OK) {
+            return ready;
+        }
+        if (!shapeRange) {
+            return Fail(BB_E_INVALID_ARG, "BB_ApplyTextureRange needs a ShapeRange pointer");
+        }
+        if (texture == 0) {
+            return Fail(BB_E_INVALID_HANDLE, "Texture handle 0 is never valid");
+        }
+        std::uint32_t filled = 0;
+        const bb::BackendResult result =
+            Library::Instance().Ensure().ApplyTextureRange(shapeRange, texture, &filled);
+        if (!result.ok()) {
+            return Translate(result);
+        }
+        if (applied) {
+            *applied = filled;
+        }
+        g_lastError.clear();
+        return BB_OK;
+    } catch (...) {
+        return Fail(BB_E_INTERNAL, "Unknown failure during BB_ApplyTextureRange");
+    }
+}
+
 BB_API BB_Result BB_CALL BB_ApplyTextureBatch(void* const* shapes,
                                               const BB_Handle* textures,
                                               uint32_t count,
@@ -488,6 +520,7 @@ BB_API uint32_t BB_CALL BB_GetCapabilities(void) {
         bits |= capabilities.rawPixels ? BB_CAP_RAW_PIXELS : 0u;
         bits |= capabilities.applyPicture ? BB_CAP_APPLY_PICTURE : 0u;
         bits |= capabilities.scaledPixels ? BB_CAP_SCALED_PIXELS : 0u;
+        bits |= capabilities.rangeApply ? BB_CAP_RANGE_APPLY : 0u;
         return bits;
     } catch (...) {
         return 0;

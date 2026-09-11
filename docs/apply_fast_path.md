@@ -208,21 +208,48 @@ OART FillFormat vtable (`oart.dll+0xAF60B8`), same validated receiver vtable
 (`oart.dll+0x9F6658`), same container. The existing structural walk accepts it
 unchanged and one apply fills every member.
 
-200 rounds x 3 runs, gate and per-Shape record included on both sides, both legs
-in process:
+### Measured
 
-| Shapes | range total | range apply | gate | per Shape | one at a time | speedup | filled |
-|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | 0.2319 | 0.1974 | 0.0073 | 0.2319 | 0.2293 | 1.0x | 1/1 |
-| 2 | 0.2989 | 0.2476 | 0.0107 | 0.1495 | 0.4487 | 1.5x | 2/2 |
-| 8 | 0.6324 | 0.4970 | 0.0263 | 0.0790 | 1.7710 | 2.8x | 8/8 |
-| **32** | **1.8756** | 1.4492 | 0.0895 | **0.0586** | 6.6496 | **3.5x** | 32/32 |
-| 100 | 5.5488 | 4.2394 | 0.2900 | 0.0555 | 20.935 | 3.8x | 100/100 |
+All three legs through the public C ABI, in process, same Shapes, same image, 3
+runs per size with the median reported. `tools/run_range_benchmark.ps1`.
 
-The comparison leg has to run in process. Driven from PowerShell it reads 5.9 ms
-per Shape - a cross-process Automation round trip, not Office - and makes the
-range look 25 to 155 times faster for reasons that are nothing to do with the
-work being compared.
+**Reference run, quiet machine** - the figures quoted elsewhere in this repo:
+
+| Shapes | one at a time | `BB_ApplyTextureRange` | per Shape | speed-up |
+|---:|---:|---:|---:|---:|
+| 1 | 0.229 | 0.232 | 0.232 | 1.0x |
+| 2 | 0.449 | 0.299 | 0.149 | 1.5x |
+| 8 | 1.771 | 0.632 | 0.079 | 2.8x |
+| **32** | **6.650** | **1.876** | **0.059** | **3.5x** |
+| 100 | 20.935 | 5.549 | 0.055 | 3.8x |
+
+Those are measurements from one machine in one session, not constants.
+
+**Full sweep, busy machine** - a browser, a chat client and a remote-desktop
+service running, which roughly triples every absolute figure:
+
+| Shapes | one at a time | `BB_ApplyTextureBatch` | `BB_ApplyTextureRange` | per Shape | vs loop | vs batch |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.236 | 0.237 | 0.241 | 0.241 | 1.0x | 1.0x |
+| 2 | 0.423 | 0.426 | 0.288 | 0.144 | 1.5x | 1.5x |
+| 8 | 4.926 | 5.044 | 2.031 | 0.254 | 2.4x | 2.5x |
+| 16 | 10.906 | 11.225 | 3.770 | 0.236 | 2.9x | 3.0x |
+| 32 | 18.750 | 19.114 | 6.421 | 0.201 | 2.9x | 3.0x |
+| 64 | 41.264 | 44.845 | 13.429 | 0.210 | 3.1x | 3.3x |
+| 100 | 51.235 | 50.759 | 15.426 | 0.154 | 3.3x | 3.3x |
+
+Every Shape filled in every row. The absolute numbers are three to four times the
+quiet ones - the per-Shape leg reads 0.5-0.7 ms against a 0.19 ms baseline - and
+the **ratios barely move**, which is the point of measuring all three legs in the
+same run. Quote the ratios; re-measure the absolutes.
+
+`BB_ApplyTextureBatch` tracks the one-at-a-time leg at every size, because it
+saves ABI crossings rather than Office work.
+
+The comparison legs have to run in process. Driven from PowerShell they read
+about 5.9 ms per Shape - a cross-process Automation round trip, not Office - and
+make the range look 25 to 155 times faster for reasons that are nothing to do
+with the work being compared.
 
 ### The gate is not optional
 
@@ -250,42 +277,51 @@ A ShapeRange belongs to one slide's `Shapes` collection, so there is no
 cross-slide range to hand this path. Filling several slides means one call per
 slide, and the ~0.12 ms fixed cost is paid once per slide.
 
-### Undo takes one step per member
+### Undo is one entry, like Office's own
 
 Counted rather than guessed at: a marker Shape goes on the undo stack first, then
 Undo is repeated until the marker disappears, which gives the number of entries
 an operation added.
 
-| Operation | undo entries | fills reverted after |
-|---|---:|---|
-| nothing | 0 | — |
-| N x native `BB_ApplyTexture` | N | N undos |
-| native apply to a range of N | N + 2 | N + 2 undos |
-| Office's own `ShapeRange.Fill.UserPicture` | 1 | 1 undo |
+| Operation | 4 members | 8 | 16 |
+|---|---:|---:|---:|
+| nothing | 0 | 0 | 0 |
+| N x `BB_ApplyTexture` | 4 | 8 | 16 |
+| **`BB_ApplyTextureRange`** | **1** | **1** | **1** |
+| Office's own `ShapeRange.Fill.UserPicture` | 1 | 1 | 1 |
 
-The fills do come back, completely, and the same number of Redos restores them.
-So this is a **granularity** difference, not a correctness hole: Office coalesces
-a range fill into a single entry above the receiver, and reaching the receiver
-directly leaves one entry per member plus two.
+One range apply is one undo entry, one Undo reverts the whole fill, and one Redo
+restores it - the same as the public Office operation, at every size tested and
+for a range of five different Shape classes. The path that leaves an entry per
+Shape is the per-Shape one, which is what it has always done.
 
-It is still not something to make the default - a user who fills 100 Shapes and
-presses Ctrl+Z once sees one Shape revert - but it is a smaller objection than
-"no undo", and nothing is lost. Note also that the per-Shape path has always
-behaved this way: filling N Shapes one at a time leaves N entries too.
+This measurement was wrong twice before it was right, both times for the same
+reason: it was not counting entries, it was watching fills. Pressing Undo five
+times against a six-entry stack looked like "no undo at all", and a later count
+of N + 2 was taken while the *benchmark* harness was under test - which also
+applied to every member individually, and left those entries behind. Counting
+against the public entry point, with a marker, gives the table above.
 
-An earlier run of this measurement used fewer Undos than there were entries and
-read the result as "no undo entry at all". The number above is what repeated
-Undo actually does.
+Undo and Redo change fills without telling BlipBridge, like any change made
+outside it, so the per-Shape record can be stale afterwards and
+`BB_InvalidateShape` is the remedy - the same rule as for any external change.
+
+### It is a public API
+
+`BB_ApplyTextureRange(shapeRange, texture, &applied)`, ABI 4, with
+`BlipBridge.ApplyTextureRange(shapes As PowerPoint.ShapeRange, texture)` in the
+VBA wrapper. `docs/c_abi.md` has the contract; the section above has the reason
+the argument is a ShapeRange and not a list of Shapes.
 
 ## 6. What is production-safe
 
 | Change | Status |
 |---|---|
-| `BB_ApplyTextureIfChanged` | Ready. Additive export, ABI 3 unchanged, 33 assertions in `tools/test_apply_if_changed.ps1` |
+| `BB_ApplyTextureRange` | Ready. New export, ABI 4, 46 assertions in `tools/test_range_apply.ps1` |
+| `BB_ApplyTextureIfChanged` | Ready. New export, 33 assertions in `tools/test_apply_if_changed.ps1` |
 | One shared per-Shape record | Ready, and fixes a latent wrong-picture case in the shipped code |
 | Pinned Office modules | Ready. Strictly stronger than what it replaces |
 | Freeform keying | Ready. `ConvertToShape` reports a ShapeRange as its Parent; those Shapes could never be keyed, in either cache |
-| ShapeRange apply | **Research only**, on the undo granularity above |
 | `ApplyRoute::Split` / `ChangeOnly` | Research only. Never reachable from the C ABI |
 
 ## 7. Rejected, and why
@@ -305,34 +341,39 @@ Undo actually does.
 
 ## 8. Recommendation
 
-Ship `BB_ApplyTextureIfChanged`, the shared record, the module pinning and the
-Freeform keying fix as a minor release. They are additive, they are tested, and
-one of them fixes a wrong-picture case that exists in v0.5.0 today.
+Everything in §6 is ready. The question is only whether it goes out in one
+release or two.
 
-Keep the ShapeRange apply as research, but it is closer to shippable than it
-first looked. It is the largest remaining win by a wide margin - 3.5x at 32
-Shapes, 3.8x at 100 - the fills are correct, they persist, ineligible members are
-refused before anything internal is touched, and Undo does restore them. What is
-missing is only that Office coalesces its own range fill into one undo entry and
-this leaves N + 2.
+**Recommended: one release, v0.6.0, ABI 4, with the changelog separating the two
+halves** - which it does. Two releases would mean running the whole validation
+matrix twice for the same code, and the correctness fixes are not independently
+urgent: the wrong-picture case needs a caller that mixes `BB_ApplyTexture` with
+`BB_ApplyPicture` on the same Shape, and the Freeform one costs a redundant apply
+rather than a wrong result. Neither is a reason to hold the release, and neither
+is a reason to ship twice.
 
-Two ways forward, in order of appeal:
+If a v0.5.1 is wanted anyway - because someone is hitting the mixed-API case
+today, or because separating a fix release from a feature release is worth
+something on its own - the two fixes are independent of the range work and can be
+cherry-picked: the shared per-Shape record and the Freeform key. Both land in
+files the range API does not touch.
 
-1. Find where PPCORE coalesces. `ShapeRange.Fill.UserPicture` produces exactly
-   one entry, so the scope exists and is opened above the receiver. If it can be
-   opened around a native range apply, the path becomes equivalent to Office's
-   own and can ship as `BB_ApplyTextureToRange`.
+### Known, and deliberately not fixed here
 
-   A first pass through the receiver's commit did not find it, and is recorded
-   here so the next attempt does not repeat it. The commit (`oart.dll+0x1B88B0`)
-   gates its journalling on the receiver's own `vtable[+0x48]`
-   (`oart.dll+0x1B87D0`), which begins with a *global* test - `cmpq $0,
-   [oart+0xD4AEA8]` - rather than anything per receiver, and the branch taken
-   when it fails leads to an assertion helper, not to an alternative recording.
-   So the coalescing is not a flag on this path; it is a scope opened above it,
-   and finding it means following PPCORE rather than OART. That is a research
-   thread of its own size, not a loose end.
-2. Ship it as an explicitly separate API whose documented weaker semantics are
-   the undo granularity, per the rule that such a difference may not be silent.
-   A caller filling a whole slide every frame may not care; one editing a deck
-   by hand would.
+The undo *entry* matches Office, but BlipBridge cannot see a fill that Undo or
+Redo changes, so the per-Shape skip record can be stale after one.
+`BB_InvalidateShape` is the documented remedy, and it is the same rule that
+already applies to a fill changed by another add-in, a paste or a theme change.
+
+### Future research
+
+**Investigate PPCORE ShapeRange undo coalescing.** Not a blocker any more - the
+range path already produces one entry - but the mechanism is still unknown, and
+knowing it would settle whether the match is guaranteed or incidental.
+
+Where a first pass stopped, so a second does not repeat it: the commit
+(`oart.dll+0x1B88B0`) gates its journalling on the receiver's `vtable[+0x48]`
+(`oart.dll+0x1B87D0`), which opens with a *global* test - `cmpq $0,
+[oart+0xD4AEA8]` - rather than anything per receiver, and the branch taken when
+that fails leads to an assertion helper rather than an alternative recording. So
+the behaviour is not a flag on this path. Following it means following PPCORE.

@@ -93,6 +93,16 @@ void ApplyTextureRef(IDispatch* fill, const TextureRef& texture);
 std::uint64_t TextureIdOf(const TextureRef& texture);
 
 /**
+ * Adds @p times to @p texture's apply count.
+ *
+ * The count exists so a test can show creations staying far below applies -
+ * that is what proves the image is being reused rather than rebuilt. A range
+ * apply is one private call that fills many Shapes, so it counts one per member
+ * and the diagnostic keeps meaning what it meant.
+ */
+void CountTextureApplies(const TextureRef& texture, unsigned long times);
+
+/**
  * Resolves a public handle to the image it references.
  *
  * Throws bb::Error if the handle is unknown or was released. Used by the stage

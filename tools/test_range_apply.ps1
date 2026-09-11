@@ -15,9 +15,9 @@ So this asserts, in order:
   refusal     one Connector, Line or Table in the range refuses the whole range
   gating      and refuses it *before* the private apply, proved by the entry
               counter rather than by PowerPoint having survived
-  undo        that the range fill is fully reverted by repeated Undo, but takes
-              one entry per member plus two rather than Office's single entry,
-              with a single-Shape apply in the same document as the control
+  undo        that one Undo reverts a whole range fill and one Redo restores it,
+              for a uniform range and for a mixed-class range, with a
+              single-Shape apply in the same document as the control
   persistence the fills survive save and reopen
   mixed       a range whose members carry different images all end up with the
               one that was applied
@@ -26,6 +26,8 @@ So this asserts, in order:
   classes     one range mixing AutoShape, TextBox, WordArt, Freeform and Callout
   groups      a group in the range is filled, and never skipped afterwards
   slides      a ShapeRange cannot span slides, so this path is per slide
+  coherence   ApplyPicture, ApplyTexture and ApplyTextureRange all write the
+              same record, in every order, so none leaves a stale claim
 
 Everything runs in PowerPoint through the research surface, which drives the
 same private path the C ABI does.
@@ -86,13 +88,13 @@ try {
     }
     $range = $slide.Shapes.Range($names)
     Assert ((Count-Filled $slide $names) -eq 0) 'none of the eight Shapes starts with a picture fill'
-    $null = $engine.ApplyTextureToRange($range, $handleA, 1)
+    $null = $engine.ApplyTextureRange($range, $handleA)
     Assert ((Count-Filled $slide $names) -eq 8) 'one apply against the range fills all eight'
 
     # --- mixed starting state -------------------------------------------------
     $null = $engine.ApplyTexture($slide.Shapes.Item('Member0'), $handleB)
     $null = $engine.ApplyTexture($slide.Shapes.Item('Member3'), $handleB)
-    $null = $engine.ApplyTextureToRange($range, $handleA, 1)
+    $null = $engine.ApplyTextureRange($range, $handleA)
     Assert ((Count-Filled $slide $names) -eq 8) 'a range whose members carried different images ends up filled'
     Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('Member0'), $handleA)) 'skipped') -eq '1') `
         'the range apply recorded what every member now carries, so a later IfChanged skips'
@@ -103,7 +105,8 @@ try {
     foreach ($case in @(
             @{ Name = 'Connector'; Make = { $slide.Shapes.AddConnector(1, 10, 300, 200, 350) } },
             @{ Name = 'Line'; Make = { $slide.Shapes.AddLine(10, 380, 200, 420) } },
-            @{ Name = 'Table'; Make = { $slide.Shapes.AddTable(2, 2, 250, 250, 200, 80) } })) {
+            @{ Name = 'Table'; Make = { $slide.Shapes.AddTable(2, 2, 250, 250, 200, 80) } },
+            @{ Name = 'Chart'; Make = { $slide.Shapes.AddChart2(-1, 51, 250, 150, 200, 120) } })) {
         $extra = & $case.Make
         $extra.Name = "Bad$($case.Name)"
         $mixed = $slide.Shapes.Range($names + $extra.Name)
@@ -111,7 +114,7 @@ try {
         $before = Get-ApplyEntries $engine $slide.Shapes.Item('Member0')
         $refused = $false
         $message = ''
-        try { $null = $engine.ApplyTextureToRange($mixed, $handleB, 1) }
+        try { $null = $engine.ApplyTextureRange($mixed, $handleB) }
         catch { $refused = $true; $message = $_.Exception.Message }
         Assert $refused "a range containing a $($case.Name) is refused"
         Assert ($message -match 'Range member') 'and the message names which member'
@@ -132,28 +135,26 @@ try {
     }
     $undoRange = $slide.Shapes.Range($undoNames)
     Assert ((Count-Filled $slide $undoNames) -eq 0) 'four fresh Shapes, none filled'
-    $null = $engine.ApplyTextureToRange($undoRange, $handleA, 1)
+    $null = $engine.ApplyTextureRange($undoRange, $handleA)
     Assert ((Count-Filled $slide $undoNames) -eq 4) 'the range apply fills all four'
 
     <#
-    The range apply is undoable, but not in one step.
+    One range apply is one undo entry, the same as Office's own range fill.
 
     Counted by putting a marker Shape on the undo stack first and undoing until
-    the marker goes, so the entries an operation adds can be counted rather than
-    guessed at:
+    the marker goes, which measures the entries an operation added rather than
+    guessing from what Undo appears to do:
 
-        operation                                    entries   fills reverted
-        nothing                                            0   -
-        4 x native ApplyTexture                            4   after 4 undos
-        native apply to a range of 4                       6   after 6 undos
-        Office's own ShapeRange.Fill.UserPicture            1   after 1 undo
+        operation                                  4 members  8  16
+        nothing                                            0  0   0
+        N x BB_ApplyTexture                                4  8  16
+        BB_ApplyTextureRange                               1  1   1
+        Office's own ShapeRange.Fill.UserPicture           1  1   1
 
-    So the fills do come back, and completely - this is a granularity difference,
-    not a correctness hole. Office coalesces a range fill into a single entry
-    above the receiver; going straight to the receiver leaves one entry per
-    member plus two. A user who fills 100 Shapes and presses Ctrl+Z once would
-    see one Shape revert, which is a poor thing to ship even though nothing is
-    lost.
+    So the range path matches the public Office operation exactly, and the
+    per-Shape path is the one that leaves an entry per Shape - which it always
+    has. The check below covers a uniform range and the mixed-class range, so
+    the "one entry" claim is not resting on a single Shape type.
     #>
     $presentation.Windows.Item(1).Activate()
     $app.StartNewUndoEntry()
@@ -162,12 +163,10 @@ try {
         $app.CommandBars.ExecuteMso('Undo')
         if ((Count-Filled $slide $undoNames) -eq 0) { $undoCount = $u; break }
     }
-    Assert ($undoCount -gt 0) "the range fill is fully reverted by repeated Undo (took $undoCount)"
-    Assert ($undoCount -gt 1) `
-        "and NOT in one step - $undoCount entries for 4 members, where Office's own range fill takes 1"
-
-    for ($u = 1; $u -le $undoCount; $u++) { $app.CommandBars.ExecuteMso('Redo') }
-    Assert ((Count-Filled $slide $undoNames) -eq 4) 'and the same number of Redos restores all four'
+    Assert ($undoCount -eq 1) `
+        "one Undo reverts the whole range fill (took $undoCount)"
+    $app.CommandBars.ExecuteMso('Redo')
+    Assert ((Count-Filled $slide $undoNames) -eq 4) 'and one Redo restores all four'
 
     # The control, in the same document and the same undo stack: a single-Shape
     # native apply is undone by one Undo, which is what our per-Shape path has
@@ -202,16 +201,45 @@ try {
     $callout = $slide.Shapes.AddShape(106, 340, 440, 50, 50); $callout.Name = 'MixCallout'
     $mixedNames += $callout.Name
 
-    $null = $engine.ApplyTextureToRange($slide.Shapes.Range($mixedNames), $handleA, 1)
+    $null = $engine.ApplyTextureRange($slide.Shapes.Range($mixedNames), $handleA)
     Assert ((Count-Filled $slide $mixedNames) -eq $mixedNames.Count) `
         "a range mixing AutoShape, TextBox, WordArt, Freeform and Callout fills all $($mixedNames.Count)"
 
     # Alternating images through the range, which is what a caller animating a
     # whole slide would do.
-    $null = $engine.ApplyTextureToRange($slide.Shapes.Range($mixedNames), $handleB, 1)
+    $null = $engine.ApplyTextureRange($slide.Shapes.Range($mixedNames), $handleB)
     Assert ((Count-Filled $slide $mixedNames) -eq $mixedNames.Count) 'and again with a second image'
     Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('MixArt'), $handleB)) 'skipped') -eq '1') `
         'the second image is what the record names'
+
+    # One entry for a range of five different classes too, so the claim is not
+    # resting on a range of identical AutoShapes. Counted with a marker Shape
+    # rather than by watching the fills: these are filled already, so Fill.Type
+    # cannot tell one image from another.
+    $presentation.Windows.Item(1).Activate()
+    $app.StartNewUndoEntry()
+    $mixedMarker = $slide.Shapes.AddShape(1, 480, 200, 40, 40)
+    $mixedMarker.Name = 'MixMarker'
+    $app.StartNewUndoEntry()
+    $null = $engine.ApplyTextureRange($slide.Shapes.Range($mixedNames), $handleA)
+    $mixedUndo = -1
+    for ($u = 1; $u -le 12; $u++) {
+        $app.CommandBars.ExecuteMso('Undo')
+        $markerGone = $true
+        try { $null = $slide.Shapes.Item('MixMarker'); $markerGone = $false } catch { }
+        if ($markerGone) { $mixedUndo = $u - 1; break }
+    }
+    Assert ($mixedUndo -eq 1) `
+        "a range of five different classes is also one undo entry (counted $mixedUndo)"
+    for ($u = 1; $u -le 2; $u++) { $app.CommandBars.ExecuteMso('Redo') }
+    Assert ((Count-Filled $slide $mixedNames) -eq $mixedNames.Count) 'and Redo restores them'
+
+    # Undo and Redo change fills without telling BlipBridge, exactly like any
+    # other change made behind its back, so the record can be stale afterwards.
+    # InvalidateShape is the documented remedy and is what this asserts.
+    $null = $engine.InvalidateShape($slide.Shapes.Item('MixArt'))
+    Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('MixArt'), $handleA)) 'skipped') -eq '0') `
+        'InvalidateShape clears a record left stale by Undo'
 
     # --- a group in the range -------------------------------------------------
     # msoGroup has a validated native path, so a group is filled rather than
@@ -221,7 +249,7 @@ try {
     $g2 = $slide.Shapes.AddShape(1, 470, 440, 40, 40); $g2.Name = 'G2'
     $group = $slide.Shapes.Range(@('G1', 'G2')).Group()
     $group.Name = 'MixGroup'
-    $withGroup = $engine.ApplyTextureToRange($slide.Shapes.Range(@('MixAuto', 'MixGroup')), $handleA, 1)
+    $withGroup = $engine.ApplyTextureRange($slide.Shapes.Range(@('MixAuto', 'MixGroup')), $handleA)
     Assert ($null -ne $withGroup) 'a range containing a group is accepted, not refused'
     Assert ($slide.Shapes.Item('MixGroup').Fill.Type -eq 6) 'and the group gets the picture fill'
     Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('MixGroup'), $handleA)) 'skipped') -eq '0') `
@@ -238,6 +266,69 @@ try {
     try { $null = $slide.Shapes.Range(@('MixAuto', 'FarShape')) } catch { $crossFailed = $true }
     Assert $crossFailed 'a ShapeRange cannot be built across two slides, so this path is per slide'
     $second.Delete()
+
+    # --- cache coherence ------------------------------------------------------
+    # Every API that writes a fill must update the same record, or one of them
+    # will skip on the strength of an image another one replaced. Each sequence
+    # below ends by asking for image A through the path that skips; the fill has
+    # to end up as A, and the middle call must not have left a claim that lets
+    # the last one do nothing.
+    $coherent = $slide.Shapes.AddShape(1, 420, 200, 60, 60)
+    $coherent.Name = 'Coherent'
+    $coherentRange = $slide.Shapes.Range(@('Coherent'))
+
+    <#
+    Each image has to be asked about through the API that owns it. A handle from
+    LoadTexture and the image ApplyPicture decodes from the same file are two
+    different images with two different internal ids - same picture, same bytes,
+    separate resources - so asking ApplyTextureIfChanged whether a Shape carries
+    "the file" would be asking the wrong question and would fail for a reason
+    that is not a bug.
+
+    So the closing ApplyPicture A is checked through the picture cache's own skip
+    counter: repeat it, and it must skip, which it can only do if the record
+    correctly says the Shape carries that image.
+    #>
+    function Get-Skipped($engine) {
+        return [int](Get-Field ($engine.PictureCacheStats()) 'skipped')
+    }
+
+    foreach ($sequence in @(
+            @{ Name = 'ApplyPicture A -> Range B -> ApplyPicture A';
+               Steps = { $null = $engine.ApplyPicture($coherent, $textureA)
+                         $null = $engine.ApplyTextureRange($coherentRange, $handleB)
+                         $null = $engine.ApplyPicture($coherent, $textureA) } },
+            @{ Name = 'ApplyTexture A -> Range B -> ApplyPicture A';
+               Steps = { $null = $engine.ApplyTexture($coherent, $handleA)
+                         $null = $engine.ApplyTextureRange($coherentRange, $handleB)
+                         $null = $engine.ApplyPicture($coherent, $textureA) } },
+            @{ Name = 'Range A -> ApplyTexture B -> ApplyPicture A';
+               Steps = { $null = $engine.ApplyTextureRange($coherentRange, $handleA)
+                         $null = $engine.ApplyTexture($coherent, $handleB)
+                         $null = $engine.ApplyPicture($coherent, $textureA) } })) {
+        & $sequence.Steps
+        Assert ($coherent.Fill.Type -eq 6) "$($sequence.Name): ends with a picture fill"
+
+        # The record says A: repeating A skips.
+        $before = Get-Skipped $engine
+        $null = $engine.ApplyPicture($coherent, $textureA)
+        Assert ((Get-Skipped $engine) -eq ($before + 1)) `
+            "$($sequence.Name): the record names A, so repeating A skips"
+
+        # And it does not say B: the middle call's image left no stale claim.
+        Assert ((Get-Field ($engine.ApplyTextureIfChanged($coherent, $handleB)) 'skipped') -eq '0') `
+            "$($sequence.Name): and B is not skipped on a stale claim"
+    }
+
+    # And the range's own record, over more than one member: a range apply must
+    # leave every member claiming what the range put on it.
+    $null = $engine.ApplyTextureRange($slide.Shapes.Range($names), $handleA)
+    $null = $engine.ApplyPicture($slide.Shapes.Item('Member2'), $textureB)
+    Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('Member2'), $handleA)) 'skipped') -eq '0') `
+        'ApplyPicture on one member clears that member from the range apply record'
+    Assert ((Get-Field ($engine.ApplyTextureIfChanged($slide.Shapes.Item('Member3'), $handleA)) 'skipped') -eq '1') `
+        'and leaves the other members alone'
+    $coherent.Delete()
 
     # --- persistence ----------------------------------------------------------
     $presentation.SaveAs($saved, $ppSaveAsDefault)

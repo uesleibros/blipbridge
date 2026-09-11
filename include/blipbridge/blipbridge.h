@@ -104,7 +104,7 @@ extern "C" {
 #define BB_VERSION_MINOR 5
 #define BB_VERSION_PATCH 0
 
-#define BB_ABI_VERSION 3u
+#define BB_ABI_VERSION 4u
 
 /**
  * Opaque texture handle.
@@ -153,6 +153,7 @@ typedef int32_t BB_Result;
 #define BB_CAP_RAW_PIXELS 0x0020u      /* BB_LoadTexturePixels is implemented  */
 #define BB_CAP_APPLY_PICTURE 0x0040u   /* BB_ApplyPicture and its caches exist */
 #define BB_CAP_SCALED_PIXELS 0x0080u   /* BB_LoadTexturePixelsScaled is present */
+#define BB_CAP_RANGE_APPLY 0x0100u     /* BB_ApplyTextureRange fills a ShapeRange */
 
 /*
  * Resampling filters for BB_LoadTexturePixelsScaled.
@@ -243,6 +244,49 @@ BB_API BB_Result BB_CALL BB_ApplyTexture(void* shape, BB_Handle texture);
 BB_API BB_Result BB_CALL BB_ApplyTextureIfChanged(void* shape,
                                                   BB_Handle texture,
                                                   int32_t* skipped);
+
+/**
+ * Applies @p texture to every Shape in one PowerPoint ShapeRange, in one
+ * operation.
+ *
+ * @p shapeRange is a `ShapeRange` - `ObjPtr(Slide.Shapes.Range(...))` from VBA -
+ * borrowed for the call and never retained. It is not a `Shape`: a Shape cannot
+ * answer `Count` and is refused with a message saying so. @p applied, which may
+ * be `NULL`, receives how many member Shapes were filled.
+ *
+ * This is **not** a loop over BB_ApplyTexture, and it is not BB_ApplyTextureBatch
+ * with different arguments. It is one cached texture, one ShapeRange, and one
+ * apply through Office's own range receiver - which is what makes it faster
+ * rather than merely tidier. Measured on the validated build: 1.876 ms for 32
+ * Shapes against 6.650 ms one at a time, 5.549 ms for 100 against 20.935 ms.
+ *
+ * **All or nothing.** Every member is classified before any internal object is
+ * touched. One member without a validated native picture-fill path - a
+ * Connector, a Line, a Chart, a Table - refuses the whole call with nothing
+ * applied and the private backend never entered. The error names which member.
+ *
+ * **One slide.** A PowerPoint ShapeRange belongs to one slide's `Shapes`
+ * collection and cannot span slides, so neither can this. Filling Shapes on
+ * several slides is one call per slide, and the fixed cost is paid per slide.
+ *
+ * **Undo.** One range apply is one undo entry, and one Undo reverts the whole
+ * fill - the same as Office's own `ShapeRange.Fill.UserPicture`. Counted with a
+ * marker Shape on the undo stack at 4, 8 and 16 members and on a range of five
+ * different Shape classes; filling the same Shapes one at a time leaves one
+ * entry each, which is what `BB_ApplyTexture` has always done.
+ *
+ * Undo and Redo change fills without telling BlipBridge, like any change made
+ * outside it, so the per-Shape record used by `BB_ApplyTextureIfChanged` can be
+ * stale afterwards. `BB_InvalidateShape` is the remedy, as for any other
+ * external change.
+ *
+ * Groups may be members and are filled. They are deliberately never remembered
+ * for the `BB_ApplyTextureIfChanged` skip, because a group's fill and its
+ * children's fills change each other.
+ */
+BB_API BB_Result BB_CALL BB_ApplyTextureRange(void* shapeRange,
+                                              BB_Handle texture,
+                                              uint32_t* applied);
 
 /**
  * Fills many Shapes in one call, to avoid a language-boundary crossing per

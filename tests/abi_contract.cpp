@@ -50,6 +50,7 @@ struct Api {
     BB_Result(BB_CALL* LoadTexture)(const uint8_t*, uint32_t, BB_Handle*) = nullptr;
     BB_Result(BB_CALL* ApplyTexture)(void*, BB_Handle) = nullptr;
     BB_Result(BB_CALL* ApplyTextureIfChanged)(void*, BB_Handle, int32_t*) = nullptr;
+    BB_Result(BB_CALL* ApplyTextureRange)(void*, BB_Handle, uint32_t*) = nullptr;
     BB_Result(BB_CALL* ApplyTextureBatch)(void* const*,
                                           const BB_Handle*,
                                           uint32_t,
@@ -120,6 +121,7 @@ int wmain(int argc, wchar_t** argv) {
     Resolve(api, api.LoadTexture, "BB_LoadTexture");
     Resolve(api, api.ApplyTexture, "BB_ApplyTexture");
     Resolve(api, api.ApplyTextureIfChanged, "BB_ApplyTextureIfChanged");
+    Resolve(api, api.ApplyTextureRange, "BB_ApplyTextureRange");
     Resolve(api, api.ApplyTextureBatch, "BB_ApplyTextureBatch");
     Resolve(api, api.ReleaseTexture, "BB_ReleaseTexture");
     Resolve(api, api.ClearTextures, "BB_ClearTextures");
@@ -174,6 +176,12 @@ int wmain(int argc, wchar_t** argv) {
         // A caller that reads the flag after a failure must not see a stale 1 and
         // conclude the Shape already had the picture.
         Check(skipped == 0, "ApplyTextureIfChanged zeroes the skip flag before doing anything");
+    }
+    {
+        uint32_t applied = 7;
+        Check(api.ApplyTextureRange(nullptr, 1, &applied) == BB_E_NOT_INITIALIZED,
+              "ApplyTextureRange before Init reports BB_E_NOT_INITIALIZED");
+        Check(applied == 0, "ApplyTextureRange zeroes its count before doing anything");
     }
     {
         const uint16_t path[] = {L'x', 0};
@@ -233,6 +241,20 @@ int wmain(int argc, wchar_t** argv) {
         Check(skipped == 0, "and reports no skip when it refused");
         Check(api.ApplyTextureIfChanged(nullptr, 1, nullptr) == BB_E_INVALID_ARG,
               "the skip flag is optional");
+    }
+    {
+        // The range entry refuses the same arguments the single one does. It
+        // takes a ShapeRange rather than a Shape, but a null is a null and a
+        // zero handle is never valid.
+        uint32_t applied = 7;
+        Check(api.ApplyTextureRange(nullptr, 1, &applied) == BB_E_INVALID_ARG,
+              "ApplyTextureRange rejects a null ShapeRange");
+        Check(api.ApplyTextureRange(reinterpret_cast<void*>(&byte), 0, &applied) ==
+                  BB_E_INVALID_HANDLE,
+              "ApplyTextureRange rejects handle 0");
+        Check(applied == 0, "and reports no Shapes filled when it refused");
+        Check(api.ApplyTextureRange(nullptr, 1, nullptr) == BB_E_INVALID_ARG,
+              "the filled count is optional");
     }
 
     /*
