@@ -284,6 +284,19 @@ try {
     Assert $crossFailed 'a ShapeRange cannot be built across two slides, so this path is per slide'
     $second.Delete()
 
+    # --- a Shape is not a ShapeRange ------------------------------------------
+    # Passing one must say so rather than being quietly reinterpreted as a range
+    # of one: the two APIs mean different things and a caller who mixed them up
+    # needs to be told which one they wanted.
+    $lone = $slide.Shapes.Item('Member0')
+    $refusedShape = $false
+    $shapeMessage = ''
+    try { $null = $engine.ApplyTextureRange($lone, $handleA) }
+    catch { $refusedShape = $true; $shapeMessage = $_.Exception.Message }
+    Assert $refusedShape 'a Shape passed where a ShapeRange belongs is refused'
+    Assert ($shapeMessage -match 'ShapeRange') 'and the message says it wanted a ShapeRange'
+    Assert ($shapeMessage -match 'BB_ApplyTexture') 'and names the call that does take a Shape'
+
     # --- cache coherence ------------------------------------------------------
     # Every API that writes a fill must update the same record, or one of them
     # will skip on the strength of an image another one replaced. Each sequence
