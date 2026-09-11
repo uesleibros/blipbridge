@@ -53,6 +53,7 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"ApplyTextureRange", DispatchId::ApplyTextureRange},
     {L"AbiCapabilities", DispatchId::AbiCapabilities},
     {L"WarpApplyQuad", DispatchId::WarpApplyQuad},
+    {L"ProbeDynamicTexture", DispatchId::ProbeDynamicTexture},
     {L"PixelTextureExperiment", DispatchId::PixelTextureExperiment},
     {L"BenchmarkPixelLoad", DispatchId::BenchmarkPixelLoad},
     {L"ProfileFillStages", DispatchId::ProfileFillStages},

@@ -44,6 +44,7 @@ enum class DispatchId : DISPID {
     ApplyTextureRange,
     AbiCapabilities,
     WarpApplyQuad,
+    ProbeDynamicTexture,
     PixelTextureExperiment,
     BenchmarkPixelLoad,
     ProfileFillStages,

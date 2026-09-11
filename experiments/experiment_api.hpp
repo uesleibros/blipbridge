@@ -123,6 +123,14 @@ std::wstring applyTextureToRange(IDispatch* range, long handle, long iterations)
 std::wstring warpApplyQuadFromFile(IDispatch* shape, const std::wstring& path, SAFEARRAY* points);
 
 /**
+ * Research: does GFX copy a raw pixel buffer when it makes a cached image, or
+ * reference it? The whole dynamic-texture question turns on the answer. Steps:
+ * 0 create and apply, 1 mutate the buffer, 2 re-apply the same image, 3 release.
+ * See dynamic_probe.cpp.
+ */
+std::wstring probeDynamicTexture(IDispatch* shape, long step);
+
+/**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.

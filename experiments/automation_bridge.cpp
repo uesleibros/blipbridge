@@ -101,6 +101,8 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(benchmarkTextureBatch(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
                          .c_str());
+    case DispatchId::ProbeDynamicTexture:
+        return Value(probeDynamicTexture(target.obj(), arguments.At(1).integer()).c_str());
     case DispatchId::WarpApplyQuad: {
         auto points = arguments.At(2);
         if (points.v.vt != (VT_ARRAY | VT_R8) && points.v.vt != (VT_ARRAY | VT_VARIANT)) {

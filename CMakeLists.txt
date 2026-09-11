@@ -130,6 +130,7 @@ set(BB_RESEARCH_SOURCES
     experiments/exp_internal_blip/transaction_split.cpp
     experiments/exp_internal_blip/range_apply.cpp
     experiments/exp_internal_blip/quad_apply.cpp
+    experiments/exp_internal_blip/dynamic_probe.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
     experiments/exp_internal_blip/shape_compatibility.cpp
@@ -230,6 +231,13 @@ if(BUILD_TESTING)
                    src/image/warp.cpp src/image/resample.cpp)
     target_link_options(bb_warp_contract PRIVATE -static -static-libgcc -static-libstdc++)
     add_test(NAME warp_contract COMMAND bb_warp_contract)
+
+    # A timing run, not an assertion: built so it cannot rot, never registered
+    # as a test, because a busy runner must not fail a measurement.
+    add_executable(bb_image_benchmark tests/image_benchmark.cpp src/image/pipeline.cpp
+                   src/image/decode.cpp src/image/resample.cpp src/image/warp.cpp)
+    target_link_libraries(bb_image_benchmark PRIVATE ole32 oleaut32 windowscodecs)
+    target_link_options(bb_image_benchmark PRIVATE -static -static-libgcc -static-libstdc++)
 
     # A timing run, not an assertion: built so it cannot rot, but never added as
     # a test, because a busy runner must not turn a measurement into a failure.
