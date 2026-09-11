@@ -68,6 +68,7 @@ struct BackendResult {
 struct BackendCapabilities {
     bool applyPicture = false; ///< BB_ApplyPicture and its caches are usable
     bool rangeApply = false;   ///< BB_ApplyTextureRange fills a whole ShapeRange
+    bool imagePipeline = false; ///< BB_Image, crop/transform/scale and quad warp
     bool scaledPixels = false; ///< LoadTexturePixelsScaled is implemented
     bool nativeBackend = false;
     bool memoryImage = false;

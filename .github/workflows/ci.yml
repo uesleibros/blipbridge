@@ -170,6 +170,18 @@ jobs:
             BB_ApplyTextureBatch
             BB_ApplyTextureIfChanged
             BB_ApplyTextureRange
+            BB_LoadImage
+            BB_LoadImageFromFile
+            BB_LoadImagePixels
+            BB_GetImageSize
+            BB_ReleaseImage
+            BB_ClearImages
+            BB_GetImageCount
+            BB_CreateTextureFromImage
+            BB_WarpImageQuad
+            BB_ApplyImageQuad
+            BB_LoadTextureEx
+            BB_LoadTextureFromFileEx
             BB_ReleaseTexture
             BB_ClearTextures
             BB_GetTextureCount
@@ -255,6 +267,35 @@ jobs:
               }
 
               Write-Host "ABI $headerAbi exposes BB_ApplyTextureRange and BB_CAP_RANGE_APPLY."
+          }
+
+          <#
+            ABI 5 added the CPU image resource and the quad warp. Same reasoning
+            as above: a build claiming 5 without them would advertise a
+            capability and then not export it.
+          #>
+          if ([int]$headerAbi -ge 5) {
+              foreach ($required in @('BB_LoadImage', 'BB_WarpImageQuad', 'BB_ApplyImageQuad',
+                                      'BB_LoadTextureEx', 'BB_CAP_IMAGE_PIPELINE',
+                                      'BB_ImageRequest', 'BB_PointF')) {
+                  if ($header -notmatch [regex]::Escape($required)) {
+                      throw "ABI $headerAbi header is missing $required."
+                  }
+              }
+
+              if ($header -notmatch '#define\s+BB_CAP_IMAGE_PIPELINE\s+0x0200u') {
+                  throw "BB_CAP_IMAGE_PIPELINE must be 0x0200u."
+              }
+
+              foreach ($required in @('LoadImage', 'WarpImageQuad', 'ApplyImageQuad',
+                                      'LoadTextureScaled', 'BlipBridgeImage',
+                                      'BlipBridgePoint', 'BB_CAP_IMAGE_PIPELINE')) {
+                  if ($wrapper -notmatch [regex]::Escape($required)) {
+                      throw "BlipBridge.bas is missing $required."
+                  }
+              }
+
+              Write-Host "ABI $headerAbi exposes the image pipeline and BB_CAP_IMAGE_PIPELINE."
           }
 
           <#

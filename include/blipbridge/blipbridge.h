@@ -101,10 +101,10 @@ extern "C" {
  * changes, and docs/c_abi.md for why the two are separate.
  */
 #define BB_VERSION_MAJOR 0
-#define BB_VERSION_MINOR 6
+#define BB_VERSION_MINOR 7
 #define BB_VERSION_PATCH 0
 
-#define BB_ABI_VERSION 4u
+#define BB_ABI_VERSION 5u
 
 /**
  * Opaque texture handle.
@@ -154,6 +154,7 @@ typedef int32_t BB_Result;
 #define BB_CAP_APPLY_PICTURE 0x0040u   /* BB_ApplyPicture and its caches exist */
 #define BB_CAP_SCALED_PIXELS 0x0080u   /* BB_LoadTexturePixelsScaled is present */
 #define BB_CAP_RANGE_APPLY 0x0100u     /* BB_ApplyTextureRange fills a ShapeRange */
+#define BB_CAP_IMAGE_PIPELINE 0x0200u  /* BB_Image, crop/transform/scale, quad warp */
 
 /*
  * Resampling filters for BB_LoadTexturePixelsScaled.
@@ -287,6 +288,189 @@ BB_API BB_Result BB_CALL BB_ApplyTextureIfChanged(void* shape,
 BB_API BB_Result BB_CALL BB_ApplyTextureRange(void* shapeRange,
                                               BB_Handle texture,
                                               uint32_t* applied);
+
+/* ---------------------------------------------------------------------------
+ * Images: the CPU-side resource
+ *
+ * A BB_Handle texture is an *Office* resource. It holds what Office needs and
+ * no pixels, which is why nothing can crop or warp one. Processing therefore
+ * gets its own resource: a BB_Image is decoded BGRA32 that BlipBridge owns, on
+ * the CPU, with no Office in it.
+ *
+ * The division is deliberate and neither side leaks into the other:
+ *
+ *     BB_LoadTextureEx        encoded -> texture      one shot, no repeat work
+ *     BB_LoadImage            encoded -> image        decode once
+ *     BB_WarpImageQuad        image   -> texture      warp many times
+ *
+ * A texture never starts retaining pixels behind your back, and an image never
+ * touches a Shape. They convert when you ask them to.
+ *
+ * Image handles come from their own numbering space, so passing a texture handle
+ * to an image call is refused rather than resolving to something unrelated.
+ * Neither space recycles a released handle.
+ * ------------------------------------------------------------------------- */
+
+/** An opaque CPU image handle. Zero is never valid. Release with BB_ReleaseImage. */
+typedef uint64_t BB_Image;
+
+/** Orientation changes. Every output pixel is exactly one input pixel. */
+#define BB_TRANSFORM_NONE 0u
+#define BB_TRANSFORM_FLIP_HORIZONTAL 1u
+#define BB_TRANSFORM_FLIP_VERTICAL 2u
+#define BB_TRANSFORM_ROTATE_90 3u  /* clockwise */
+#define BB_TRANSFORM_ROTATE_180 4u
+#define BB_TRANSFORM_ROTATE_270 5u /* clockwise, i.e. 90 anticlockwise */
+
+/**
+ * What to do to an image on the way in.
+ *
+ * The stages run in a fixed order - crop, then transform, then resize - and each
+ * switches itself off when unset, so a zeroed request changes nothing. Crop is
+ * first because a region is named in the source's own coordinates; transform is
+ * before resize so that the target size always describes what comes out.
+ *
+ * A zero crop width or height means the whole image. A zero target width or
+ * height means "whatever the earlier stages produced".
+ */
+typedef struct BB_ImageRequest {
+    uint32_t cropX;
+    uint32_t cropY;
+    uint32_t cropWidth;
+    uint32_t cropHeight;
+    uint32_t transform; /* BB_TRANSFORM_* */
+    uint32_t targetWidth;
+    uint32_t targetHeight;
+    uint32_t filter; /* BB_SCALE_* */
+} BB_ImageRequest;
+
+/** One quad corner, in the caller's own coordinate space. */
+typedef struct BB_PointF {
+    float x;
+    float y;
+} BB_PointF;
+
+/**
+ * Decodes @p bytes into a CPU image, applying @p request on the way.
+ *
+ * @p request may be NULL, which decodes and changes nothing. PNG, JPEG and BMP
+ * are tested; Windows decodes more formats and they will probably work, but an
+ * untested format is not a supported one.
+ *
+ * The returned handle is yours. Release it with BB_ReleaseImage.
+ */
+BB_API BB_Result BB_CALL BB_LoadImage(const uint8_t* bytes,
+                                      uint32_t length,
+                                      const BB_ImageRequest* request,
+                                      BB_Image* out);
+
+/** As BB_LoadImage, reading the file itself. @p path is UTF-16. */
+BB_API BB_Result BB_CALL BB_LoadImageFromFile(const uint16_t* path,
+                                              const BB_ImageRequest* request,
+                                              BB_Image* out);
+
+/** As BB_LoadImage, from raw BGRA32 you already hold. The bytes are copied. */
+BB_API BB_Result BB_CALL BB_LoadImagePixels(const uint8_t* pixels,
+                                            uint32_t width,
+                                            uint32_t height,
+                                            int32_t stride,
+                                            const BB_ImageRequest* request,
+                                            BB_Image* out);
+
+/** The image's dimensions in pixels. Either output pointer may be NULL. */
+BB_API BB_Result BB_CALL BB_GetImageSize(BB_Image image, uint32_t* width, uint32_t* height);
+
+/** Releases one image. A released handle stays stale for the life of the process. */
+BB_API BB_Result BB_CALL BB_ReleaseImage(BB_Image image);
+
+/** Releases every image. Textures are a different resource and are untouched. */
+BB_API BB_Result BB_CALL BB_ClearImages(void);
+
+/** How many images are currently held. */
+BB_API uint32_t BB_CALL BB_GetImageCount(void);
+
+/**
+ * Creates an Office texture from a CPU image.
+ *
+ * The image is unchanged and still yours; the texture is a new, separate,
+ * caller-owned resource to release with BB_ReleaseTexture. Nothing aliases.
+ */
+BB_API BB_Result BB_CALL BB_CreateTextureFromImage(BB_Image image, BB_Handle* out);
+
+/**
+ * Warps @p image onto four corners and returns it as a texture.
+ *
+ * This is the primitive. Decode once with BB_LoadImage, then warp as often as
+ * the quad moves - the decode is by far the expensive half, and this never
+ * repeats it.
+ *
+ * The points are the destination corners of the source image's own corners, in
+ * this order and never reordered behind you:
+ *
+ *     points[0] = source top-left
+ *     points[1] = source top-right
+ *     points[2] = source bottom-right
+ *     points[3] = source bottom-left
+ *
+ * Handing them in another order asks for a mirrored or crossed mapping and gets
+ * one, which is the only behaviour that lets you mirror something on purpose.
+ *
+ * The mapping is a true projective transform, so a trapezoid foreshortens the
+ * way perspective does rather than the way a shear does. The result is
+ * rasterised into the quad's bounding box with everything outside the quad left
+ * transparent, and it is sized to that box in the caller's own units.
+ *
+ * @p filter is BB_SCALE_NEAREST or BB_SCALE_BILINEAR. Bicubic is refused by
+ * name: sixteen taps per output pixel with a varying footprint is a cost this
+ * would be hiding rather than offering.
+ *
+ * Coordinates are in whatever unit you work in - only their relative geometry
+ * matters - but for the fill to land where you expect, the Shape's own geometry
+ * has to be that quad. BlipBridge does not move Shapes, and it does not read
+ * Shape.Nodes to find out where they are: you already know the points.
+ *
+ * Returns a new caller-owned texture. The image is untouched.
+ */
+BB_API BB_Result BB_CALL BB_WarpImageQuad(BB_Image image,
+                                          const BB_PointF* points,
+                                          uint32_t filter,
+                                          BB_Handle* out);
+
+/**
+ * Warps @p image onto four corners and applies it to @p shape in one call.
+ *
+ * Convenience over BB_WarpImageQuad plus BB_ApplyTexture plus BB_ReleaseTexture,
+ * for the common case where the warped result is used once. A caller who applies
+ * the same warp to several Shapes should use the primitive and keep the texture.
+ *
+ * The same Shape-class gate as BB_ApplyTexture runs before anything internal is
+ * touched.
+ */
+BB_API BB_Result BB_CALL BB_ApplyImageQuad(void* shape,
+                                           BB_Image image,
+                                           const BB_PointF* points,
+                                           uint32_t filter);
+
+/**
+ * Decodes @p bytes straight into a texture, applying @p request on the way.
+ *
+ * The efficient path for an image that needs processing once and no more: it
+ * never creates a CPU image, so nothing is retained beyond what Office holds.
+ * Use BB_LoadImage instead when the same picture will be processed repeatedly.
+ *
+ * @p request may be NULL, which makes this BB_LoadTexture with extra steps.
+ */
+BB_API BB_Result BB_CALL BB_LoadTextureEx(const uint8_t* bytes,
+                                          uint32_t length,
+                                          const BB_ImageRequest* request,
+                                          BB_Handle* out);
+
+/** As BB_LoadTextureEx, reading the file itself. @p path is UTF-16. */
+BB_API BB_Result BB_CALL BB_LoadTextureFromFileEx(const uint16_t* path,
+                                                  const BB_ImageRequest* request,
+                                                  BB_Handle* out);
+
+
 
 /**
  * Fills many Shapes in one call, to avoid a language-boundary crossing per

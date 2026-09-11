@@ -11,7 +11,7 @@ Attribute VB_Name = "BlipBridge"
 ' * Shapes are PowerPoint.Shape and texture handles are BlipBridgeTexture on both
 ' * architectures - no Object, no Variant, and no LongLong in any public signature.
 ' * @author UesleiDev
-' * @version ABI 4
+' * @version ABI 5
 ' * @remarks The architecture is selected from the PowerPoint process, not Windows.
 ' * Both native DLLs may safely live beside the same presentation.
 ' */
@@ -88,8 +88,11 @@ Public Const BB_CAP_SCALED_PIXELS As Long = &H80
 '/** @description ApplyTextureRange fills a whole ShapeRange in one apply. */
 Public Const BB_CAP_RANGE_APPLY As Long = &H100
 
+'/** @description BlipBridgeImage, crop/transform/scale, and quad warping are available. */
+Public Const BB_CAP_IMAGE_PIPELINE As Long = &H200
+
 '/** @description Public ABI version required by this VBA wrapper. */
-Private Const BB_EXPECTED_ABI As Long = 4
+Private Const BB_EXPECTED_ABI As Long = 5
 
 '/** @description Base VBA error number used when translating native failures. */
 Private Const BB_ERROR_BASE As Long = vbObjectError + 500
@@ -138,6 +141,74 @@ Public Type BlipBridgeTexture
     Low As Long
     High As Long
 End Type
+
+'/**
+' * @type BlipBridgeImage
+' * @brief An opaque handle to a decoded CPU image that BlipBridge owns.
+' * @description
+' *   Deliberately a different type from BlipBridgeTexture, because they are
+' *   different resources. A texture is what Office holds and has no pixels you
+' *   can reach. An image is decoded BGRA that stays on the CPU so it can be
+' *   cropped, flipped or warped repeatedly without decoding again.
+' *
+' *   Release one with ReleaseImage. Handles are never recycled, so a released
+' *   handle stays stale rather than coming back as a different image, and a
+' *   texture handle passed to an image call is refused rather than mistaken.
+' */
+Public Type BlipBridgeImage
+    Low As Long
+    High As Long
+End Type
+
+'/**
+' * @type BlipBridgeImageRequest
+' * @brief What to do to an image on the way in: crop, then orient, then resize.
+' * @description
+' *   Every stage switches itself off when left at zero, so a blank request means
+' *   "decode and change nothing". CropWidth or CropHeight of zero means the whole
+' *   image; TargetWidth or TargetHeight of zero means whatever the earlier stages
+' *   produced.
+' *
+' *   The order is fixed: crop is first because a region is named in the source
+' *   image's own coordinates, and the transform runs before the resize so that
+' *   the target size always describes the image you get back.
+' */
+Public Type BlipBridgeImageRequest
+    CropX As Long
+    CropY As Long
+    CropWidth As Long
+    CropHeight As Long
+    Transform As Long
+    TargetWidth As Long
+    TargetHeight As Long
+    Filter As Long
+End Type
+
+'/**
+' * @type BlipBridgePoint
+' * @brief One quad corner, in the caller's own coordinate space.
+' */
+Public Type BlipBridgePoint
+    X As Single
+    Y As Single
+End Type
+
+'/**
+' * @enum BlipBridgeTransform
+' * @brief Lossless orientation changes. Every output pixel is exactly one input pixel.
+' * @description
+' *   Arbitrary-angle rotation is deliberately absent: it needs resampling, a
+' *   background colour and an output-size decision, none of which are free
+' *   choices this library should be making for you.
+' */
+Public Enum BlipBridgeTransform
+    BBTransformNone = 0
+    BBTransformFlipHorizontal = 1
+    BBTransformFlipVertical = 2
+    BBTransformRotate90 = 3
+    BBTransformRotate180 = 4
+    BBTransformRotate270 = 5
+End Enum
 
 '/**
 ' * @enum BlipBridgeScaleFilter
@@ -227,6 +298,65 @@ Private Declare PtrSafe Function BB_ApplyTextureIfChanged Lib "BlipBridge-x64.dl
     ByVal shapePtr As LongPtr, _
     ByVal texture As LongLong, _
     ByRef skipped As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadImage Lib "BlipBridge-x64.dll" ( _
+    ByVal bytesPtr As LongPtr, _
+    ByVal length As Long, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outImage As BlipBridgeImage _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadImageFromFile Lib "BlipBridge-x64.dll" ( _
+    ByVal pathPtr As LongPtr, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outImage As BlipBridgeImage _
+) As Long
+
+Private Declare PtrSafe Function BB_GetImageSize Lib "BlipBridge-x64.dll" ( _
+    ByVal image As LongLong, _
+    ByRef outWidth As Long, _
+    ByRef outHeight As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_ReleaseImage Lib "BlipBridge-x64.dll" ( _
+    ByVal image As LongLong _
+) As Long
+
+Private Declare PtrSafe Function BB_ClearImages Lib "BlipBridge-x64.dll" () As Long
+
+Private Declare PtrSafe Function BB_GetImageCount Lib "BlipBridge-x64.dll" () As Long
+
+Private Declare PtrSafe Function BB_CreateTextureFromImage Lib "BlipBridge-x64.dll" ( _
+    ByVal image As LongLong, _
+    ByRef outTexture As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_WarpImageQuad Lib "BlipBridge-x64.dll" ( _
+    ByVal image As LongLong, _
+    ByVal pointsPtr As LongPtr, _
+    ByVal filter As Long, _
+    ByRef outTexture As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_ApplyImageQuad Lib "BlipBridge-x64.dll" ( _
+    ByVal shapePtr As LongPtr, _
+    ByVal image As LongLong, _
+    ByVal pointsPtr As LongPtr, _
+    ByVal filter As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadTextureEx Lib "BlipBridge-x64.dll" ( _
+    ByVal bytesPtr As LongPtr, _
+    ByVal length As Long, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outTexture As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadTextureFromFileEx Lib "BlipBridge-x64.dll" ( _
+    ByVal pathPtr As LongPtr, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outTexture As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_ApplyTextureRange Lib "BlipBridge-x64.dll" ( _
@@ -320,6 +450,70 @@ Private Declare PtrSafe Function BB_ApplyTextureIfChanged Lib "BlipBridge-x86.dl
     ByVal textureLow As Long, _
     ByVal textureHigh As Long, _
     ByRef skipped As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadImage Lib "BlipBridge-x86.dll" ( _
+    ByVal bytesPtr As LongPtr, _
+    ByVal length As Long, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outImage As BlipBridgeImage _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadImageFromFile Lib "BlipBridge-x86.dll" ( _
+    ByVal pathPtr As LongPtr, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outImage As BlipBridgeImage _
+) As Long
+
+Private Declare PtrSafe Function BB_GetImageSize Lib "BlipBridge-x86.dll" ( _
+    ByVal imageLow As Long, _
+    ByVal imageHigh As Long, _
+    ByRef outWidth As Long, _
+    ByRef outHeight As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_ReleaseImage Lib "BlipBridge-x86.dll" ( _
+    ByVal imageLow As Long, _
+    ByVal imageHigh As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_ClearImages Lib "BlipBridge-x86.dll" () As Long
+
+Private Declare PtrSafe Function BB_GetImageCount Lib "BlipBridge-x86.dll" () As Long
+
+Private Declare PtrSafe Function BB_CreateTextureFromImage Lib "BlipBridge-x86.dll" ( _
+    ByVal imageLow As Long, _
+    ByVal imageHigh As Long, _
+    ByRef outTexture As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_WarpImageQuad Lib "BlipBridge-x86.dll" ( _
+    ByVal imageLow As Long, _
+    ByVal imageHigh As Long, _
+    ByVal pointsPtr As LongPtr, _
+    ByVal filter As Long, _
+    ByRef outTexture As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_ApplyImageQuad Lib "BlipBridge-x86.dll" ( _
+    ByVal shapePtr As LongPtr, _
+    ByVal imageLow As Long, _
+    ByVal imageHigh As Long, _
+    ByVal pointsPtr As LongPtr, _
+    ByVal filter As Long _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadTextureEx Lib "BlipBridge-x86.dll" ( _
+    ByVal bytesPtr As LongPtr, _
+    ByVal length As Long, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outTexture As BlipBridgeTexture _
+) As Long
+
+Private Declare PtrSafe Function BB_LoadTextureFromFileEx Lib "BlipBridge-x86.dll" ( _
+    ByVal pathPtr As LongPtr, _
+    ByVal requestPtr As LongPtr, _
+    ByRef outTexture As BlipBridgeTexture _
 ) As Long
 
 Private Declare PtrSafe Function BB_ApplyTextureRange Lib "BlipBridge-x86.dll" ( _
@@ -750,6 +944,332 @@ Public Sub ApplyTexture(ByVal shp As PowerPoint.Shape, ByRef texture As BlipBrid
 #Else
     CheckResult BB_ApplyTexture(ObjPtr(shp), texture.Low, texture.High), "ApplyTexture"
 #End If
+End Sub
+
+
+'/**
+' * @function ImageToNative
+' * @brief Converts a public image handle into the by-value form this architecture passes.
+' * @remarks Private, and the exact counterpart of TextureToNative. A UDT cannot be passed
+' * ByVal to a Declare, so x64 combines the two words and x86 passes them as they are.
+' */
+#If Win64 Then
+Private Function ImageToNative(ByRef image As BlipBridgeImage) As LongLong
+    Dim low As LongLong
+    ' Masked before combining, or a handle above &H7FFFFFFF would sign-extend.
+    low = CLngLng(image.Low) And &HFFFFFFFF^
+    ImageToNative = (CLngLng(image.High) * &H100000000^) Or low
+End Function
+#End If
+
+'/**
+' * @function LoadImage
+' * @brief Decodes encoded image bytes into a CPU image BlipBridge owns.
+' * @param bytes Encoded PNG, JPEG or BMP data.
+' * @param request What to do on the way in: crop, orient, resize. Leave blank to change nothing.
+' * @return An opaque image handle. Release it with ReleaseImage.
+' * @remarks An image is not a texture. A texture is what Office holds and has no pixels you can
+' * reach; an image is decoded BGRA that stays on the CPU so it can be cropped, flipped or warped
+' * again and again without decoding again. Use LoadTextureScaled instead when a picture needs
+' * processing once and no more - it never creates an image at all.
+' */
+Public Function LoadImage(ByRef bytes() As Byte, _
+                          Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeImage
+    Initialize
+
+    Dim length As Long
+    length = ByteArrayLength(bytes)
+    If length <= 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadImage", _
+                  "LoadImage requires a non-empty byte array."
+    End If
+
+    Dim image As BlipBridgeImage
+    CheckResult BB_LoadImage(VarPtr(bytes(LBound(bytes))), length, VarPtr(request), image), _
+                "LoadImage"
+    LoadImage = image
+End Function
+
+'/**
+' * @function LoadImageFromFile
+' * @brief Reads and decodes an image file into a CPU image BlipBridge owns.
+' * @param filePath Full path to a PNG, JPEG or BMP file.
+' * @param request What to do on the way in. Leave blank to change nothing.
+' * @return An opaque image handle. Release it with ReleaseImage.
+' */
+Public Function LoadImageFromFile(ByVal filePath As String, _
+                                  Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeImage
+    Initialize
+
+    If Len(filePath) = 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadImageFromFile", _
+                  "LoadImageFromFile requires a file path."
+    End If
+
+    Dim image As BlipBridgeImage
+    CheckResult BB_LoadImageFromFile(StrPtr(filePath), VarPtr(request), image), "LoadImageFromFile"
+    LoadImageFromFile = image
+End Function
+
+'/**
+' * @function GetImageSize
+' * @brief Reads an image's pixel dimensions.
+' * @param image Handle from LoadImage or LoadImageFromFile.
+' * @param outWidth Receives the width in pixels.
+' * @param outHeight Receives the height in pixels.
+' */
+Public Sub GetImageSize(ByRef image As BlipBridgeImage, _
+                        ByRef outWidth As Long, _
+                        ByRef outHeight As Long)
+    Initialize
+#If Win64 Then
+    CheckResult BB_GetImageSize(ImageToNative(image), outWidth, outHeight), "GetImageSize"
+#Else
+    CheckResult BB_GetImageSize(image.Low, image.High, outWidth, outHeight), "GetImageSize"
+#End If
+End Sub
+
+'/**
+' * @function ReleaseImage
+' * @brief Releases one CPU image.
+' * @param image Handle from LoadImage or LoadImageFromFile.
+' * @remarks Handles are never recycled, so a released handle stays stale rather than coming back
+' * as a different image. Textures are a separate resource and are untouched.
+' */
+Public Sub ReleaseImage(ByRef image As BlipBridgeImage)
+    Initialize
+#If Win64 Then
+    CheckResult BB_ReleaseImage(ImageToNative(image)), "ReleaseImage"
+#Else
+    CheckResult BB_ReleaseImage(image.Low, image.High), "ReleaseImage"
+#End If
+End Sub
+
+'/**
+' * @function ClearImages
+' * @brief Releases every CPU image. Textures are a different resource and are untouched.
+' */
+Public Sub ClearImages()
+    Initialize
+    CheckResult BB_ClearImages(), "ClearImages"
+End Sub
+
+'/**
+' * @function GetImageCount
+' * @brief How many CPU images are currently held.
+' */
+Public Function GetImageCount() As Long
+    Initialize
+    GetImageCount = BB_GetImageCount()
+End Function
+
+'/**
+' * @function CreateTextureFromImage
+' * @brief Turns a CPU image into an Office texture.
+' * @param image Handle from LoadImage or LoadImageFromFile.
+' * @return A new texture handle. Release it with ReleaseTexture.
+' * @remarks The image is unchanged and still yours. The texture is a separate resource with its
+' * own lifetime; nothing aliases.
+' */
+Public Function CreateTextureFromImage(ByRef image As BlipBridgeImage) As BlipBridgeTexture
+    Initialize
+
+    Dim texture As BlipBridgeTexture
+#If Win64 Then
+    CheckResult BB_CreateTextureFromImage(ImageToNative(image), texture), "CreateTextureFromImage"
+#Else
+    CheckResult BB_CreateTextureFromImage(image.Low, image.High, texture), "CreateTextureFromImage"
+#End If
+    CreateTextureFromImage = texture
+End Function
+
+'/**
+' * @function WarpImageQuad
+' * @brief Warps a CPU image onto four corners and returns the result as a texture.
+' * @param image Handle from LoadImage or LoadImageFromFile.
+' * @param points Four corners: source top-left, top-right, bottom-right, bottom-left.
+' * @param filter BBScaleNearest or BBScaleBilinear.
+' * @return A new texture handle. Release it with ReleaseTexture.
+' * @remarks This is the primitive to build a moving quad on. Decode once with LoadImage, then warp
+' * as often as the quad moves - decoding is by far the expensive half and this never repeats it.
+' *
+' * The mapping is a true projective transform, so a trapezoid foreshortens the way perspective
+' * does rather than the way a shear does. Points are never reordered behind you: handing them in
+' * another order asks for a mirrored mapping and gets one.
+' *
+' * For the fill to land where you expect, the Shape's own geometry has to be that quad. BlipBridge
+' * does not move Shapes and does not read Shape.Nodes - you already know the points.
+' */
+Public Function WarpImageQuad(ByRef image As BlipBridgeImage, _
+                              ByRef points() As BlipBridgePoint, _
+                              ByVal filter As BlipBridgeScaleFilter) As BlipBridgeTexture
+    Initialize
+    RequireFourPoints points, "WarpImageQuad"
+
+    Dim texture As BlipBridgeTexture
+#If Win64 Then
+    CheckResult BB_WarpImageQuad(ImageToNative(image), VarPtr(points(LBound(points))), _
+                                 filter, texture), "WarpImageQuad"
+#Else
+    CheckResult BB_WarpImageQuad(image.Low, image.High, VarPtr(points(LBound(points))), _
+                                 filter, texture), "WarpImageQuad"
+#End If
+    WarpImageQuad = texture
+End Function
+
+'/**
+' * @function ApplyImageQuad
+' * @brief Warps a CPU image onto four corners and applies it to a Shape in one call.
+' * @param shp Live PowerPoint Shape whose pointer is borrowed for this call only.
+' * @param image Handle from LoadImage or LoadImageFromFile.
+' * @param points Four corners: source top-left, top-right, bottom-right, bottom-left.
+' * @param filter BBScaleNearest or BBScaleBilinear.
+' * @remarks Convenience over WarpImageQuad plus ApplyTexture plus ReleaseTexture, for when the
+' * warped result is used once. Applying the same warp to several Shapes should use the primitive
+' * and keep the texture. The same Shape-class checks as ApplyTexture run first.
+' */
+Public Sub ApplyImageQuad(ByVal shp As PowerPoint.Shape, _
+                          ByRef image As BlipBridgeImage, _
+                          ByRef points() As BlipBridgePoint, _
+                          ByVal filter As BlipBridgeScaleFilter)
+    Initialize
+    RequireFourPoints points, "ApplyImageQuad"
+
+    If shp Is Nothing Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.ApplyImageQuad", _
+                  "ApplyImageQuad requires a live Shape."
+    End If
+
+#If Win64 Then
+    CheckResult BB_ApplyImageQuad(ObjPtr(shp), ImageToNative(image), _
+                                  VarPtr(points(LBound(points))), filter), "ApplyImageQuad"
+#Else
+    CheckResult BB_ApplyImageQuad(ObjPtr(shp), image.Low, image.High, _
+                                  VarPtr(points(LBound(points))), filter), "ApplyImageQuad"
+#End If
+End Sub
+
+'/**
+' * @function LoadTextureScaled
+' * @brief Decodes encoded image bytes straight into a texture, processing them on the way.
+' * @param bytes Encoded PNG, JPEG or BMP data.
+' * @param request What to do on the way in: crop, orient, resize. Leave blank to change nothing.
+' * @return A texture handle. Release it with ReleaseTexture.
+' * @remarks The efficient path for an image that needs processing once and no more: no CPU image
+' * is created, so nothing is retained beyond what Office holds. Use LoadImage instead when the
+' * same picture will be processed repeatedly.
+' */
+Public Function LoadTextureScaled(ByRef bytes() As Byte, _
+                                  Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeTexture
+    Initialize
+
+    Dim length As Long
+    length = ByteArrayLength(bytes)
+    If length <= 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTextureScaled", _
+                  "LoadTextureScaled requires a non-empty byte array."
+    End If
+
+    Dim texture As BlipBridgeTexture
+    CheckResult BB_LoadTextureEx(VarPtr(bytes(LBound(bytes))), length, VarPtr(request), texture), _
+                "LoadTextureScaled"
+    LoadTextureScaled = texture
+End Function
+
+'/**
+' * @function LoadTextureScaledFromFile
+' * @brief Reads an image file straight into a texture, processing it on the way.
+' * @param filePath Full path to a PNG, JPEG or BMP file.
+' * @param request What to do on the way in. Leave blank to change nothing.
+' * @return A texture handle. Release it with ReleaseTexture.
+' */
+Public Function LoadTextureScaledFromFile(ByVal filePath As String, _
+                                          Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeTexture
+    Initialize
+
+    If Len(filePath) = 0 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadTextureScaledFromFile", _
+                  "LoadTextureScaledFromFile requires a file path."
+    End If
+
+    Dim texture As BlipBridgeTexture
+    CheckResult BB_LoadTextureFromFileEx(StrPtr(filePath), VarPtr(request), texture), _
+                "LoadTextureScaledFromFile"
+    LoadTextureScaledFromFile = texture
+End Function
+
+'/**
+' * @function ImageRequest
+' * @brief Builds an image request without having to declare and fill a variable.
+' * @param targetWidth Destination width, or 0 to leave the size alone.
+' * @param targetHeight Destination height, or 0 to leave the size alone.
+' * @param filter Which resampling filter to use when resizing.
+' * @param cropX Region origin in source pixels.
+' * @param cropY Region origin in source pixels.
+' * @param cropWidth Region width, or 0 for the whole image.
+' * @param cropHeight Region height, or 0 for the whole image.
+' * @param transform A lossless orientation change, applied between crop and resize.
+' * @remarks Purely a convenience for the common call, which would otherwise need five lines to
+' * say "this tile, that big, nearest".
+' */
+Public Function ImageRequest(Optional ByVal targetWidth As Long = 0, _
+                             Optional ByVal targetHeight As Long = 0, _
+                             Optional ByVal filter As BlipBridgeScaleFilter = BBScaleBilinear, _
+                             Optional ByVal cropX As Long = 0, _
+                             Optional ByVal cropY As Long = 0, _
+                             Optional ByVal cropWidth As Long = 0, _
+                             Optional ByVal cropHeight As Long = 0, _
+                             Optional ByVal transform As BlipBridgeTransform = BBTransformNone) _
+                             As BlipBridgeImageRequest
+    Dim request As BlipBridgeImageRequest
+    request.TargetWidth = targetWidth
+    request.TargetHeight = targetHeight
+    request.filter = filter
+    request.CropX = cropX
+    request.CropY = cropY
+    request.CropWidth = cropWidth
+    request.CropHeight = cropHeight
+    request.Transform = transform
+    ImageRequest = request
+End Function
+
+'/**
+' * @function QuadPoints
+' * @brief Builds the four-corner array the quad calls take.
+' * @remarks The order is the one the API documents and never reorders: source top-left,
+' * top-right, bottom-right, bottom-left.
+' */
+Public Function QuadPoints(ByVal x0 As Single, ByVal y0 As Single, _
+                           ByVal x1 As Single, ByVal y1 As Single, _
+                           ByVal x2 As Single, ByVal y2 As Single, _
+                           ByVal x3 As Single, ByVal y3 As Single) As BlipBridgePoint()
+    Dim points(0 To 3) As BlipBridgePoint
+    points(0).X = x0: points(0).Y = y0
+    points(1).X = x1: points(1).Y = y1
+    points(2).X = x2: points(2).Y = y2
+    points(3).X = x3: points(3).Y = y3
+    QuadPoints = points
+End Function
+
+'/**
+' * @function RequireFourPoints
+' * @brief Refuses a quad that is not exactly four corners, before the ABI sees it.
+' */
+Private Sub RequireFourPoints(ByRef points() As BlipBridgePoint, ByVal caller As String)
+    Dim count As Long
+    On Error Resume Next
+    count = UBound(points) - LBound(points) + 1
+    If Err.Number <> 0 Then
+        Err.Clear
+        count = 0
+    End If
+    On Error GoTo 0
+
+    If count <> 4 Then
+        Err.Raise BB_ERROR_BASE, "BlipBridge." & caller, _
+                  caller & " needs exactly four points: source top-left, top-right, " & _
+                  "bottom-right, bottom-left."
+    End If
 End Sub
 
 '/**

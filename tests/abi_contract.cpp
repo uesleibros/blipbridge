@@ -51,6 +51,23 @@ struct Api {
     BB_Result(BB_CALL* ApplyTexture)(void*, BB_Handle) = nullptr;
     BB_Result(BB_CALL* ApplyTextureIfChanged)(void*, BB_Handle, int32_t*) = nullptr;
     BB_Result(BB_CALL* ApplyTextureRange)(void*, BB_Handle, uint32_t*) = nullptr;
+    BB_Result(BB_CALL* LoadImage)(const uint8_t*, uint32_t, const BB_ImageRequest*, BB_Image*) =
+        nullptr;
+    BB_Result(BB_CALL* LoadImageFromFile)(const uint16_t*, const BB_ImageRequest*, BB_Image*) =
+        nullptr;
+    BB_Result(BB_CALL* LoadImagePixels)(const uint8_t*, uint32_t, uint32_t, int32_t,
+                                        const BB_ImageRequest*, BB_Image*) = nullptr;
+    BB_Result(BB_CALL* GetImageSize)(BB_Image, uint32_t*, uint32_t*) = nullptr;
+    BB_Result(BB_CALL* ReleaseImage)(BB_Image) = nullptr;
+    BB_Result(BB_CALL* ClearImages)(void) = nullptr;
+    uint32_t(BB_CALL* GetImageCount)(void) = nullptr;
+    BB_Result(BB_CALL* CreateTextureFromImage)(BB_Image, BB_Handle*) = nullptr;
+    BB_Result(BB_CALL* WarpImageQuad)(BB_Image, const BB_PointF*, uint32_t, BB_Handle*) = nullptr;
+    BB_Result(BB_CALL* ApplyImageQuad)(void*, BB_Image, const BB_PointF*, uint32_t) = nullptr;
+    BB_Result(BB_CALL* LoadTextureEx)(const uint8_t*, uint32_t, const BB_ImageRequest*,
+                                      BB_Handle*) = nullptr;
+    BB_Result(BB_CALL* LoadTextureFromFileEx)(const uint16_t*, const BB_ImageRequest*,
+                                              BB_Handle*) = nullptr;
     BB_Result(BB_CALL* ApplyTextureBatch)(void* const*,
                                           const BB_Handle*,
                                           uint32_t,
@@ -122,6 +139,18 @@ int wmain(int argc, wchar_t** argv) {
     Resolve(api, api.ApplyTexture, "BB_ApplyTexture");
     Resolve(api, api.ApplyTextureIfChanged, "BB_ApplyTextureIfChanged");
     Resolve(api, api.ApplyTextureRange, "BB_ApplyTextureRange");
+    Resolve(api, api.LoadImage, "BB_LoadImage");
+    Resolve(api, api.LoadImageFromFile, "BB_LoadImageFromFile");
+    Resolve(api, api.LoadImagePixels, "BB_LoadImagePixels");
+    Resolve(api, api.GetImageSize, "BB_GetImageSize");
+    Resolve(api, api.ReleaseImage, "BB_ReleaseImage");
+    Resolve(api, api.ClearImages, "BB_ClearImages");
+    Resolve(api, api.GetImageCount, "BB_GetImageCount");
+    Resolve(api, api.CreateTextureFromImage, "BB_CreateTextureFromImage");
+    Resolve(api, api.WarpImageQuad, "BB_WarpImageQuad");
+    Resolve(api, api.ApplyImageQuad, "BB_ApplyImageQuad");
+    Resolve(api, api.LoadTextureEx, "BB_LoadTextureEx");
+    Resolve(api, api.LoadTextureFromFileEx, "BB_LoadTextureFromFileEx");
     Resolve(api, api.ApplyTextureBatch, "BB_ApplyTextureBatch");
     Resolve(api, api.ReleaseTexture, "BB_ReleaseTexture");
     Resolve(api, api.ClearTextures, "BB_ClearTextures");
@@ -184,6 +213,20 @@ int wmain(int argc, wchar_t** argv) {
         Check(applied == 0, "ApplyTextureRange zeroes its count before doing anything");
     }
     {
+        // The image surface answers the same way before Init as everything else.
+        // A library that served some calls uninitialised and not others would be
+        // a contract nobody could remember.
+        BB_Image image = 0xDEAD;
+        const uint8_t byte = 0;
+        Check(api.LoadImage(&byte, 1, nullptr, &image) == BB_E_NOT_INITIALIZED,
+              "LoadImage before Init reports BB_E_NOT_INITIALIZED");
+        Check(image == 0, "and zeroes its output handle");
+        Check(api.ReleaseImage(1) == BB_E_NOT_INITIALIZED,
+              "ReleaseImage before Init reports BB_E_NOT_INITIALIZED");
+        Check(api.ClearImages() == BB_E_NOT_INITIALIZED,
+              "ClearImages before Init reports BB_E_NOT_INITIALIZED");
+    }
+    {
         const uint16_t path[] = {L'x', 0};
         Check(api.ApplyPicture(nullptr, path) == BB_E_NOT_INITIALIZED,
               "ApplyPicture before Init reports BB_E_NOT_INITIALIZED");
@@ -241,6 +284,59 @@ int wmain(int argc, wchar_t** argv) {
         Check(skipped == 0, "and reports no skip when it refused");
         Check(api.ApplyTextureIfChanged(nullptr, 1, nullptr) == BB_E_INVALID_ARG,
               "the skip flag is optional");
+    }
+    {
+        /*
+         * Images and textures have separate handle spaces, and that separation is
+         * load-bearing: a texture handle handed to an image call must be refused
+         * rather than resolving to whatever image happens to have that number.
+         * The ranges are far apart precisely so this can never be a coincidence.
+         */
+        BB_Image image = 0xDEAD;
+        Check(api.LoadImage(nullptr, 4, nullptr, &image) == BB_E_INVALID_ARG,
+              "LoadImage rejects a null buffer");
+        Check(api.LoadImage(&byte, 0, nullptr, &image) == BB_E_INVALID_ARG,
+              "LoadImage rejects a zero length");
+        Check(api.LoadImage(&byte, 1, nullptr, nullptr) == BB_E_INVALID_ARG,
+              "LoadImage rejects a null output");
+        Check(api.LoadImageFromFile(nullptr, nullptr, &image) == BB_E_INVALID_ARG,
+              "LoadImageFromFile rejects a null path");
+
+        // 1 is in the texture space, not the image space.
+        Check(api.ReleaseImage(1) == BB_E_INVALID_HANDLE,
+              "a texture-space handle is refused by ReleaseImage");
+        Check(api.ReleaseImage(0) == BB_E_INVALID_HANDLE, "and handle 0 is never valid");
+        uint32_t width = 7;
+        uint32_t height = 7;
+        Check(api.GetImageSize(1, &width, &height) == BB_E_INVALID_HANDLE,
+              "and by GetImageSize");
+        Check(width == 0 && height == 0, "which zeroes its outputs before refusing");
+
+        BB_Handle texture = 0xDEAD;
+        Check(api.CreateTextureFromImage(1, &texture) == BB_E_INVALID_HANDLE,
+              "and by CreateTextureFromImage");
+        Check(texture == 0, "which zeroes its output too");
+
+        // An unknown filter or transform is refused by name rather than clamped.
+        BB_ImageRequest request{};
+        request.filter = 99;
+        Check(api.LoadImage(&byte, 1, &request, &image) == BB_E_INVALID_ARG,
+              "an unknown filter is refused before anything is decoded");
+        BB_ImageRequest transform{};
+        transform.transform = 99;
+        Check(api.LoadImage(&byte, 1, &transform, &image) == BB_E_INVALID_ARG,
+              "and so is an unknown transform");
+
+        const BB_PointF quad[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+        Check(api.WarpImageQuad(1, quad, BB_SCALE_NEAREST, &texture) == BB_E_INVALID_HANDLE,
+              "WarpImageQuad refuses a texture handle where an image belongs");
+        Check(api.WarpImageQuad(0x4000000ull, nullptr, BB_SCALE_NEAREST, &texture) ==
+                  BB_E_INVALID_ARG,
+              "and refuses a null point array before looking the image up");
+        Check(api.ApplyImageQuad(nullptr, 1, quad, BB_SCALE_NEAREST) == BB_E_INVALID_ARG,
+              "ApplyImageQuad refuses a null Shape");
+
+        Check(api.GetImageCount() == 0, "no images are held after all of that");
     }
     {
         // The range entry refuses the same arguments the single one does. It

@@ -131,6 +131,16 @@ std::wstring warpApplyQuadFromFile(IDispatch* shape, const std::wstring& path, S
 std::wstring probeDynamicTexture(IDispatch* shape, long step);
 
 /**
+ * Research drivers for the ABI 5 image surface, forwarding to the real C ABI in
+ * process so the Office harnesses assert shipping behaviour. See
+ * image_api_driver.cpp.
+ */
+std::wstring loadImageThroughAbi(const std::wstring& path, const std::wstring& request);
+std::wstring releaseImageThroughAbi(long long image);
+std::wstring applyImageQuadThroughAbi(IDispatch* shape, long long image, SAFEARRAY* points);
+std::wstring loadTextureScaledThroughAbi(const std::wstring& path, const std::wstring& request);
+
+/**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.

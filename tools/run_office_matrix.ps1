@@ -40,6 +40,8 @@ $suites = @(
     'test_undo_harness'
     'test_apply_if_changed'
     'test_range_apply'
+    'test_image_api'
+    'test_quad_warp'
     'test_native_texture_shutdown'
     'test_native_texture_stress'
     'test_release_stress'

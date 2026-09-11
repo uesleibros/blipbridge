@@ -218,6 +218,10 @@ class WindowsOfficeBackend final : public Backend {
         // The range apply is the native path applied to a range receiver, so it
         // exists exactly when the native path does.
         capabilities.rangeApply = available;
+        // The image work itself is portable and would run anywhere, but the end
+        // of the pipeline is a texture, so the capability means what a caller
+        // cares about: can I decode, crop, warp and get something Office takes.
+        capabilities.imagePipeline = available;
         capabilities.rawPixels = available;
         capabilities.scaledPixels = available;
         return capabilities;

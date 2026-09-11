@@ -88,6 +88,9 @@ set(BB_SOURCES
     src/image/decode.cpp
     # Crop, orient, resize: composed here so one decode serves all three.
     src/image/pipeline.cpp
+    # The CPU image resource: decoded pixels a caller can process repeatedly,
+    # kept deliberately separate from the Office texture resource.
+    src/image/store.cpp
     # Projective quad mapping, viable because Office's own picture-fill
     # mapping was measured: see docs and tools/probe_freeform_uv_mapping.ps1.
     src/image/warp.cpp
@@ -131,6 +134,7 @@ set(BB_RESEARCH_SOURCES
     experiments/exp_internal_blip/range_apply.cpp
     experiments/exp_internal_blip/quad_apply.cpp
     experiments/exp_internal_blip/dynamic_probe.cpp
+    experiments/exp_internal_blip/image_api_driver.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
     experiments/exp_internal_blip/shape_compatibility.cpp

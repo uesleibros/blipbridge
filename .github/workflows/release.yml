@@ -229,6 +229,18 @@ jobs:
             BB_ApplyTextureBatch
             BB_ApplyTextureIfChanged
             BB_ApplyTextureRange
+            BB_LoadImage
+            BB_LoadImageFromFile
+            BB_LoadImagePixels
+            BB_GetImageSize
+            BB_ReleaseImage
+            BB_ClearImages
+            BB_GetImageCount
+            BB_CreateTextureFromImage
+            BB_WarpImageQuad
+            BB_ApplyImageQuad
+            BB_LoadTextureEx
+            BB_LoadTextureFromFileEx
             BB_ReleaseTexture
             BB_ClearTextures
             BB_ApplyPicture
@@ -266,8 +278,8 @@ jobs:
           echo "header ABI  : $header_abi"
           echo "wrapper ABI : $wrapper_abi"
 
-          if [ "$header_abi" != "4" ]; then
-            echo "This release requires ABI 4, header says $header_abi"
+          if [ "$header_abi" != "5" ]; then
+            echo "This release requires ABI 5, header says $header_abi"
             exit 1
           fi
 
@@ -318,21 +330,28 @@ jobs:
               throw "Could not read BB_ABI_VERSION from the public header."
           }
           $abi = [int]$Matches[1]
-          if ($abi -lt 4) {
-              throw "This release requires ABI 4 or later, header says $abi."
+          if ($abi -lt 5) {
+              throw "This release requires ABI 5 or later, header says $abi."
           }
 
           if ($header -notmatch '#define\s+BB_CAP_RANGE_APPLY\s+0x0100u') {
               throw "BB_CAP_RANGE_APPLY must be defined as 0x0100u."
           }
 
-          foreach ($required in @('BB_ApplyTextureRange')) {
+          foreach ($required in @('BB_ApplyTextureRange', 'BB_LoadImage', 'BB_WarpImageQuad',
+                                  'BB_ApplyImageQuad', 'BB_LoadTextureEx')) {
               if ($header -notmatch [regex]::Escape($required)) {
                   throw "The public header is missing $required."
               }
           }
 
-          foreach ($required in @('ApplyTextureRange', 'BB_CAP_RANGE_APPLY')) {
+          if ($header -notmatch '#define\s+BB_CAP_IMAGE_PIPELINE\s+0x0200u') {
+              throw "BB_CAP_IMAGE_PIPELINE must be defined as 0x0200u."
+          }
+
+          foreach ($required in @('ApplyTextureRange', 'BB_CAP_RANGE_APPLY', 'LoadImage',
+                                  'WarpImageQuad', 'ApplyImageQuad', 'LoadTextureScaled',
+                                  'BlipBridgeImage', 'BB_CAP_IMAGE_PIPELINE')) {
               if ($wrapper -notmatch [regex]::Escape($required)) {
                   throw "BlipBridge.bas is missing $required."
               }
@@ -486,6 +505,19 @@ jobs:
           if [ "$shipped_abi" != "$shipped_wrapper_abi" ]; then
             echo "::error::Packaged header is ABI $shipped_abi, wrapper expects $shipped_wrapper_abi"
             exit 1
+          fi
+
+          if [ "$shipped_abi" -ge 5 ]; then
+            for symbol in BB_LoadImage BB_WarpImageQuad BB_ApplyImageQuad BB_LoadTextureEx                           BB_CAP_IMAGE_PIPELINE; do
+              if ! grep -q "$symbol" shipped.h; then
+                echo "::error::Packaged ABI $shipped_abi header does not declare $symbol"
+                exit 1
+              fi
+            done
+            if ! grep -q 'BlipBridgeImage' shipped.bas; then
+              echo "::error::Packaged wrapper has no BlipBridgeImage"
+              exit 1
+            fi
           fi
 
           if [ "$shipped_abi" -ge 4 ]; then

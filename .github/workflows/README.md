@@ -58,6 +58,8 @@ On a machine with the validated Office build:
 .\tools\test_undo_harness.ps1           # undo and redo
 .\tools\test_apply_if_changed.ps1       # the skip: what it skips, and what it must not
 .\tools\test_range_apply.ps1            # the multi-Shape apply, and its undo behaviour
+.\tools\test_image_api.ps1              # the CPU image resource, crop/orient/scale, quad warp
+.\tools\test_quad_warp.ps1              # the projective warp, read back out of a render
 ```
 
 Or run the whole Office matrix in one go, which is what a release gate wants:

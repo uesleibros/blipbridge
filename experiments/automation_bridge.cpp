@@ -17,6 +17,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::InspectFillReceiver:
     case DispatchId::LoadCachedImageExperiment:
     case DispatchId::InspectTexture:
+    case DispatchId::ReleaseImageAbi:
         return 1;
     case DispatchId::PixelTextureExperiment:
         return 6;
@@ -31,6 +32,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::ApplyCachedImageToFill:
     case DispatchId::ApplyTextureToRange:
     case DispatchId::WarpApplyQuad:
+    case DispatchId::ApplyImageQuadAbi:
     case DispatchId::ProfileFillStages:
     case DispatchId::ProfileApplyStages:
         return 3;
@@ -101,6 +103,21 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(benchmarkTextureBatch(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
                          .c_str());
+    case DispatchId::LoadImageAbi:
+        return Value(loadImageThroughAbi(target.str(), arguments.At(1).str()).c_str());
+    case DispatchId::LoadTextureScaledAbi:
+        return Value(loadTextureScaledThroughAbi(target.str(), arguments.At(1).str()).c_str());
+    case DispatchId::ReleaseImageAbi:
+        return Value(releaseImageThroughAbi(target.integer()).c_str());
+    case DispatchId::ApplyImageQuadAbi: {
+        auto points = arguments.At(2);
+        if (points.v.vt != (VT_ARRAY | VT_R8) && points.v.vt != (VT_ARRAY | VT_VARIANT)) {
+            throw Error(E_INVALIDARG, "Expected an array of eight quad coordinates");
+        }
+        return Value(applyImageQuadThroughAbi(
+                         target.obj(), arguments.At(1).integer(), points.v.parray)
+                         .c_str());
+    }
     case DispatchId::ProbeDynamicTexture:
         return Value(probeDynamicTexture(target.obj(), arguments.At(1).integer()).c_str());
     case DispatchId::WarpApplyQuad: {
