@@ -504,7 +504,7 @@ jobs:
           fi
 
           rm -f shipped.h shipped.bas
-          echo "Packaged header and wrapper both declare ABI $shipped_abi.
+          echo "Packaged header and wrapper both declare ABI $shipped_abi."
 
           # Anything from the build tree or the research surface is a packaging
           # bug, not a cosmetic one: the shipped DLL is what runs in someone's
