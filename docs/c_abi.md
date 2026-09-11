@@ -250,6 +250,33 @@ a fill updates it, so the two can be mixed freely on the same Shape.
 See `docs/apply_fast_path.md` for where the 0.189 ms goes and why this is the
 only part of it that can be avoided.
 
+## Two resources, and which is which
+
+| | `BB_Handle` (texture) | `BB_Image` |
+|---|---|---|
+| what it is | the Office resource | decoded BGRA BlipBridge owns |
+| holds pixels you can reach | no | yes |
+| can be cropped, oriented, warped | no | yes |
+| can fill a Shape | yes | only by becoming a texture |
+| released with | `BB_ReleaseTexture` | `BB_ReleaseImage` |
+| handles start at | 0x1000000 | 0x4000000 |
+
+A texture holds two opaque GFX pointers and no pixels, which is why nothing can
+crop or warp one. Making textures secretly retain a decoded copy would double the
+memory of every texture in the process to serve the few that get processed twice,
+so processing has its own resource instead.
+
+    BB_LoadTextureEx      encoded -> texture     one shot, nothing retained
+    BB_LoadImage          encoded -> image       decode once
+    BB_WarpImageQuad      image   -> texture     warp many times
+
+The handle spaces are far apart on purpose: a texture handle passed to an image
+call is refused rather than resolving to something unrelated. Neither space
+recycles a released handle, so a stale one can only ever be refused.
+
+Every texture-producing call returns a **new caller-owned** handle, nothing
+aliases its source, and the source stays valid.
+
 ## Which apply to use
 
 Three entry points write a picture fill, and they are not interchangeable.

@@ -33,6 +33,32 @@ BlipBridge.ApplyTexture shp, texture      ' ~0.19 ms, no file, no donor Shape
 BlipBridge.ReleaseTexture texture
 ```
 
+Images can be prepared before Office ever sees them - decoded, cropped out of an
+atlas, oriented, resized:
+
+```vb
+Dim grass As BlipBridgeTexture
+grass = BlipBridge.LoadTextureScaledFromFile("textures\blocks.png", _
+            BlipBridge.ImageRequest(256, 256, BBScaleNearest, 0, 0, 16, 16))
+```
+
+and mapped onto a four-corner quad with real perspective, which is what a
+renderer that already knows its projected points wants:
+
+```vb
+Dim face As BlipBridgeImage
+face = BlipBridge.LoadImageFromFile("textures\grass.png")   ' decode once
+
+' then, as often as the quad moves
+BlipBridge.ApplyImageQuad shp, face, _
+    BlipBridge.QuadPoints(x0, y0, x1, y1, x2, y2, x3, y3), BBScaleNearest
+```
+
+An *image* is decoded pixels BlipBridge owns on the CPU, so it can be processed
+again and again. A *texture* is what Office holds. They are different resources
+on purpose and convert only when you ask. See
+[docs/image_pipeline.md](docs/image_pipeline.md).
+
 Filling many Shapes with the *same* texture is one call, and one Office edit
 rather than N:
 

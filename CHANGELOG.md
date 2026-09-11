@@ -20,6 +20,102 @@ Callers written against 0.4.0 need the changes shown in the release notes.
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
   now prioritizes `windows.h` so subsequent formatting preserves this dependency.
 
+## [Unreleased]
+
+Image processing, and the resource split that makes it honest.
+
+### Added - ABI version 5
+
+- **A CPU image resource.** `BB_Image` in C, `BlipBridgeImage` in VBA: decoded
+  BGRA that BlipBridge owns, so a picture can be cropped, oriented, scaled and
+  warped repeatedly without decoding again.
+
+  It exists *because* a texture is not one. `BlipBridgeTexture` stays exactly
+  what it was - the Office resource, two opaque GFX pointers, no pixels anyone
+  can reach - and does not start retaining a decoded copy behind your back, which
+  would have doubled the memory of every texture in the process to serve the few
+  that get processed twice. The two convert when you ask and never implicitly.
+
+  `BB_LoadImage`, `BB_LoadImageFromFile`, `BB_LoadImagePixels`,
+  `BB_GetImageSize`, `BB_ReleaseImage`, `BB_ClearImages`, `BB_GetImageCount`,
+  `BB_CreateTextureFromImage`.
+
+- **Native decoding and processing.** Encoded images decode through Windows
+  Imaging Component to canonical BGRA32 - straight alpha, because the resampler
+  premultiplies where it needs to and doing it twice darkens transparent edges.
+  `BB_ImageRequest` carries crop, transform, target size and filter through every
+  entry point, with the stages in a fixed order: crop, then transform, then
+  resize. Crop first because a region is named in the source's own coordinates;
+  transform before resize so the target size always describes what comes out.
+
+  Transforms are the lossless ones only - flip horizontal and vertical, rotate
+  90/180/270 - where every output pixel is exactly one input pixel, so pixel art
+  survives them. Arbitrary-angle rotation is absent on purpose: it needs
+  resampling, a background colour and an output-size decision, none of which are
+  free choices this library should make for you.
+
+  Tested: PNG with and without alpha, JPEG, BMP. Windows decodes more and they
+  will probably work, but an untested format is not a supported one.
+
+- **`BB_LoadTextureEx` / `BB_LoadTextureFromFileEx`**: encoded straight to a
+  texture with the same request, for a picture that needs processing once and no
+  more. No CPU image is created, so nothing is retained beyond what Office holds.
+  VBA: `LoadTextureScaled`, `LoadTextureScaledFromFile`.
+
+- **`BB_WarpImageQuad` and `BB_ApplyImageQuad`**: a true projective mapping of an
+  image onto four caller-supplied corners. The primitive returns a texture so a
+  caller can decode once and warp as often as the quad moves; the convenience
+  wrapper applies it in one call and owns the texture it makes.
+
+  This is only possible because of what was measured first: **PowerPoint maps a
+  picture fill linearly onto the Shape's bounding box and clips it to the path.**
+  Seven quads, from rectangle to extreme trapezoid, agreed to within 0.8 source
+  texels - the probe's own quantisation floor. Path geometry decides what is
+  visible, not what is where. So warping into that bounding box makes Office's
+  own mapping the identity, and the perspective survives.
+
+  Verified twice: in isolation, where a rectangle is the exact identity, a
+  parallelogram stays affine and an extreme trapezoid foreshortens monotonically;
+  and in PowerPoint, where the source mid-row lands at 22% of a tapered quad's
+  height rather than the 50% an affine map would give.
+
+  Point order is documented and never reordered behind the caller. Nothing reads
+  `Shape.Nodes` - the caller already knows the points, which is the premise.
+
+  Bicubic is refused by name for the warp: sixteen taps per output pixel with a
+  varying footprint is a cost that would be hidden rather than offered.
+
+- **`BB_CAP_IMAGE_PIPELINE`** (0x0200) advertises the surface.
+
+### Changed
+
+- Public ABI 4 -> 5, moved in one step across the header, `BB_GetAbiVersion`,
+  `BB_EXPECTED_ABI`, the wrapper, both CI gates, the release gate and the
+  packaged-archive check - which now reads the header and wrapper back out of the
+  zip and requires them to carry the new surface.
+
+- Image handles come from their own numbering space, far from the texture store's,
+  so a texture handle handed to an image call is refused rather than resolving to
+  something unrelated. Neither space recycles a released handle.
+
+### Not implemented, and why
+
+- **Dynamic textures.** The question was whether the pixels behind an image a
+  Shape already shows can be changed without a new fill.
+  `GEL::ICachedImage::Create` **copies** the buffer: overwriting the source after
+  applying leaves the Shape unchanged, and re-applying the same cached image -
+  which rules out a stale repaint - leaves it unchanged too. That does not prove
+  no mutable path exists anywhere in GFX, only that the obvious one does not.
+  Recorded in `docs/image_pipeline.md` so the question is not re-asked from
+  scratch.
+
+### Not validated
+
+- **x86 Office runtime**, unchanged. The new image code is ordinary portable work
+  with no Office in it, so it builds and its suites run on x86 - but that is a
+  statement about image processing, and the x86 Office backend has still never
+  run inside a real 32-bit PowerPoint. Building is not running.
+
 ## [0.6.0] - 2026-09-10
 
 Adds the native ShapeRange apply and moves the public ABI to 4. Existing
