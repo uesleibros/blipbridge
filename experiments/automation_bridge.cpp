@@ -30,6 +30,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::SplitTransactionApply:
     case DispatchId::ApplyCachedImageToFill:
     case DispatchId::ApplyTextureToRange:
+    case DispatchId::WarpApplyQuad:
     case DispatchId::ProfileFillStages:
     case DispatchId::ProfileApplyStages:
         return 3;
@@ -100,6 +101,14 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(benchmarkTextureBatch(
                          target.obj(), arguments.At(1).integer(), arguments.At(2).integer())
                          .c_str());
+    case DispatchId::WarpApplyQuad: {
+        auto points = arguments.At(2);
+        if (points.v.vt != (VT_ARRAY | VT_R8) && points.v.vt != (VT_ARRAY | VT_VARIANT)) {
+            throw Error(E_INVALIDARG, "Expected an array of eight quad coordinates");
+        }
+        return Value(
+            warpApplyQuadFromFile(target.obj(), arguments.At(1).str(), points.v.parray).c_str());
+    }
     case DispatchId::ApplyTextureRange:
         return Value(
             applyTextureRangeThroughAbi(target.obj(), arguments.At(1).integer()).c_str());

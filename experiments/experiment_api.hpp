@@ -116,6 +116,13 @@ std::wstring applyCachedImageToFill(IDispatch* fill, long handle, long iteration
 std::wstring applyTextureToRange(IDispatch* range, long handle, long iterations);
 
 /**
+ * Research: warps an image file onto a caller-supplied quad and applies the
+ * result to a Shape, to see what PowerPoint renders. Warps from a file because a
+ * texture handle retains no CPU pixels; see quad_apply.cpp.
+ */
+std::wstring warpApplyQuadFromFile(IDispatch* shape, const std::wstring& path, SAFEARRAY* points);
+
+/**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter
  * because ARC::SurfaceFormat has no symbols; the harness probes it.
