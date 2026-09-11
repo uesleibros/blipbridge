@@ -41,10 +41,20 @@ BlipBridge, so the connection waits for the dying host and retries rather than
 reporting a failure the code did not cause.
 #>
 function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
+    for ($attempt = 1; $attempt -le 15; $attempt++) {
+        try {
+            $candidate = New-Object -ComObject PowerPoint.Application
+            # Activation succeeding is not the same as the host being usable. A
+            # PowerPoint that is part-way through quitting will hand back an
+            # object whose properties then fail, and the suite dies later with
+            # something that looks like a BlipBridge bug - "the object did not
+            # answer Shape.Type" - rather than like the teardown race it is. So
+            # ask it something before trusting it.
+            $null = $candidate.Version
+            $null = $candidate.Presentations.Count
+            return $candidate
+        } catch {
+            if ($attempt -eq 15) { throw }
             Start-Sleep -Seconds 2
         }
     }

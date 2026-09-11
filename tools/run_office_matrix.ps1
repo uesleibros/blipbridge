@@ -20,7 +20,7 @@ the code under test, which is the only reason a release gate is worth having.
 #>
 param(
     [string[]]$Only = @(),
-    [int]$SettleSeconds = 30
+    [int]$SettleSeconds = 60
 )
 
 $ErrorActionPreference = 'Stop'
@@ -88,7 +88,12 @@ foreach ($suite in $suites) {
         }
     }
 
+    # Wait for the host to be gone, then give the process a moment more to
+    # finish releasing its COM registration. Connecting to a PowerPoint that has
+    # left the process list but not yet let go of the ROT is the same teardown
+    # race by another route.
     [void](Wait-ForQuietHost $SettleSeconds)
+    Start-Sleep -Seconds 2
 }
 
 $rows | Format-Table -AutoSize
