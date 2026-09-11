@@ -33,31 +33,72 @@ BlipBridge.ApplyTexture shp, texture      ' ~0.19 ms, no file, no donor Shape
 BlipBridge.ReleaseTexture texture
 ```
 
-Images can be prepared before Office ever sees them - decoded, cropped out of an
-atlas, oriented, resized:
+### Preparing an image before Office sees it
+
+One shot - decode a file, take a 16x16 tile out of an atlas, scale it to 256x256,
+and hand Office the result. Nothing is retained but the texture:
 
 ```vb
 Dim grass As BlipBridgeTexture
-grass = BlipBridge.LoadTextureScaledFromFile("textures\blocks.png", _
+grass = BlipBridge.LoadTextureScaledFromFile("C:\textures\blocks.png", _
             BlipBridge.ImageRequest(256, 256, BBScaleNearest, 0, 0, 16, 16))
+
+BlipBridge.ApplyTexture shp, grass
+BlipBridge.ReleaseTexture grass
 ```
 
-and mapped onto a four-corner quad with real perspective, which is what a
-renderer that already knows its projected points wants:
+### Reusing a decoded image
+
+When the same picture is processed more than once, decode it once into an
+*image* and keep that:
 
 ```vb
-Dim face As BlipBridgeImage
-face = BlipBridge.LoadImageFromFile("textures\grass.png")   ' decode once
-
-' then, as often as the quad moves
-BlipBridge.ApplyImageQuad shp, face, _
-    BlipBridge.QuadPoints(x0, y0, x1, y1, x2, y2, x3, y3), BBScaleNearest
+Dim image As BlipBridgeImage
+image = BlipBridge.LoadImageFromFile("C:\textures\grass.png")
 ```
 
+### Mapping it onto a quad
+
+A renderer that already knows its four projected points can have the image warped
+onto them with real perspective. `WarpImageQuad` is the primitive, and the
+texture it returns is yours:
+
+```vb
+Dim points() As BlipBridgePoint
+Dim texture As BlipBridgeTexture
+
+points = BlipBridge.QuadPoints(x0, y0, x1, y1, x2, y2, x3, y3)
+texture = BlipBridge.WarpImageQuad(image, points, BBScaleNearest)
+
+BlipBridge.ApplyTexture shp, texture
+BlipBridge.ReleaseTexture texture
+```
+
+`ApplyImageQuad` is the same thing for when the warped result is used once - it
+owns the temporary texture and releases it for you:
+
+```vb
+BlipBridge.ApplyImageQuad shp, image, points, BBScaleNearest
+```
+
+Either way the image is untouched and still yours, so that is one decode and as
+many warps as the quad moves:
+
+```vb
+BlipBridge.ReleaseImage image
+```
+
+The points are the destinations of the source image's own corners, in this order
+and never reordered behind you: **top-left, top-right, bottom-right,
+bottom-left**. BlipBridge does not move Shapes and does not read `Shape.Nodes` -
+for the fill to land where you expect, the Shape's geometry has to be that quad,
+which you already have.
+
 An *image* is decoded pixels BlipBridge owns on the CPU, so it can be processed
-again and again. A *texture* is what Office holds. They are different resources
-on purpose and convert only when you ask. See
+again and again. A *texture* is what Office holds and has no pixels anyone can
+reach. Two resources, separate handle spaces, converted only when you ask. See
 [docs/image_pipeline.md](docs/image_pipeline.md).
+
 
 Filling many Shapes with the *same* texture is one call, and one Office edit
 rather than N:

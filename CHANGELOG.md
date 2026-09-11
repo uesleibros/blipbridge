@@ -20,7 +20,7 @@ Callers written against 0.4.0 need the changes shown in the release notes.
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
   now prioritizes `windows.h` so subsequent formatting preserves this dependency.
 
-## [Unreleased]
+## [0.7.0] - 2026-09-11
 
 Image processing, and the resource split that makes it honest.
 
@@ -98,16 +98,25 @@ Image processing, and the resource split that makes it honest.
   so a texture handle handed to an image call is refused rather than resolving to
   something unrelated. Neither space recycles a released handle.
 
-### Not implemented, and why
+### Research
 
-- **Dynamic textures.** The question was whether the pixels behind an image a
-  Shape already shows can be changed without a new fill.
-  `GEL::ICachedImage::Create` **copies** the buffer: overwriting the source after
-  applying leaves the Shape unchanged, and re-applying the same cached image -
-  which rules out a stale repaint - leaves it unchanged too. That does not prove
-  no mutable path exists anywhere in GFX, only that the obvious one does not.
-  Recorded in `docs/image_pipeline.md` so the question is not re-asked from
-  scratch.
+- **How PowerPoint maps a picture fill**, which is what the quad pre-warp rests
+  on: the picture is mapped approximately linearly across the Shape's bounding
+  box and clipped to the freeform path. Seven quads from rectangle to extreme
+  trapezoid agreed to a worst error of about **0.8 source texels**, which was the
+  probe's own quantisation floor. Path geometry decides what is visible, not what
+  is where - so warping into that bounding box first makes Office's final mapping
+  the identity.
+
+- **Dynamic textures are not shipped**, and this is what was established rather
+  than assumed: `GEL::ICachedImage::Create` **copies** the pixel buffer it is
+  given. Overwriting the source buffer after applying leaves the rendered Shape
+  unchanged, and re-applying the same cached image - which distinguishes a stale
+  repaint from a copy - leaves it unchanged too.
+
+  That rules out the obvious externally-owned-buffer mutation path, by evidence.
+  It does **not** prove that no mutable path exists anywhere inside GFX; deeper
+  mutable internals remain future research. See `docs/image_pipeline.md`.
 
 ### Not validated
 

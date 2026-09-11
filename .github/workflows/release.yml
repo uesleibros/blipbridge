@@ -464,7 +464,7 @@ jobs:
 
           for doc in c_abi.md picture_cache.md resampling.md \
                      shape_compatibility.md safety_model.md \
-                     benchmarks.md windows_x86.md apply_fast_path.md; do
+                     benchmarks.md windows_x86.md apply_fast_path.md                      image_pipeline.md; do
             if [ -f "docs/$doc" ]; then
               cp "docs/$doc" "universal/$name/docs/"
             fi
@@ -485,7 +485,7 @@ jobs:
           for required in "$name/BlipBridge-x64.dll" "$name/BlipBridge-x86.dll" \
                           "$name/BlipBridge.bas" "$name/blipbridge.h" \
                           "$name/README.md" "$name/LICENSE" \
-                          "$name/docs/c_abi.md" "$name/docs/apply_fast_path.md"; do
+                          "$name/docs/c_abi.md" "$name/docs/apply_fast_path.md"                           "$name/docs/image_pipeline.md"; do
             if ! grep -qxF "$required" <<< "$listing"; then
               echo "::error::Package is missing $required"
               exit 1
