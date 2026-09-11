@@ -83,6 +83,11 @@ set(BB_SOURCES
     # Software resampling: ordinary portable image maths, no Office, so it is
     # built and tested on every architecture.
     src/image/resample.cpp
+    # Encoded-image decoding through WIC: still ordinary image work with no
+    # Office in it, so it builds and is testable on both architectures.
+    src/image/decode.cpp
+    # Crop, orient, resize: composed here so one decode serves all three.
+    src/image/pipeline.cpp
     src/dllmain.cpp
 )
 
@@ -158,8 +163,9 @@ endif()
 if(BB_NATIVE_BACKEND)
     target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
 else()
-    # The portable core needs only the OLE allocator and string types.
-    target_link_libraries(BlipBridge PRIVATE ole32 oleaut32)
+    # The portable core needs the OLE allocator, string types, and WIC - the
+    # decoder is image work rather than Office work, so it exists on x86 too.
+    target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 windowscodecs)
 endif()
 
 # --- the research library ----------------------------------------------------
@@ -198,6 +204,22 @@ if(BUILD_TESTING)
     add_executable(bb_resample_contract tests/resample_contract.cpp src/image/resample.cpp)
     target_link_options(bb_resample_contract PRIVATE -static -static-libgcc -static-libstdc++)
     add_test(NAME resample_contract COMMAND bb_resample_contract)
+
+    # Encoded-image decoding. Needs WIC but not Office, so it runs on both
+    # architectures - the first piece of BlipBridge that genuinely does.
+    add_executable(bb_decode_contract tests/decode_contract.cpp
+                   src/image/decode.cpp src/image/resample.cpp)
+    target_link_libraries(bb_decode_contract PRIVATE ole32 oleaut32 windowscodecs)
+    target_link_options(bb_decode_contract PRIVATE -static -static-libgcc -static-libstdc++)
+    add_test(NAME decode_contract COMMAND bb_decode_contract)
+
+    # Crop, orient and resize, against numbered-grid fixtures so every assertion
+    # says which source pixel arrived where.
+    add_executable(bb_pipeline_contract tests/pipeline_contract.cpp
+                   src/image/pipeline.cpp src/image/decode.cpp src/image/resample.cpp)
+    target_link_libraries(bb_pipeline_contract PRIVATE ole32 oleaut32 windowscodecs)
+    target_link_options(bb_pipeline_contract PRIVATE -static -static-libgcc -static-libstdc++)
+    add_test(NAME pipeline_contract COMMAND bb_pipeline_contract)
 
     # A timing run, not an assertion: built so it cannot rot, but never added as
     # a test, because a busy runner must not turn a measurement into a failure.
