@@ -96,6 +96,15 @@ try {
     $handleA = $engine.LoadTexture($bytesA)
     $handleB = $engine.LoadTexture($bytesB)
 
+    # --- the capability that advertises this API ------------------------------
+    # BB_GetCapabilities reports nothing outside PowerPoint by design, so the
+    # bits can only be checked from in here. A caller who tests the flag and
+    # then finds the call missing has no way to work out which of us is wrong.
+    $mask = [uint32](Get-Field ($engine.AbiCapabilities()) 'mask')
+    Assert (($mask -band 0x100) -ne 0) `
+        ("BB_CAP_RANGE_APPLY is set in host (mask 0x{0:X4})" -f $mask)
+    Assert (($mask -band 0x1) -ne 0) 'alongside BB_CAP_NATIVE_BACKEND'
+
     # --- filling --------------------------------------------------------------
     $names = @()
     for ($i = 0; $i -lt 8; $i++) {

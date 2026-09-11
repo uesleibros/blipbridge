@@ -163,6 +163,7 @@ std::wstring applyTextureUnrestricted(IDispatch* shape, long handle);
 std::wstring applyPictureThroughAbi(IDispatch* shape, const std::wstring& path);
 std::wstring applyTextureIfChangedThroughAbi(IDispatch* shape, long handle);
 std::wstring applyTextureRangeThroughAbi(IDispatch* range, long handle);
+std::wstring capabilitiesThroughAbi();
 std::wstring invalidateShapeThroughAbi(IDispatch* shape);
 std::wstring clearPictureCacheThroughAbi();
 std::wstring pictureCacheStatsThroughAbi();

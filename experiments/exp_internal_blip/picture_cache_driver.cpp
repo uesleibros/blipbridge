@@ -92,6 +92,16 @@ std::wstring applyTextureIfChangedThroughAbi(IDispatch* shape, long handle) {
     return out.str();
 }
 
+std::wstring capabilitiesThroughAbi() {
+    RequireInitialised();
+    // The real BB_GetCapabilities, called from inside PowerPoint. Off-host it
+    // reports nothing by design, so the bits can only be seen from here.
+    const std::uint32_t mask = BB_GetCapabilities();
+    std::wostringstream out;
+    out << L"mask=" << mask << L";hex=0x" << std::hex << mask << std::dec << L';';
+    return out.str();
+}
+
 std::wstring applyTextureRangeThroughAbi(IDispatch* range, long handle) {
     RequireInitialised();
     std::uint32_t applied = 0;

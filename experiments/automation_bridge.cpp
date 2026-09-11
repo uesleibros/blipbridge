@@ -8,6 +8,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     switch (id) {
     case DispatchId::ClearPictureCache:
     case DispatchId::PictureCacheStats:
+    case DispatchId::AbiCapabilities:
         return 0;
     case DispatchId::RunBenchmarks:
     case DispatchId::ProbeShapeCompatibility:
@@ -61,6 +62,9 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     // and At(0) would throw for them.
     if (id == DispatchId::ClearPictureCache) {
         return Value(clearPictureCacheThroughAbi().c_str());
+    }
+    if (id == DispatchId::AbiCapabilities) {
+        return Value(capabilitiesThroughAbi().c_str());
     }
     if (id == DispatchId::PictureCacheStats) {
         return Value(pictureCacheStatsThroughAbi().c_str());
