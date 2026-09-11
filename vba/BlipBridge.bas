@@ -966,49 +966,78 @@ End Function
 ' * @function LoadImage
 ' * @brief Decodes encoded image bytes into a CPU image BlipBridge owns.
 ' * @param bytes Encoded PNG, JPEG or BMP data.
-' * @param request What to do on the way in: crop, orient, resize. Leave blank to change nothing.
 ' * @return An opaque image handle. Release it with ReleaseImage.
 ' * @remarks An image is not a texture. A texture is what Office holds and has no pixels you can
 ' * reach; an image is decoded BGRA that stays on the CPU so it can be cropped, flipped or warped
 ' * again and again without decoding again. Use LoadTextureScaled instead when a picture needs
 ' * processing once and no more - it never creates an image at all.
+' *
+' * To crop, orient or resize on the way in, use LoadImageProcessed. VBA does not allow a
+' * user-defined type as an Optional parameter, so the two cases are two functions rather than one
+' * with a default - which is also plainer to read at the call site.
 ' */
-Public Function LoadImage(ByRef bytes() As Byte, _
-                          Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeImage
+Public Function LoadImage(ByRef bytes() As Byte) As BlipBridgeImage
+    Dim unchanged As BlipBridgeImageRequest
+    LoadImage = LoadImageProcessed(bytes, unchanged)
+End Function
+
+'/**
+' * @function LoadImageProcessed
+' * @brief Decodes encoded image bytes, cropping, orienting and resizing on the way in.
+' * @param bytes Encoded PNG, JPEG or BMP data.
+' * @param request What to do on the way in. Build one with ImageRequest().
+' * @return An opaque image handle. Release it with ReleaseImage.
+' * @remarks A blank request changes nothing, so this and LoadImage agree on the plain case.
+' */
+Public Function LoadImageProcessed(ByRef bytes() As Byte, _
+                                   ByRef request As BlipBridgeImageRequest) As BlipBridgeImage
     Initialize
 
     Dim length As Long
     length = ByteArrayLength(bytes)
     If length <= 0 Then
-        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadImage", _
-                  "LoadImage requires a non-empty byte array."
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadImageProcessed", _
+                  "LoadImageProcessed requires a non-empty byte array."
     End If
 
     Dim image As BlipBridgeImage
     CheckResult BB_LoadImage(VarPtr(bytes(LBound(bytes))), length, VarPtr(request), image), _
-                "LoadImage"
-    LoadImage = image
+                "LoadImageProcessed"
+    LoadImageProcessed = image
 End Function
 
 '/**
 ' * @function LoadImageFromFile
 ' * @brief Reads and decodes an image file into a CPU image BlipBridge owns.
 ' * @param filePath Full path to a PNG, JPEG or BMP file.
-' * @param request What to do on the way in. Leave blank to change nothing.
+' * @return An opaque image handle. Release it with ReleaseImage.
+' * @remarks To crop, orient or resize on the way in, use LoadImageProcessedFromFile.
+' */
+Public Function LoadImageFromFile(ByVal filePath As String) As BlipBridgeImage
+    Dim unchanged As BlipBridgeImageRequest
+    LoadImageFromFile = LoadImageProcessedFromFile(filePath, unchanged)
+End Function
+
+'/**
+' * @function LoadImageProcessedFromFile
+' * @brief Reads and decodes an image file, cropping, orienting and resizing on the way in.
+' * @param filePath Full path to a PNG, JPEG or BMP file.
+' * @param request What to do on the way in. Build one with ImageRequest().
 ' * @return An opaque image handle. Release it with ReleaseImage.
 ' */
-Public Function LoadImageFromFile(ByVal filePath As String, _
-                                  Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeImage
+Public Function LoadImageProcessedFromFile(ByVal filePath As String, _
+                                           ByRef request As BlipBridgeImageRequest) As BlipBridgeImage
     Initialize
 
     If Len(filePath) = 0 Then
-        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadImageFromFile", _
-                  "LoadImageFromFile requires a file path."
+        Err.Raise BB_ERROR_BASE, "BlipBridge.LoadImageProcessedFromFile", _
+                  "LoadImageProcessedFromFile requires a file path."
     End If
 
     Dim image As BlipBridgeImage
-    CheckResult BB_LoadImageFromFile(StrPtr(filePath), VarPtr(request), image), "LoadImageFromFile"
-    LoadImageFromFile = image
+    CheckResult BB_LoadImageFromFile(StrPtr(filePath), VarPtr(request), image), _
+                "LoadImageProcessedFromFile"
+    LoadImageProcessedFromFile = image
 End Function
 
 '/**
@@ -1153,14 +1182,15 @@ End Sub
 ' * @function LoadTextureScaled
 ' * @brief Decodes encoded image bytes straight into a texture, processing them on the way.
 ' * @param bytes Encoded PNG, JPEG or BMP data.
-' * @param request What to do on the way in: crop, orient, resize. Leave blank to change nothing.
+' * @param request What to do on the way in: crop, orient, resize. Build one with ImageRequest();
+' * a blank one changes nothing.
 ' * @return A texture handle. Release it with ReleaseTexture.
 ' * @remarks The efficient path for an image that needs processing once and no more: no CPU image
 ' * is created, so nothing is retained beyond what Office holds. Use LoadImage instead when the
 ' * same picture will be processed repeatedly.
 ' */
 Public Function LoadTextureScaled(ByRef bytes() As Byte, _
-                                  Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeTexture
+                                  ByRef request As BlipBridgeImageRequest) As BlipBridgeTexture
     Initialize
 
     Dim length As Long
@@ -1180,11 +1210,11 @@ End Function
 ' * @function LoadTextureScaledFromFile
 ' * @brief Reads an image file straight into a texture, processing it on the way.
 ' * @param filePath Full path to a PNG, JPEG or BMP file.
-' * @param request What to do on the way in. Leave blank to change nothing.
+' * @param request What to do on the way in. Build one with ImageRequest().
 ' * @return A texture handle. Release it with ReleaseTexture.
 ' */
 Public Function LoadTextureScaledFromFile(ByVal filePath As String, _
-                                          Optional ByRef request As BlipBridgeImageRequest) As BlipBridgeTexture
+                                          ByRef request As BlipBridgeImageRequest) As BlipBridgeTexture
     Initialize
 
     If Len(filePath) = 0 Then

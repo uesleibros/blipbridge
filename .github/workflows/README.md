@@ -60,6 +60,7 @@ On a machine with the validated Office build:
 .\tools\test_range_apply.ps1            # the multi-Shape apply, and its undo behaviour
 .\tools\test_image_api.ps1              # the CPU image resource, crop/orient/scale, quad warp
 .\tools\test_quad_warp.ps1              # the projective warp, read back out of a render
+.\tools\check_vba_module.ps1            # the wrapper's compile rules, without a VBA compiler
 ```
 
 Or run the whole Office matrix in one go, which is what a release gate wants:

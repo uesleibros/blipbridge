@@ -47,6 +47,9 @@ BlipBridge.ApplyTexture shp, grass
 BlipBridge.ReleaseTexture grass
 ```
 
+A request built with no arguments changes nothing, so `ImageRequest()` is how you
+say "just decode it".
+
 ### Reusing a decoded image
 
 When the same picture is processed more than once, decode it once into an

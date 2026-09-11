@@ -20,6 +20,33 @@ Callers written against 0.4.0 need the changes shown in the release notes.
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
   now prioritizes `windows.h` so subsequent formatting preserves this dependency.
 
+## [Unreleased]
+
+### Fixed
+
+- **The VBA module did not compile.** `LoadImage`, `LoadImageFromFile`,
+  `LoadTextureScaled` and `LoadTextureScaledFromFile` each declared the image
+  request as `Optional ByRef request As BlipBridgeImageRequest`, and VBA does not
+  allow a user-defined type as an optional parameter - so importing
+  BlipBridge.bas failed with "invalid parameter type for optional parameter" and
+  nothing in the module could be called. Shipped in 0.7.0 and found by opening
+  the module, which is the one thing no gate did.
+
+  The two image loaders are now `LoadImage` / `LoadImageFromFile` for a plain
+  decode and `LoadImageProcessed` / `LoadImageProcessedFromFile` when a request
+  is given. The two texture loaders take the request as a required parameter,
+  since their names already say processing happens; `ImageRequest()` built with
+  no arguments changes nothing.
+
+- **`tools/check_vba_module.ps1`**, run by CI and by the release, checks the rules
+  that made this possible: no user-defined type or array as an optional
+  parameter, no optional without a default unless it is Variant, no required
+  parameter after an optional one, no Object or Variant in a public signature,
+  and every name the release gates grep for being a real declaration rather than
+  a mention in a comment. Verified against the four broken declarations before
+  being trusted - the first version of it silently passed two of them, because
+  its parameter-list pattern stopped at the `()` of an array parameter.
+
 ## [0.7.0] - 2026-09-11
 
 Image processing, and the resource split that makes it honest.
@@ -39,6 +66,11 @@ Image processing, and the resource split that makes it honest.
   `BB_LoadImage`, `BB_LoadImageFromFile`, `BB_LoadImagePixels`,
   `BB_GetImageSize`, `BB_ReleaseImage`, `BB_ClearImages`, `BB_GetImageCount`,
   `BB_CreateTextureFromImage`.
+
+  In VBA that is `LoadImage` / `LoadImageFromFile` to decode and nothing else,
+  and `LoadImageProcessed` / `LoadImageProcessedFromFile` to crop, orient or
+  resize on the way in. Two names rather than one with an optional request,
+  because VBA does not allow a user-defined type as an optional parameter.
 
 - **Native decoding and processing.** Encoded images decode through Windows
   Imaging Component to canonical BGRA32 - straight alpha, because the resampler

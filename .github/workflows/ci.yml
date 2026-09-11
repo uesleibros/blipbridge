@@ -287,7 +287,7 @@ jobs:
                   throw "BB_CAP_IMAGE_PIPELINE must be 0x0200u."
               }
 
-              foreach ($required in @('LoadImage', 'WarpImageQuad', 'ApplyImageQuad',
+              foreach ($required in @('LoadImage', 'LoadImageProcessed', 'WarpImageQuad', 'ApplyImageQuad',
                                       'LoadTextureScaled', 'BlipBridgeImage',
                                       'BlipBridgePoint', 'BB_CAP_IMAGE_PIPELINE')) {
                   if ($wrapper -notmatch [regex]::Escape($required)) {
@@ -324,6 +324,10 @@ jobs:
           }
 
           Write-Host "Public API is strongly typed and exposes the scaling surface."
+
+      - name: Check the VBA module compiles by the rules we can check
+        shell: pwsh
+        run: ./tools/check_vba_module.ps1
 
       - name: Upload Release build
         if: matrix.configuration == 'Release'

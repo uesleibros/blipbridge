@@ -314,6 +314,10 @@ jobs:
 
           Write-Host "Public VBA API is strongly typed."
 
+      - name: Check the VBA module compiles by the rules we can check
+        shell: pwsh
+        run: ./tools/check_vba_module.ps1
+
       - name: Verify ABI 4 exposes the range API and its capability
         shell: pwsh
         run: |
@@ -350,6 +354,7 @@ jobs:
           }
 
           foreach ($required in @('ApplyTextureRange', 'BB_CAP_RANGE_APPLY', 'LoadImage',
+                                  'LoadImageProcessed',
                                   'WarpImageQuad', 'ApplyImageQuad', 'LoadTextureScaled',
                                   'BlipBridgeImage', 'BB_CAP_IMAGE_PIPELINE')) {
               if ($wrapper -notmatch [regex]::Escape($required)) {
