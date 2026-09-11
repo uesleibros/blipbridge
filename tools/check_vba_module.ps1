@@ -24,6 +24,17 @@ the rules that are mechanical enough to check without one.
                                 there - the release gate greps for names, which
                                 would pass on a comment.
 
+  Doc blocks that have drifted  @function naming a different procedure, @param
+                                for a parameter that no longer exists, a
+                                parameter with no @param, a Function with no
+                                @return. A stale @param is worse than none: it
+                                tells a caller to pass something that is gone.
+
+  Comment syntax                A line starting with * or @ that lost its
+                                apostrophe is code. A comment ending in " _" does
+                                not continue - VBA has no comment continuation,
+                                so the next line is read as code.
+
 ## What this is not
 
 It is not a VBA compiler, and it cannot become one here: compiling would need the
@@ -113,9 +124,93 @@ foreach ($name in $required) {
     }
 }
 
+
+<#
+The doc blocks have to still describe the code. A signature change leaves the
+block behind, and a stale @param is worse than none: it tells a caller to pass
+something that no longer exists. Checked here because nothing else would notice.
+#>
+$blocks = 0
+$openMarkers = @()
+$closeMarkers = @()
+$fileLines = Get-Content $path
+for ($index = 0; $index -lt $fileLines.Count; $index++) {
+    $trimmed = $fileLines[$index].Trim()
+    if ($trimmed -eq "'/**") { $openMarkers += $index }
+    if ($trimmed -eq "' */") { $closeMarkers += $index }
+
+    # A line starting with * or @ has lost its apostrophe and is now code.
+    if ($trimmed -match '^[\*@]') {
+        $findings.Add("line $($index + 1) looks like a doc line but is not a comment: $trimmed")
+    }
+    # VBA has no comment continuation: a comment ending in " _" does not join the
+    # next line, it just ends, and the next line is read as code.
+    if ($trimmed.StartsWith("'") -and $fileLines[$index].TrimEnd().EndsWith(' _')) {
+        $findings.Add("line $($index + 1) is a comment ending in a continuation")
+    }
+}
+if ($openMarkers.Count -ne $closeMarkers.Count) {
+    $findings.Add("$($openMarkers.Count) doc blocks opened but $($closeMarkers.Count) closed")
+}
+
+foreach ($declaration in $declarations) {
+    $name = $declaration.Groups[1].Value
+    $parameters = $declaration.Groups[2].Value
+
+    # Only the public surface is documented by convention; private helpers that
+    # do have a block are still checked for accuracy.
+    $line = ($joined -split "`r?`n" | Where-Object {
+        $_ -match "(?m)^\s*(Public|Private)\s+(Function|Sub)\s+$name\s*\("
+    } | Select-Object -First 1)
+    if (-not $line) { continue }
+
+    $names = @()
+    foreach ($parameter in ($parameters -split ',')) {
+        $trimmed = ($parameter -replace '^\s*(Optional\s+)?(ByVal|ByRef|ParamArray)?\s*', '').Trim()
+        if ($trimmed -match '^(\w+)') { $names += $Matches[1] }
+    }
+
+    # The block immediately above the declaration, if there is one.
+    $start = ($fileLines | Select-String -SimpleMatch -Pattern $declaration.Groups[0].Value.Split("`n")[0].Trim() |
+        Select-Object -First 1)
+    if (-not $start) { continue }
+    $at = $start.LineNumber - 2
+    while ($at -ge 0 -and $fileLines[$at].Trim() -eq '') { $at-- }
+    if ($at -lt 0 -or $fileLines[$at].Trim() -ne "' */") { continue }
+    $blockEnd = $at
+    while ($at -ge 0 -and $fileLines[$at].Trim() -ne "'/**") { $at-- }
+    if ($at -lt 0) { continue }
+    $blocks++
+    $doc = ($fileLines[$at..$blockEnd] -join "`n")
+
+    $declared = [regex]::Match($doc, '@function\s+(\w+)')
+    if ($declared.Success -and $declared.Groups[1].Value -ne $name) {
+        $findings.Add("$name : doc says @function $($declared.Groups[1].Value)")
+    }
+
+    $documented = [regex]::Matches($doc, '@param\s+(\w+)') | ForEach-Object { $_.Groups[1].Value }
+    foreach ($param in $documented) {
+        if ($names -notcontains $param) {
+            $findings.Add("$name : @param $param is not a parameter")
+        }
+    }
+    foreach ($param in $names) {
+        if ($documented -notcontains $param) {
+            $findings.Add("$name : parameter $param is undocumented")
+        }
+    }
+
+    if ($line -match '^\s*Public\s+Function\s' -and $doc -notmatch '@return') {
+        $findings.Add("$name : public Function with no @return")
+    }
+    if ($line -match '^\s*(Public|Private)\s+Sub\s' -and $doc -match '@return') {
+        $findings.Add("$name : Sub documents a @return")
+    }
+}
+
 if ($findings.Count -gt 0) {
     $findings | ForEach-Object { "  FAIL $_" }
     throw "$($findings.Count) problem(s) in BlipBridge.bas"
 }
 
-"BlipBridge.bas: $($declarations.Count) declarations checked, no problems"
+"BlipBridge.bas: $($declarations.Count) declarations and $blocks doc blocks checked, no problems"

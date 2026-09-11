@@ -1086,6 +1086,7 @@ End Sub
 '/**
 ' * @function GetImageCount
 ' * @brief How many CPU images are currently held.
+' * @return The number of live image handles. Textures are counted separately by TextureCount.
 ' */
 Public Function GetImageCount() As Long
     Initialize
@@ -1239,8 +1240,10 @@ End Function
 ' * @param cropWidth Region width, or 0 for the whole image.
 ' * @param cropHeight Region height, or 0 for the whole image.
 ' * @param transform A lossless orientation change, applied between crop and resize.
+' * @return A request the image and texture loaders take.
 ' * @remarks Purely a convenience for the common call, which would otherwise need five lines to
-' * say "this tile, that big, nearest".
+' * say "this tile, that big, nearest". Built with no arguments it changes nothing, which is how
+' * you ask LoadTextureScaled for a plain decode.
 ' */
 Public Function ImageRequest(Optional ByVal targetWidth As Long = 0, _
                              Optional ByVal targetHeight As Long = 0, _
@@ -1266,8 +1269,18 @@ End Function
 '/**
 ' * @function QuadPoints
 ' * @brief Builds the four-corner array the quad calls take.
+' * @param x0 Where the source image's top-left corner should land.
+' * @param y0 Where the source image's top-left corner should land.
+' * @param x1 Where the source image's top-right corner should land.
+' * @param y1 Where the source image's top-right corner should land.
+' * @param x2 Where the source image's bottom-right corner should land.
+' * @param y2 Where the source image's bottom-right corner should land.
+' * @param x3 Where the source image's bottom-left corner should land.
+' * @param y3 Where the source image's bottom-left corner should land.
+' * @return A four-element array ready for WarpImageQuad or ApplyImageQuad.
 ' * @remarks The order is the one the API documents and never reorders: source top-left,
-' * top-right, bottom-right, bottom-left.
+' * top-right, bottom-right, bottom-left. Passing them in another order asks for a mirrored or
+' * crossed mapping, and gets one.
 ' */
 Public Function QuadPoints(ByVal x0 As Single, ByVal y0 As Single, _
                            ByVal x1 As Single, ByVal y1 As Single, _
@@ -1284,6 +1297,8 @@ End Function
 '/**
 ' * @function RequireFourPoints
 ' * @brief Refuses a quad that is not exactly four corners, before the ABI sees it.
+' * @param points The caller's quad array, which may be unallocated.
+' * @param caller The public function's name, so the error names what the caller actually called.
 ' */
 Private Sub RequireFourPoints(ByRef points() As BlipBridgePoint, ByVal caller As String)
     Dim count As Long
