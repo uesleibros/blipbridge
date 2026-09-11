@@ -24,18 +24,7 @@ harness as unusable rather than blaming the native path.
 param([switch]$KeepOpen)
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
-$texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
-$results = New-Object System.Collections.Generic.List[string]
 
-$msoTrue = -1
-$msoFalse = 0
-$ppLayoutBlank = 12
-$msoShapeRectangle = 1
-$msoFillSolid = 1
-$msoFillPicture = 6
-$undoCommandBarId = 128   # the classic Undo control, still present under the ribbon
-$redoCommandBarId = 129
 <#
 Connecting can land on a PowerPoint that a previous suite is still shutting
 down, which fails with 0x800706B5 "unknown interface". That says nothing about
@@ -51,6 +40,19 @@ function Connect-PowerPoint {
         }
     }
 }
+
+$root = Split-Path $PSScriptRoot -Parent
+$texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
+$results = New-Object System.Collections.Generic.List[string]
+
+$msoTrue = -1
+$msoFalse = 0
+$ppLayoutBlank = 12
+$msoShapeRectangle = 1
+$msoFillSolid = 1
+$msoFillPicture = 6
+$undoCommandBarId = 128   # the classic Undo control, still present under the ribbon
+$redoCommandBarId = 129
 
 
 $app = Connect-PowerPoint

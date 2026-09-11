@@ -19,6 +19,23 @@ checks the harder case where textures are still loaded when the host exits.
 param([int]$ReuseIterations = 1000)
 
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 $texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
 $second = Join-Path $root 'artifacts/textures/texture_128_0.png'
@@ -36,21 +53,6 @@ function Get-Field([string]$report, [string]$name) {
         if ($pair.Length -eq 2 -and $pair[0] -eq $name) { return $pair[1] }
     }
     return $null
-}
-<#
-Connecting can land on a PowerPoint that a previous suite is still shutting
-down, which fails with 0x800706B5 "unknown interface". That says nothing about
-BlipBridge, so the connection waits for the dying host and retries rather than
-reporting a failure the code did not cause.
-#>
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
-            Start-Sleep -Seconds 2
-        }
-    }
 }
 
 

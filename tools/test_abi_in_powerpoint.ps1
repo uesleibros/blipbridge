@@ -11,6 +11,23 @@ It uses P/Invoke rather than COM Automation, so nothing here depends on the
 add-in being registered - which is the whole point of the C ABI.
 #>
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 $dll = Join-Path $root 'dist/windows-x64/BlipBridge-x64.dll'
 if (-not (Test-Path $dll)) { $dll = Join-Path $root 'build/Release/BlipBridge-x64.dll' }
@@ -41,21 +58,6 @@ function Get-NativeText([scriptblock]$getter) {
     $builder = New-Object System.Text.StringBuilder 512
     [void](& $getter $builder 512)
     return $builder.ToString()
-}
-<#
-Connecting can land on a PowerPoint that a previous suite is still shutting
-down, which fails with 0x800706B5 "unknown interface". That says nothing about
-BlipBridge, so the connection waits for the dying host and retries rather than
-reporting a failure the code did not cause.
-#>
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
-            Start-Sleep -Seconds 2
-        }
-    }
 }
 
 

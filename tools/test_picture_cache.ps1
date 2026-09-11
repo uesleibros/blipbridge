@@ -18,6 +18,23 @@ Everything is asserted, not printed for a human to eyeball: a wrong answer fails
 the script.
 #>
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 $msoTrue = -1
 $ppLayoutBlank = 12
@@ -42,21 +59,6 @@ function Get-Field([string]$report, [string]$name) {
         if ($bits.Length -eq 2 -and $bits[0] -eq $name) { return $bits[1] }
     }
     return $null
-}
-<#
-Connecting can land on a PowerPoint that a previous suite is still shutting
-down, which fails with 0x800706B5 "unknown interface". That says nothing about
-BlipBridge, so the connection waits for the dying host and retries rather than
-reporting a failure the code did not cause.
-#>
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
-            Start-Sleep -Seconds 2
-        }
-    }
 }
 
 

@@ -20,15 +20,7 @@ tools/test_native_texture_shutdown.ps1.
 param([int]$Applies = 10000, [int]$TextureChurn = 100, [int]$ChurnRounds = 5)
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
-$textureA = Join-Path $root 'artifacts/textures/texture_64_1.png'
-$textureB = Join-Path $root 'artifacts/textures/texture_128_0.png'
-$results = New-Object System.Collections.Generic.List[string]
 
-$msoTrue = -1
-$ppLayoutBlank = 12
-$msoShapeRectangle = 1
-$msoFillPicture = 6
 <#
 Connecting can land on a PowerPoint that a previous suite is still shutting
 down, which fails with 0x800706B5 "unknown interface". That says nothing about
@@ -44,6 +36,16 @@ function Connect-PowerPoint {
         }
     }
 }
+
+$root = Split-Path $PSScriptRoot -Parent
+$textureA = Join-Path $root 'artifacts/textures/texture_64_1.png'
+$textureB = Join-Path $root 'artifacts/textures/texture_128_0.png'
+$results = New-Object System.Collections.Generic.List[string]
+
+$msoTrue = -1
+$ppLayoutBlank = 12
+$msoShapeRectangle = 1
+$msoFillPicture = 6
 
 
 $app = Connect-PowerPoint

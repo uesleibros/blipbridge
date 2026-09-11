@@ -24,10 +24,28 @@ Writes one `key=value;` line to -Out. Isolated because a regression here is a
 crash, and a crash must cost one row rather than the whole suite.
 #>
 param(
+
     [Parameter(Mandatory = $true)][ValidateSet('Connector', 'Line', 'WordArt')][string]$Case,
     [Parameter(Mandatory = $true)][string]$Out
 )
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 $msoTrue = -1
 $ppLayoutBlank = 12
@@ -59,20 +77,6 @@ function Assert([bool]$condition, [string]$what) {
 # Written first, so a host that dies leaves a row saying so.
 Set-Field 'result' 'Crashed'
 Save-Result
-<#
-Connecting can land on a PowerPoint that a previous run is still shutting down,
-which fails with 0x800706B5. That says nothing about BlipBridge, so it waits for
-the dying host and retries.
-#>
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
-            Start-Sleep -Seconds 2
-        }
-    }
-}
 
 
 $app = Connect-PowerPoint

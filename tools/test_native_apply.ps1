@@ -17,15 +17,7 @@ is deleted before the target is touched; the target Shape itself never sees
 UserPicture.
 #>
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
-$texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
-$results = New-Object System.Collections.Generic.List[string]
-$deck = Join-Path $root 'artifacts/native_apply.pptx'
 
-function Get-Identity($shape) {
-    @($shape.Id, $shape.Name, $shape.Type, $shape.Left, $shape.Top, $shape.Width,
-      $shape.Height, $shape.Rotation, $shape.ZOrderPosition) -join '|'
-}
 <#
 Connecting can land on a PowerPoint that a previous suite is still shutting
 down, which fails with 0x800706B5 "unknown interface". That says nothing about
@@ -40,6 +32,16 @@ function Connect-PowerPoint {
             Start-Sleep -Seconds 2
         }
     }
+}
+
+$root = Split-Path $PSScriptRoot -Parent
+$texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
+$results = New-Object System.Collections.Generic.List[string]
+$deck = Join-Path $root 'artifacts/native_apply.pptx'
+
+function Get-Identity($shape) {
+    @($shape.Id, $shape.Name, $shape.Type, $shape.Left, $shape.Top, $shape.Width,
+      $shape.Height, $shape.Rotation, $shape.ZOrderPosition) -join '|'
 }
 
 

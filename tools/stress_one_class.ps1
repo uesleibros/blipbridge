@@ -22,12 +22,30 @@ which bypasses the allowlist and nothing else. Isolation is deliberate: if a
 class takes the host down, the parent records it instead of losing the run.
 #>
 param(
+
     [Parameter(Mandatory = $true)][string]$Category,
     [Parameter(Mandatory = $true)][string]$Out,
     [int]$Applies = 1000,
     [int]$Alternating = 500
 )
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 
 $msoTrue = -1
@@ -98,20 +116,6 @@ if (-not $factories.ContainsKey($Category)) {
 Set-Field 'result' 'Crashed'
 Set-Field 'stage' 'before start'
 Save-Result
-<#
-Connecting can land on a PowerPoint that a previous run is still shutting down,
-which fails with 0x800706B5. That says nothing about BlipBridge, so it waits for
-the dying host and retries.
-#>
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
-            Start-Sleep -Seconds 2
-        }
-    }
-}
 
 
 $app = Connect-PowerPoint

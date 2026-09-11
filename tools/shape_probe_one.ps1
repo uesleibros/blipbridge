@@ -19,10 +19,28 @@ The category name to test. See $factories below.
 File to write the single result line to.
 #>
 param(
+
     [Parameter(Mandatory = $true)][string]$Category,
     [Parameter(Mandatory = $true)][string]$Out
 )
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 
 $msoTrue = -1
@@ -99,20 +117,6 @@ if (-not $factories.ContainsKey($Category)) {
 Set-Field 'class' 'Crashed'
 Set-Field 'step' 'HostDiedDuringTest'
 Save-Result
-<#
-Connecting can land on a PowerPoint that a previous run is still shutting down,
-which fails with 0x800706B5. That says nothing about BlipBridge, so it waits for
-the dying host and retries.
-#>
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch {
-            if ($attempt -eq 10) { throw }
-            Start-Sleep -Seconds 2
-        }
-    }
-}
 
 
 $app = Connect-PowerPoint

@@ -10,16 +10,7 @@ both of which run while GFX is still loaded, so a clean exit is the pass
 condition. A hang, a crash dialog or a non-zero exit code is a failure.
 #>
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
-$texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
-$results = New-Object System.Collections.Generic.List[string]
 
-<#
- Runs one host to completion. $loadTextures decides whether textures are still
- held at Quit, so the same code path gives us a control: if a host with no
- textures also refuses to exit, the harness is at fault rather than the store.
-#>
-function Invoke-Host([bool]$loadTextures) {
 <#
 Connecting can land on a PowerPoint that a previous suite is still shutting
 down, which fails with 0x800706B5 "unknown interface". That says nothing about
@@ -35,6 +26,17 @@ function Connect-PowerPoint {
         }
     }
 }
+
+$root = Split-Path $PSScriptRoot -Parent
+$texture = Join-Path $root 'artifacts/textures/texture_64_1.png'
+$results = New-Object System.Collections.Generic.List[string]
+
+<#
+ Runs one host to completion. $loadTextures decides whether textures are still
+ held at Quit, so the same code path gives us a control: if a host with no
+ textures also refuses to exit, the harness is at fault rather than the store.
+#>
+function Invoke-Host([bool]$loadTextures) {
 
     $app = Connect-PowerPoint
     $app.COMAddIns.Update()

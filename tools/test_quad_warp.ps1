@@ -31,6 +31,23 @@ transform too, so the foreshortening check is the one that earns the feature.
 param([int]$Probe = 256, [switch]$KeepImages)
 
 $ErrorActionPreference = 'Stop'
+
+<#
+Connecting can land on a PowerPoint that a previous suite is still shutting
+down, which fails with 0x800706B5 "unknown interface". That says nothing about
+BlipBridge, so the connection waits for the dying host and retries rather than
+reporting a failure the code did not cause.
+#>
+function Connect-PowerPoint {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try { return New-Object -ComObject PowerPoint.Application }
+        catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 $msoTrue = -1
 $msoFalse = 0
@@ -62,12 +79,6 @@ for ($y = 0; $y -lt $Probe; $y++) {
 $bitmap.Save($uvPath, [System.Drawing.Imaging.ImageFormat]::Png)
 $bitmap.Dispose()
 
-function Connect-PowerPoint {
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        try { return New-Object -ComObject PowerPoint.Application }
-        catch { if ($attempt -eq 10) { throw }; Start-Sleep -Seconds 2 }
-    }
-}
 
 $app = Connect-PowerPoint
 $app.COMAddIns.Update()
