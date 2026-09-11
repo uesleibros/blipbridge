@@ -227,6 +227,8 @@ jobs:
             BB_LoadTexturePixels
             BB_ApplyTexture
             BB_ApplyTextureBatch
+            BB_ApplyTextureIfChanged
+            BB_ApplyTextureRange
             BB_ReleaseTexture
             BB_ClearTextures
             BB_ApplyPicture
@@ -292,13 +294,72 @@ jobs:
           }
 
           foreach ($name in @('BlipBridgeTexture', 'BlipBridgeScaleFilter',
-                              'LoadTexturePixelsScaled')) {
+                              'LoadTexturePixelsScaled', 'PowerPoint.ShapeRange')) {
               if ($wrapper -notmatch [regex]::Escape($name)) {
                   throw "BlipBridge.bas is missing $name"
               }
           }
 
           Write-Host "Public VBA API is strongly typed."
+
+      - name: Verify ABI 4 exposes the range API and its capability
+        shell: pwsh
+        run: |
+          <#
+            A release claiming ABI 4 must actually carry what ABI 4 means:
+            BB_ApplyTextureRange in the header and the wrapper, and the
+            capability bit that advertises it. Otherwise a caller checks the
+            capability, gets nothing, and has no way to tell why.
+          #>
+          $header = Get-Content "include/blipbridge/blipbridge.h" -Raw
+          $wrapper = Get-Content "vba/BlipBridge.bas" -Raw
+
+          if ($header -notmatch '#define\s+BB_ABI_VERSION\s+(\d+)u') {
+              throw "Could not read BB_ABI_VERSION from the public header."
+          }
+          $abi = [int]$Matches[1]
+          if ($abi -lt 4) {
+              throw "This release requires ABI 4 or later, header says $abi."
+          }
+
+          if ($header -notmatch '#define\s+BB_CAP_RANGE_APPLY\s+0x0100u') {
+              throw "BB_CAP_RANGE_APPLY must be defined as 0x0100u."
+          }
+
+          foreach ($required in @('BB_ApplyTextureRange')) {
+              if ($header -notmatch [regex]::Escape($required)) {
+                  throw "The public header is missing $required."
+              }
+          }
+
+          foreach ($required in @('ApplyTextureRange', 'BB_CAP_RANGE_APPLY')) {
+              if ($wrapper -notmatch [regex]::Escape($required)) {
+                  throw "BlipBridge.bas is missing $required."
+              }
+          }
+
+          Write-Host "ABI $abi exposes BB_ApplyTextureRange and BB_CAP_RANGE_APPLY (0x0100)."
+
+          <#
+            And the version the DLL reports must be the version being tagged.
+            A v0.6.0 archive whose BB_GetVersionString says 0.5.0 is a support
+            question nobody can answer from the artefacts alone.
+          #>
+          $expected = "${{ needs.metadata.outputs.version }}"
+          $parts = @{}
+          foreach ($field in 'MAJOR', 'MINOR', 'PATCH') {
+              if ($header -notmatch "#define\s+BB_VERSION_$field\s+(\d+)") {
+                  throw "Could not read BB_VERSION_$field from the public header."
+              }
+              $parts[$field] = $Matches[1]
+          }
+          $headerVersion = "$($parts['MAJOR']).$($parts['MINOR']).$($parts['PATCH'])"
+
+          if ($headerVersion -ne $expected) {
+              throw "Tag is v$expected but the header says $headerVersion."
+          }
+
+          Write-Host "Header version $headerVersion matches the tag."
 
       - name: Verify VBA wrapper architecture names
         shell: pwsh

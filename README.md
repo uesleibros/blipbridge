@@ -33,14 +33,32 @@ BlipBridge.ApplyTexture shp, texture      ' ~0.19 ms, no file, no donor Shape
 BlipBridge.ReleaseTexture texture
 ```
 
-Filling many Shapes at once is one call, and one Office edit rather than N:
+Filling many Shapes with the *same* texture is one call, and one Office edit
+rather than N:
 
 ```vb
+Dim names As Variant
 Dim rng As PowerPoint.ShapeRange
-Set rng = ActivePresentation.Slides(1).Shapes.Range(names)
+Dim applied As Long
 
-BlipBridge.ApplyTextureRange rng, texture  ' 32 Shapes in ~1.9 ms, not ~6.6
+names = Array("face1", "face2", "face3", "face4")
+Set rng = Slide1.Shapes.Range(names)
+
+applied = BlipBridge.ApplyTextureRange(rng, grassTexture)
 ```
+
+Every Shape in the range gets that one cached texture, the whole thing counts as
+**one** PowerPoint edit - one Ctrl+Z takes it back - and the range must belong to
+one slide, because a PowerPoint `ShapeRange` cannot span slides. One member with
+no validated native path, a Connector or a Chart say, refuses the whole call by
+name before anything internal is touched.
+
+Reach for something else when:
+
+- **each Shape needs a different texture** - `ApplyTextureBatch`, which takes one
+  handle per Shape. It saves the call overhead, not Office's work.
+- **there is one Shape** - `ApplyTexture`. At one Shape the range path costs the
+  same and says less.
 
 Skip the work entirely when nothing would change:
 

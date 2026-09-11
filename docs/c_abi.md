@@ -250,6 +250,22 @@ a fill updates it, so the two can be mixed freely on the same Shape.
 See `docs/apply_fast_path.md` for where the 0.189 ms goes and why this is the
 only part of it that can be avoided.
 
+## Which apply to use
+
+Three entry points write a picture fill, and they are not interchangeable.
+
+| | takes | textures | Office edits | undo entries | use it when |
+|---|---|---|---|---|---|
+| `BB_ApplyTexture` | one Shape | one | 1 | 1 | one Shape |
+| `BB_ApplyTextureBatch` | an array of Shapes | one per Shape | N | N | many Shapes needing *different* textures |
+| `BB_ApplyTextureRange` | one ShapeRange | one for all | **1** | **1** | many Shapes sharing *one* texture |
+
+`BB_ApplyTextureBatch` saves ABI crossings, not Office work: it still makes one
+edit per Shape and benchmarks at 0.95-1.01x against the same number of individual
+calls. `BB_ApplyTextureRange` makes one edit for the whole range, which is where
+the amortised saving comes from - and it needs every member to take the same
+image, because there is only one apply.
+
 ## Filling many Shapes at once
 
 `BB_ApplyTextureRange(shapeRange, texture, &applied)` fills every Shape in one

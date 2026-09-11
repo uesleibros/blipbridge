@@ -20,7 +20,11 @@ Callers written against 0.4.0 need the changes shown in the release notes.
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
   now prioritizes `windows.h` so subsequent formatting preserves this dependency.
 
-## [Unreleased]
+## [0.6.0] - 2026-09-10
+
+Adds the native ShapeRange apply and moves the public ABI to 4. Existing
+`BB_ApplyTexture` and `BB_ApplyTextureBatch` calls are unchanged in behaviour;
+callers written against ABI 3 need only the new header and wrapper.
 
 ### Fixed - correctness, independent of the new feature
 
@@ -92,11 +96,30 @@ Callers written against 0.4.0 need the changes shown in the release notes.
 
 ### Changed
 
+- **Public ABI 3 -> 4**, because `BB_ApplyTextureRange` is a finalised public
+  export. `BB_GetAbiVersion`, `BB_EXPECTED_ABI` in the VBA wrapper, the CI gate
+  and the release gate all move together, and the release now refuses to publish
+  an ABI 4 build that does not export the range API and define
+  `BB_CAP_RANGE_APPLY` as 0x0100.
+
 - The Office module handles are resolved once and **pinned** rather than looked
   up on every apply. Three `GetModuleHandleW` calls, each taking the loader lock,
   were 7.1 of the receiver resolution's 18.6 microseconds. A pinned module cannot
   be unloaded, so its base cannot move - a stronger guarantee than the re-lookup
   it replaces, which could only notice a swap after it had happened.
+
+- Release validation now covers range operations: the heterogeneous-class range,
+  groups in a range, a second texture over the same range, the same-slide
+  restriction, undo and redo of a whole range, and every order of the three
+  fill-writing APIs against the shared record.
+
+### Not validated
+
+- **x86 Office runtime.** The x86 DLL is built and gate-checked in CI - exports,
+  architecture, calling convention, packaging - and the C ABI contract test runs
+  on it. It has never been run inside a real 32-bit PowerPoint, and the x86
+  backend refuses by design rather than implementing the native path. Building
+  is not running; see `docs/windows_x86.md`.
 
 
 ### Fixed

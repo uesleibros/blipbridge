@@ -168,6 +168,8 @@ jobs:
             BB_LoadTexturePixels
             BB_ApplyTexture
             BB_ApplyTextureBatch
+            BB_ApplyTextureIfChanged
+            BB_ApplyTextureRange
             BB_ReleaseTexture
             BB_ClearTextures
             BB_GetTextureCount
@@ -229,6 +231,33 @@ jobs:
           Write-Host "Wrapper and header agree on ABI version $headerAbi."
 
           <#
+            ABI 4 is the version that introduced BB_ApplyTextureRange and the
+            capability bit that advertises it. A build claiming ABI 4 without
+            both would tell a caller the range path exists and then not export
+            it, so the three are checked together rather than trusted to move
+            together.
+          #>
+          if ([int]$headerAbi -ge 4) {
+              foreach ($required in @('BB_ApplyTextureRange', 'BB_CAP_RANGE_APPLY')) {
+                  if ($header -notmatch [regex]::Escape($required)) {
+                      throw "ABI $headerAbi header is missing $required."
+                  }
+              }
+
+              if ($header -notmatch '#define\s+BB_CAP_RANGE_APPLY\s+0x0100u') {
+                  throw "BB_CAP_RANGE_APPLY must be 0x0100u."
+              }
+
+              foreach ($required in @('ApplyTextureRange', 'BB_CAP_RANGE_APPLY')) {
+                  if ($wrapper -notmatch [regex]::Escape($required)) {
+                      throw "BlipBridge.bas is missing $required."
+                  }
+              }
+
+              Write-Host "ABI $headerAbi exposes BB_ApplyTextureRange and BB_CAP_RANGE_APPLY."
+          }
+
+          <#
             The public API must stay strongly typed. Object and Variant in a
             public signature would compile and then quietly undo the typing, so
             it is checked here rather than left to review.
@@ -247,7 +276,7 @@ jobs:
           }
 
           foreach ($name in @('BlipBridgeTexture', 'BlipBridgeScaleFilter',
-                              'LoadTexturePixelsScaled')) {
+                              'LoadTexturePixelsScaled', 'PowerPoint.ShapeRange')) {
               if ($wrapper -notmatch [regex]::Escape($name)) {
                   throw "BlipBridge.bas is missing $name."
               }
