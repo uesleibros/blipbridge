@@ -43,15 +43,155 @@ is not something a test should switch on. So this checks the rules that are
 mechanical, and the definitive check remains opening the module in the editor -
 which is how the defect it exists for was found.
 
+## Validate the file you ship, not a copy of it
+
+v0.7.0 shipped a module that could not be imported, and one reason nothing
+noticed is that every gate read `vba/BlipBridge.bas` out of the source tree while
+the release archive carried its own copy. Anything that happened to the file
+between those two points - a line-ending conversion, a truncated copy, the wrong
+file entirely - was invisible.
+
+So this takes -Path. The release workflow points it at the .bas **extracted from
+the finished archive**, which is the only copy a user will ever have.
+
 Run it from the repo root. Exits non-zero on any finding.
 #>
+param(
+    # The module to check. Defaults to the source tree's copy; the release
+    # workflow passes the one it pulled back out of the ZIP.
+    [string]$Path
+)
+
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$path = Join-Path $root 'vba/BlipBridge.bas'
+if (-not $Path) { $Path = Join-Path $root 'vba/BlipBridge.bas' }
+$path = $Path
 if (-not (Test-Path $path)) { throw "Missing $path" }
 
 $text = Get-Content $path -Raw
 $findings = New-Object System.Collections.Generic.List[string]
+$moduleFile = Split-Path $path -Leaf
+
+<#
+The file-level checks: the things that stop a module being imported at all,
+before a single declaration is read, and the things a packaging step can do to a
+file that no amount of source-tree checking would ever see.
+#>
+$bytes = [IO.File]::ReadAllBytes($path)
+if ($bytes.Length -eq 0) { throw "$path is empty" }
+
+# A .bas must open with its module name attribute. Without it the VBA editor
+# refuses the import outright rather than reporting a compile error.
+if ($text -notmatch '^\s*(﻿)?Attribute\s+VB_Name\s*=\s*"[^"]+"') {
+    $findings.Add('the file does not begin with an Attribute VB_Name line')
+}
+
+<#
+Line endings, which is where v0.7.0 went wrong in a way nothing could see.
+
+The VBA editor writes CRLF when it exports a module; a .bas is that format. The
+repository stored the module LF, so a developer with core.autocrlf=true edited
+and tested a CRLF file while CI checked out LF and packaged that - and the file
+users received was not the file anyone had validated. .gitattributes pins it now,
+and this is what proves the pin holds all the way into the archive.
+#>
+$crlf = ([regex]::Matches($text, "`r`n")).Count
+$bareLf = ([regex]::Matches($text, "`n")).Count - $crlf
+if ($bareLf -gt 0) {
+    $findings.Add("$bareLf line(s) end in LF rather than CRLF - a .bas is a CRLF format")
+}
+if ($text -match "`r(?!`n)") {
+    $findings.Add('the file contains a bare CR')
+}
+
+# A NUL byte means the file was truncated or written in the wrong encoding, and
+# nothing after it will parse.
+if ($bytes -contains 0) {
+    $findings.Add('the file contains a NUL byte, so it is truncated or mis-encoded')
+}
+
+<#
+Block structure. Each of these must close, and an unclosed one makes everything
+after it unparseable - which is the shape of damage a bad merge or a partial copy
+produces, and which a name-grep gate would sail straight past.
+#>
+$blockPairs = @(
+    @{ What = '#If'; Open = '(?m)^\s*#If\s'; Close = '(?m)^\s*#End\s+If' },
+    @{ What = 'Type'; Open = '(?m)^\s*(?:Public\s+|Private\s+)?Type\s+\w+'; Close = '(?m)^\s*End\s+Type' },
+    @{ What = 'Enum'; Open = '(?m)^\s*(?:Public\s+|Private\s+)?Enum\s+\w+'; Close = '(?m)^\s*End\s+Enum' }
+)
+foreach ($pair in $blockPairs) {
+    $opened = ([regex]::Matches($text, $pair.Open)).Count
+    $closed = ([regex]::Matches($text, $pair.Close)).Count
+    if ($opened -ne $closed) {
+        $findings.Add("$($pair.What): $opened opened but $closed closed")
+    }
+}
+
+<#
+Every Declare must name the library it binds to. Without Lib the module still
+imports and the first call fails at run time, which is a much worse way to find
+out than a refused import.
+#>
+$declareLines = [regex]::Matches($text, '(?m)^[ \t]*(?:Public |Private )?Declare[ \t].*$')
+foreach ($declare in $declareLines) {
+    if ($declare.Value -notmatch 'Lib[ \t]+"') {
+        $findings.Add("a Declare has no Lib clause: $($declare.Value.Trim())")
+    }
+}
+if ($declareLines.Count -eq 0) {
+    $findings.Add('the module declares no native functions at all, so it is not the wrapper')
+}
+
+<#
+Attribute lines. A .bas carries them at the top and the VBA editor writes them
+in one exact shape; a malformed one is refused at import, before anything in the
+module is read. Only VB_Name is required, but any Attribute present must parse.
+#>
+foreach ($attribute in [regex]::Matches($text, '(?m)^[ \t]*Attribute[ \t].*$')) {
+    if ($attribute.Value -notmatch '^[ \t]*Attribute[ \t]+VB_[A-Za-z_]+[ \t]*=[ \t]*\S') {
+        $findings.Add("malformed Attribute line: $($attribute.Value.Trim())")
+    }
+}
+
+<#
+Conditional compilation, by depth rather than by count. Counting #If against
+#End If says nothing about order, and a #Else that is not inside an #If is just
+as fatal as an unclosed block - it is a different mistake with the same symptom,
+so it is worth telling them apart.
+#>
+$depth = 0
+$lineNumber = 0
+foreach ($line in ($text -split "`r?`n")) {
+    $lineNumber++
+    $trimmed = $line.Trim()
+    if ($trimmed -match '^#If[ \t]') { $depth++ ; continue }
+    if ($trimmed -match '^#End[ \t]+If') {
+        $depth--
+        if ($depth -lt 0) {
+            $findings.Add("line ${lineNumber}: #End If with no matching #If")
+            $depth = 0
+        }
+        continue
+    }
+    if ($trimmed -match '^#(Else|ElseIf)\b' -and $depth -eq 0) {
+        $findings.Add("line ${lineNumber}: $trimmed outside any #If")
+    }
+}
+if ($depth -ne 0) {
+    $findings.Add("$depth conditional-compilation block(s) never closed")
+}
+
+<#
+PtrSafe. This module is VBA7-only by design - it says so - and a Declare without
+PtrSafe is a compile error there rather than a portability nicety. It is exactly
+the sort of thing that survives review because it looks like every other line.
+#>
+foreach ($declare in $declareLines) {
+    if ($declare.Value -notmatch '\bPtrSafe\b') {
+        $findings.Add("a Declare is missing PtrSafe: $($declare.Value.Trim())")
+    }
+}
 
 # Types the module defines. Only these can be confused for a parameter type that
 # VBA will not accept as Optional.
@@ -214,7 +354,7 @@ foreach ($declaration in $declarations) {
 
 if ($findings.Count -gt 0) {
     $findings | ForEach-Object { "  FAIL $_" }
-    throw "$($findings.Count) problem(s) in BlipBridge.bas"
+    throw "$($findings.Count) problem(s) in $moduleFile ($path)"
 }
 
-"BlipBridge.bas: $($declarations.Count) declarations and $blocks doc blocks checked, no problems"
+"${moduleFile}: $($declarations.Count) declarations, $blocks doc blocks, $crlf CRLF lines - no problems ($path)"

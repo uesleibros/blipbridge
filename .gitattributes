@@ -1,0 +1,18 @@
+# A VBA module is a Windows text format, and it must reach a user as one.
+#
+# Without this, the .bas is stored LF and checked out however the local
+# core.autocrlf happens to be set. That is not a cosmetic difference: a
+# developer on Windows with autocrlf=true edits and tests a CRLF file, while a
+# CI runner checks out LF and packages *that* - so the file a user imports is
+# not the file anyone validated. The VBA editor writes CRLF when it exports a
+# module, so CRLF is what a .bas is.
+#
+# `eol=crlf` normalizes to LF in the repository and converts on checkout on
+# every platform, which makes the working tree and the release package agree no
+# matter who builds it.
+*.bas text eol=crlf
+
+# The release archive carries the docs and the header verbatim. They are read on
+# Windows, by Notepad among other things, so they get the same treatment.
+*.md text eol=crlf
+*.h text eol=crlf

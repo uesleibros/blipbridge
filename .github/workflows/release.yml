@@ -357,6 +357,10 @@ jobs:
         shell: pwsh
         run: ./tools/check_vba_module.ps1
 
+      - name: Prove the VBA gate catches what it claims to
+        shell: pwsh
+        run: ./tools/test_vba_gate.ps1
+
       - name: Verify ABI 4 exposes the range API and its capability
         shell: pwsh
         run: |
@@ -591,6 +595,41 @@ jobs:
           fi
 
           echo "Archive contents verified."
+
+      - name: Validate the VBA module inside the archive
+        shell: pwsh
+        run: |
+          # v0.7.0 shipped a wrapper that could not be imported while every gate
+          # passed, and the reason is this step's absence: the gates read
+          # vba/BlipBridge.bas out of the checkout, and the archive carried its
+          # own copy. A line-ending conversion, a stale file or a truncated copy
+          # between those two points was invisible.
+          #
+          # So the module is pulled back out of the finished ZIP and checked
+          # there. This is the only copy a user will ever have.
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ needs.metadata.outputs.version }}'
+          $name = "blipbridge-v$version-windows"
+          $zip = "staged/$name.zip"
+
+          Expand-Archive -Path $zip -DestinationPath packaged -Force
+          $packaged = "packaged/$name/BlipBridge.bas"
+          if (-not (Test-Path $packaged)) { throw "The archive has no BlipBridge.bas" }
+
+          ./tools/check_vba_module.ps1 -Path $packaged
+
+          # And it must be the module this release was gated on, byte for byte.
+          # Equal content is not enough on its own: the whole failure being
+          # prevented here is a file that differs from the one that was checked.
+          $shippedHash = (Get-FileHash $packaged -Algorithm SHA256).Hash
+          $sourceHash = (Get-FileHash 'vba/BlipBridge.bas' -Algorithm SHA256).Hash
+          if ($shippedHash -ne $sourceHash) {
+              Write-Host "packaged: $shippedHash"
+              Write-Host "checkout: $sourceHash"
+              throw "The packaged BlipBridge.bas is not the one in this commit"
+          }
+
+          Write-Host "Packaged wrapper validated and identical to the checkout ($shippedHash)."
 
       - name: Checksum the archive
         shell: bash

@@ -22,6 +22,9 @@ Callers written against 0.4.0 need the changes shown in the release notes.
 
 ## [Unreleased]
 
+The portable Office backend and the functional x86 implementation. Not yet
+released; see the freeze report for what is validated and what is not.
+
 ### Added
 
 - **BlipBridge works on 32-bit PowerPoint.** x86 previously loaded, reported its
@@ -95,28 +98,49 @@ Callers written against 0.4.0 need the changes shown in the release notes.
   assumed a boundary that only the accelerated backend guarantees. All three now
   set the boundary explicitly and assert the positive condition.
 
-- **The VBA module did not compile.** `LoadImage`, `LoadImageFromFile`,
-  `LoadTextureScaled` and `LoadTextureScaledFromFile` each declared the image
-  request as `Optional ByRef request As BlipBridgeImageRequest`, and VBA does not
-  allow a user-defined type as an optional parameter - so importing
-  BlipBridge.bas failed with "invalid parameter type for optional parameter" and
-  nothing in the module could be called. Shipped in 0.7.0 and found by opening
-  the module, which is the one thing no gate did.
+## [0.7.1] - 2026-09-12
 
-  The two image loaders are now `LoadImage` / `LoadImageFromFile` for a plain
-  decode and `LoadImageProcessed` / `LoadImageProcessedFromFile` when a request
-  is given. The two texture loaders take the request as a required parameter,
-  since their names already say processing happens; `ImageRequest()` built with
-  no arguments changes nothing.
+A hotfix for one thing: the wrapper in the 0.7.0 package could not be imported.
+No API, ABI or behaviour changes. ABI is still 5.
 
-- **`tools/check_vba_module.ps1`**, run by CI and by the release, checks the rules
-  that made this possible: no user-defined type or array as an optional
-  parameter, no optional without a default unless it is Variant, no required
-  parameter after an optional one, no Object or Variant in a public signature,
-  and every name the release gates grep for being a real declaration rather than
-  a mention in a comment. Verified against the four broken declarations before
-  being trusted - the first version of it silently passed two of them, because
-  its parameter-list pattern stopped at the `()` of an array parameter.
+### Fixed
+
+- **The packaged `BlipBridge.bas` could not be imported and compiled.** Two
+  independent defects were present in the published 0.7.0 archive:
+  `LoadImage`, `LoadImageFromFile`, `LoadTextureScaled` and
+  `LoadTextureScaledFromFile` each declared the image request as
+  `Optional ByRef request As BlipBridgeImageRequest`. VBA does not allow a
+  user-defined type as an optional parameter, so the module failed to compile
+  and nothing in it could be called. The two image loaders are now `LoadImage` /
+  `LoadImageFromFile` for a plain decode and `LoadImageProcessed` /
+  `LoadImageProcessedFromFile` when a request is given; the two texture loaders
+  take the request as a required parameter, since their names already say
+  processing happens. `ImageRequest()` built with no arguments changes nothing,
+  so the plain case still costs one line.
+
+  The archive also carried the module with LF line endings. A `.bas` is a CRLF
+  format - it is what the VBA editor writes when it exports one - and the file
+  became LF because the repository stored it that way: a developer with
+  `core.autocrlf=true` edited and tested a CRLF file while CI checked out LF and
+  packaged that. `.gitattributes` now pins `*.bas` to CRLF on every platform, so
+  the file a user imports is the file that was validated.
+
+- **A release could ship an unimportable wrapper with every gate green, and now
+  it cannot.** There was no VBA validation at all when 0.7.0 was tagged - the
+  release gates grepped the module for names and for its ABI constant, neither of
+  which can see an illegal parameter declaration. Worse, every gate read
+  `vba/BlipBridge.bas` out of the source tree while the archive carried its own
+  copy, so anything that happened to the file in between was invisible.
+
+  `tools/check_vba_module.ps1` now takes a path, and the release workflow runs it
+  against the module **extracted from the finished ZIP**, then requires that file
+  to be byte-identical to the one in the release commit. It checks the module
+  header, CRLF endings, NUL bytes, `#If`/`Type`/`Enum` balance, `Declare`
+  statements without a `Lib` clause, optional parameters VBA will not accept,
+  parameter ordering, and doc blocks that no longer describe the code.
+
+  Run against the published 0.7.0 archive it reports both defects above, which is
+  the regression test.
 
 ## [0.7.0] - 2026-09-11
 
