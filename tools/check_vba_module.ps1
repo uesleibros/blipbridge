@@ -143,6 +143,56 @@ if ($declareLines.Count -eq 0) {
     $findings.Add('the module declares no native functions at all, so it is not the wrapper')
 }
 
+<#
+Attribute lines. A .bas carries them at the top and the VBA editor writes them
+in one exact shape; a malformed one is refused at import, before anything in the
+module is read. Only VB_Name is required, but any Attribute present must parse.
+#>
+foreach ($attribute in [regex]::Matches($text, '(?m)^[ \t]*Attribute[ \t].*$')) {
+    if ($attribute.Value -notmatch '^[ \t]*Attribute[ \t]+VB_[A-Za-z_]+[ \t]*=[ \t]*\S') {
+        $findings.Add("malformed Attribute line: $($attribute.Value.Trim())")
+    }
+}
+
+<#
+Conditional compilation, by depth rather than by count. Counting #If against
+#End If says nothing about order, and a #Else that is not inside an #If is just
+as fatal as an unclosed block - it is a different mistake with the same symptom,
+so it is worth telling them apart.
+#>
+$depth = 0
+$lineNumber = 0
+foreach ($line in ($text -split "`r?`n")) {
+    $lineNumber++
+    $trimmed = $line.Trim()
+    if ($trimmed -match '^#If[ \t]') { $depth++ ; continue }
+    if ($trimmed -match '^#End[ \t]+If') {
+        $depth--
+        if ($depth -lt 0) {
+            $findings.Add("line ${lineNumber}: #End If with no matching #If")
+            $depth = 0
+        }
+        continue
+    }
+    if ($trimmed -match '^#(Else|ElseIf)\b' -and $depth -eq 0) {
+        $findings.Add("line ${lineNumber}: $trimmed outside any #If")
+    }
+}
+if ($depth -ne 0) {
+    $findings.Add("$depth conditional-compilation block(s) never closed")
+}
+
+<#
+PtrSafe. This module is VBA7-only by design - it says so - and a Declare without
+PtrSafe is a compile error there rather than a portability nicety. It is exactly
+the sort of thing that survives review because it looks like every other line.
+#>
+foreach ($declare in $declareLines) {
+    if ($declare.Value -notmatch '\bPtrSafe\b') {
+        $findings.Add("a Declare is missing PtrSafe: $($declare.Value.Trim())")
+    }
+}
+
 # Types the module defines. Only these can be confused for a parameter type that
 # VBA will not accept as Optional.
 $userTypes = [regex]::Matches($text, '(?m)^\s*Public\s+Type\s+(\w+)') |

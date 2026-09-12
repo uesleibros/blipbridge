@@ -329,6 +329,10 @@ jobs:
         shell: pwsh
         run: ./tools/check_vba_module.ps1
 
+      - name: Prove the VBA gate catches what it claims to
+        shell: pwsh
+        run: ./tools/test_vba_gate.ps1
+
       - name: Upload Release build
         if: matrix.configuration == 'Release'
         uses: actions/upload-artifact@v4
