@@ -3,3 +3,6 @@
 *.user
 
 /dist/
+
+# Out-of-tree build trees, which are never part of a commit.
+/build-*/

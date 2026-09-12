@@ -102,7 +102,7 @@ extern "C" {
  */
 #define BB_VERSION_MAJOR 0
 #define BB_VERSION_MINOR 7
-#define BB_VERSION_PATCH 0
+#define BB_VERSION_PATCH 1
 
 #define BB_ABI_VERSION 5u
 
