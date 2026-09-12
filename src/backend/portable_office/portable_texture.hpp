@@ -83,24 +83,30 @@ class PortableTexture {
     std::uint64_t id() const noexcept {
         return id_;
     }
+
     std::uint32_t width() const noexcept {
         return width_;
     }
+
     std::uint32_t height() const noexcept {
         return height_;
     }
+
     /// Decoded bytes held. Diagnostics only.
     std::size_t byteCount() const noexcept {
         return pixels_.size();
     }
+
     /// Whether the temporary PNG has been written yet. Diagnostics only.
     bool encoded() const noexcept {
         return !path_.empty();
     }
+
     /// How many applies this image has served. Diagnostics only.
     unsigned long applyCount() const noexcept {
         return applyCount_;
     }
+
     void CountApplies(unsigned long times) noexcept {
         applyCount_ += times;
     }

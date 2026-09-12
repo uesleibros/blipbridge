@@ -24,7 +24,6 @@
 
 #include "../src/image/decode.hpp"
 #include "../src/image/encode.hpp"
-
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -79,8 +78,8 @@ void RoundTrip(const char* name, std::uint32_t width, std::uint32_t height, bool
     const std::vector<std::uint8_t> source = PositionPattern(width, height, opaque);
 
     std::vector<std::uint8_t> encoded;
-    const EncodeStatus status = EncodePng(
-        source.data(), width, height, static_cast<std::int32_t>(width) * 4, encoded);
+    const EncodeStatus status =
+        EncodePng(source.data(), width, height, static_cast<std::int32_t>(width) * 4, encoded);
     Check(status == EncodeStatus::Ok, std::string(name) + ": encoded");
     if (status != EncodeStatus::Ok) {
         return;
@@ -151,8 +150,8 @@ void Refusals() {
     // filling it, so a caller who ignores the status is not silently handed
     // fragments of a previous image.
     out.assign(4, 0x42);
-    Check(EncodePng(nullptr, 4, 4, 16, out) == EncodeStatus::InvalidArgument &&
-              out.size() == 4 && out[0] == 0x42,
+    Check(EncodePng(nullptr, 4, 4, 16, out) == EncodeStatus::InvalidArgument && out.size() == 4 &&
+              out[0] == 0x42,
           "a refusal leaves the output buffer untouched");
 }
 

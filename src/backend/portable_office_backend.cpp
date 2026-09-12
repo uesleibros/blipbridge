@@ -51,17 +51,15 @@
  * objects.
  */
 
+#include "../image/resample.hpp"
 #include "backend.hpp"
 #include "backend_guard.hpp"
 #include "portable_office/portable_texture.hpp"
 #include "windows_office/apply_skip_cache.hpp"
 #include "windows_office/shape_identity.hpp"
 #include "windows_office/shape_policy.hpp"
-
-#include "../image/resample.hpp"
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <iterator>
 #include <map>
 #include <sstream>
@@ -376,8 +374,9 @@ class PortableOfficeBackend final : public Backend {
             return BackendResult::Failure(BackendStatus::InvalidArgument,
                                           "Image bytes and an output handle are required");
         }
-        return Guarded(
-            [&] { *out = portable::RegisterTexture(portable::CreateTextureFromBytes(bytes, length)); });
+        return Guarded([&] {
+            *out = portable::RegisterTexture(portable::CreateTextureFromBytes(bytes, length));
+        });
     }
 
     BackendResult LoadTexturePixels(const std::uint8_t* pixels,
@@ -410,9 +409,8 @@ class PortableOfficeBackend final : public Backend {
         });
     }
 
-    BackendResult ApplyTextureIfChanged(void* shape,
-                                        std::uint64_t texture,
-                                        bool* skipped) noexcept override {
+    BackendResult
+    ApplyTextureIfChanged(void* shape, std::uint64_t texture, bool* skipped) noexcept override {
         if (skipped) {
             *skipped = false;
         }
@@ -510,8 +508,14 @@ class PortableOfficeBackend final : public Backend {
         // disagree.
         std::vector<std::uint8_t> scaled;
         const image::ResampleStatus status =
-            image::Resample(pixels, width, height, stride, targetWidth, targetHeight,
-                            static_cast<image::ScaleFilter>(filter), scaled);
+            image::Resample(pixels,
+                            width,
+                            height,
+                            stride,
+                            targetWidth,
+                            targetHeight,
+                            static_cast<image::ScaleFilter>(filter),
+                            scaled);
         if (status != image::ResampleStatus::Ok) {
             const BackendStatus code = status == image::ResampleStatus::OutOfMemory
                                            ? BackendStatus::OutOfMemory

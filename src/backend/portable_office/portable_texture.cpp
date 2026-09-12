@@ -8,10 +8,8 @@
 
 #include "../../image/decode.hpp"
 #include "../../image/encode.hpp"
-
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <cstring>
 #include <map>
 #include <sstream>
@@ -64,8 +62,7 @@ std::string Narrow(const std::wstring& text) {
 }
 
 /// Builds the message for a file operation that failed, naming the file.
-std::string
-DescribeFileFailure(const char* what, const std::wstring& path, DWORD code) {
+std::string DescribeFileFailure(const char* what, const std::wstring& path, DWORD code) {
     std::ostringstream out;
     out << "BlipBridge could not " << what << " the temporary image file " << Narrow(path)
         << " (Windows error " << code
@@ -108,8 +105,10 @@ void WriteWholeFile(const std::wstring& path, const std::vector<std::uint8_t>& b
         const DWORD code = GetLastError();
         throw bb::Error(HRESULT_FROM_WIN32(code), DescribeFileFailure("create", path, code));
     }
+
     struct Close {
         HANDLE value;
+
         ~Close() {
             CloseHandle(value);
         }
@@ -356,7 +355,8 @@ std::wstring DescribeTextures(std::uint64_t handle) noexcept {
             out << L"handle=" << handle << L';';
             if (texture) {
                 out << L"width=" << texture->width() << L";height=" << texture->height()
-                    << L";bytes=" << texture->byteCount() << L";applies=" << texture->applyCount()
+                    << L";bytes=" << texture->byteCount() << L";applies="
+                    << texture->applyCount()
                     // Whether the PNG has been written yet. Zero here after an
                     // apply would mean the fill never needed the file, which
                     // cannot happen - so it is worth being able to see.

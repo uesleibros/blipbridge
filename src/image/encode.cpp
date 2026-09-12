@@ -7,10 +7,8 @@
 
 #include "resample.hpp"
 #include "wic.hpp"
-
-#include <wincodec.h>
-
 #include <new>
+#include <wincodec.h>
 
 namespace bb::image {
 namespace {

@@ -24,10 +24,8 @@
 #include "../backend/portable_office/portable_texture.hpp"
 #include "../backend/windows_office/shape_policy.hpp"
 #include "engine.hpp"
-
 #include <blipbridge/blipbridge.h>
 #include <blipbridge/errors.hpp>
-
 #include <climits>
 #include <string>
 #include <vector>
@@ -67,8 +65,7 @@ void RequireOk(BB_Result result, const char* operation) {
     }
     // BB_E_UNSUPPORTED_SHAPE is the one code a harness distinguishes, because a
     // refused Shape class is a result rather than a fault.
-    throw Error(result == BB_E_UNSUPPORTED_SHAPE ? BB_E_SHAPE_CLASS_UNSUPPORTED : E_FAIL,
-                message);
+    throw Error(result == BB_E_UNSUPPORTED_SHAPE ? BB_E_SHAPE_CLASS_UNSUPPORTED : E_FAIL, message);
 }
 
 /**

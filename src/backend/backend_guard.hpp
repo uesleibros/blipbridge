@@ -21,10 +21,8 @@
 
 #include "backend.hpp"
 #include "windows_office/shape_policy.hpp"
-
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <new>
 #include <stdexcept>
 
