@@ -146,6 +146,7 @@ set(BB_NATIVE_COMMON_SOURCES
     src/backend/native/common/module_identity.cpp
     src/backend/native/common/structural_validation.cpp
     src/backend/native/common/profile.cpp
+    src/backend/native/common/validation_cache.cpp
     src/backend/native/common/resolver.cpp
 )
 

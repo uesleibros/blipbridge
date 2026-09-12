@@ -6,6 +6,7 @@
 
 #include "resolver.hpp"
 
+#include "validation_cache.hpp"
 #include <sstream>
 
 namespace bb::native {
@@ -76,6 +77,44 @@ Resolution Resolve(const ArchitectureResolver& resolver,
             return Portable(out.str());
         }
 
+        /*
+         * An exact profile still has to prove itself once, and the reason is
+         * that matching a build is not the same as executing correctly inside
+         * it. Version, timestamp, image size and build signature together say
+         * "these are the binaries the offsets were derived from"; they say
+         * nothing about whether this machine's Office is configured, patched or
+         * hooked in some way that changes what those offsets do.
+         *
+         * So the first process to see a given set of module identities runs the
+         * deterministic self-test, and the verdict is remembered against those
+         * identities. Later starts skip the proof - never the structural checks,
+         * which have already run above and run again on every use.
+         */
+        for (const ModuleIdentity& module : candidate.modules) {
+            if (!module.strong()) {
+                std::wostringstream out;
+                out << L"exact profile refused: " << module.name
+                    << L" carries no build signature, so its identity is not strong enough to "
+                       L"authorise private calls";
+                return Portable(out.str());
+            }
+        }
+
+        if (LookUpValidation(candidate) != CachedVerdict::Passed) {
+            if (!selfTest) {
+                return Portable(L"an unproven exact profile requires a self-test and none was "
+                                L"given");
+            }
+            std::wstring failure;
+            if (!selfTest(candidate, failure)) {
+                // Not written to the store: a failure may be this host having a
+                // bad moment, and condemning a build permanently on one run
+                // would be worse than testing it again next time.
+                return Portable(L"exact profile failed its first-use self-test: " + failure);
+            }
+            RecordValidationPassed(candidate);
+        }
+
         Resolution resolution;
         resolution.decision = Decision::Native;
         resolution.profile = candidate;
@@ -117,8 +156,11 @@ Resolution Resolve(const ArchitectureResolver& resolver,
         return Portable(L"a structurally resolved profile requires a self-test and none was given");
     }
     std::wstring failure;
-    if (!selfTest(resolved, failure)) {
-        return Portable(L"structurally resolved profile failed its self-test: " + failure);
+    if (LookUpValidation(resolved) != CachedVerdict::Passed) {
+        if (!selfTest(resolved, failure)) {
+            return Portable(L"structurally resolved profile failed its self-test: " + failure);
+        }
+        RecordValidationPassed(resolved);
     }
 
     Resolution resolution;

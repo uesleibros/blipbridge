@@ -23,6 +23,7 @@
 #include "../src/backend/native/common/profile.hpp"
 #include "../src/backend/native/common/resolver.hpp"
 #include "../src/backend/native/common/structural_validation.hpp"
+#include "../src/backend/native/common/validation_cache.hpp"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -124,6 +125,33 @@ void ModuleIdentityChecks() {
     Check(!IdentifyLoadedModule(L"this-module-does-not-exist.dll").valid(),
           "a module that is not loaded is not identified");
     Check(!IdentifyLoadedModule(nullptr).valid(), "and neither is a null name");
+
+    /*
+     * The build signature is the field that authorises private calls, so it gets
+     * its own checks. Windows system DLLs are PDB-linked, so kernel32 carrying
+     * one is expected - and if it ever did not, `strong()` would correctly stop
+     * being true rather than the identity silently weakening.
+     */
+    if (kernel.hasBuildSignature) {
+        Check(kernel.strong(), "an identity with a build signature is strong enough to authorise");
+        Check(!kernel.BuildSignatureText().empty(), "and prints its GUID and age");
+        Check(kernel.Describe().find(L"no build signature") == std::wstring::npos,
+              "and does not describe itself as unsigned");
+
+        ModuleIdentity rebuilt = kernel;
+        rebuilt.buildGuid[0] ^= 0xFFu;
+        Check(rebuilt != kernel, "a different build GUID is a different module");
+        ModuleIdentity aged = kernel;
+        aged.buildAge += 1;
+        Check(aged != kernel, "and so is a different PDB age");
+
+        // The case that matters most: an image with no signature must never
+        // match a profile derived against one that had it.
+        ModuleIdentity unsigned_ = kernel;
+        unsigned_.hasBuildSignature = false;
+        Check(unsigned_ != kernel, "an unsigned image never matches a signed profile");
+        Check(!unsigned_.strong(), "and is not strong enough to authorise anything");
+    }
 
     // The timestamp and image size are what actually distinguish a rebuild, so a
     // profile that ignored them would accept the wrong binary.
@@ -285,19 +313,70 @@ void ResolverChecks() {
         Check(!resolution.native(), "no profiles at all resolves to portable");
     }
 
-    // An exact profile that matches is taken, and is *not* self-tested: an
-    // offline-derived profile for this exact build is the strongest evidence
-    // there is, and re-proving it on every start would be cost for nothing.
+    /*
+     * An exact profile proves itself once per set of module identities, then the
+     * verdict is remembered. Matching a build is not the same as executing
+     * correctly inside it: the identity says these are the binaries the offsets
+     * came from, not that this machine's Office is unpatched and unhooked.
+     */
     {
+        ForgetValidationCache();
         FakeResolver resolver;
         resolver.exact.push_back(MakeProfile(L"kernel32.dll", true, Provenance::ExactCompiled));
-        bool selfTested = false;
-        const Resolution resolution = Resolve(resolver, [&](const NativeProfile&, std::wstring&) {
-            selfTested = true;
+
+        int selfTests = 0;
+        const auto counting = [&](const NativeProfile&, std::wstring&) {
+            ++selfTests;
+            return true;
+        };
+
+        const Resolution first = Resolve(resolver, counting);
+        Check(first.native(), "a matching exact profile resolves to native");
+        Check(selfTests == 1, "and is self-tested on first use, not trusted on identity alone");
+
+        const Resolution second = Resolve(resolver, counting);
+        Check(second.native(), "the second process still resolves to native");
+        Check(selfTests == 1, "and skips the proof, because the verdict was remembered");
+        ForgetValidationCache();
+    }
+
+    // A failed first-use self-test refuses, and is not remembered as a failure:
+    // a bad run must not condemn a build permanently.
+    {
+        ForgetValidationCache();
+        FakeResolver resolver;
+        resolver.exact.push_back(MakeProfile(L"kernel32.dll", true, Provenance::ExactCompiled));
+        const Resolution resolution = Resolve(resolver, fails);
+        Check(!resolution.native(), "an exact profile that fails its first self-test is refused");
+
+        int retried = 0;
+        const Resolution later = Resolve(resolver, [&](const NativeProfile&, std::wstring&) {
+            ++retried;
             return true;
         });
-        Check(resolution.native(), "a matching exact profile resolves to native");
-        Check(!selfTested, "and is not put through the self-test");
+        Check(retried == 1, "and is tried again next time rather than condemned");
+        Check(later.native(), "so a transient failure does not disable acceleration for good");
+        ForgetValidationCache();
+    }
+
+    // A cached verdict must not carry across a change to any module.
+    {
+        ForgetValidationCache();
+        FakeResolver resolver;
+        resolver.exact.push_back(MakeProfile(L"kernel32.dll", true, Provenance::ExactCompiled));
+        int selfTests = 0;
+        const auto counting = [&](const NativeProfile&, std::wstring&) {
+            ++selfTests;
+            return true;
+        };
+        Check(Resolve(resolver, counting).native(), "a profile proves itself");
+
+        // The same profile, against a module that now reports a different build.
+        NativeProfile moved = resolver.exact.front();
+        moved.modules.front().buildAge += 1;
+        Check(ValidationKey(moved) != ValidationKey(resolver.exact.front()),
+              "a changed build signature changes the cache key");
+        ForgetValidationCache();
     }
 
     // An exact profile whose module has changed must not be used.
@@ -324,6 +403,7 @@ void ResolverChecks() {
 
     // A resolved profile is taken only after a self-test.
     {
+        ForgetValidationCache();
         FakeResolver resolver;
         resolver.offersResolved = true;
         resolver.resolved = MakeProfile(L"kernel32.dll", true, Provenance::Resolved);
@@ -338,6 +418,7 @@ void ResolverChecks() {
 
     // The self-test is what makes a resolved profile safe, so failing it is fatal.
     {
+        ForgetValidationCache();
         FakeResolver resolver;
         resolver.offersResolved = true;
         resolver.resolved = MakeProfile(L"kernel32.dll", true, Provenance::Resolved);
@@ -348,6 +429,7 @@ void ResolverChecks() {
 
     // No self-test supplied is not permission to skip it.
     {
+        ForgetValidationCache();
         FakeResolver resolver;
         resolver.offersResolved = true;
         resolver.resolved = MakeProfile(L"kernel32.dll", true, Provenance::Resolved);
@@ -370,6 +452,7 @@ void ResolverChecks() {
     // Every outcome carries a reason, including success. A diagnostic that says
     // only "portable" cannot be acted on.
     {
+        ForgetValidationCache();
         FakeResolver resolver;
         Check(!Resolve(resolver, passes).reason.empty(), "a refusal always carries a reason");
         resolver.exact.push_back(MakeProfile(L"kernel32.dll", true, Provenance::ExactCompiled));

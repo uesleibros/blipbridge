@@ -32,6 +32,7 @@
 
 #include "architecture.hpp"
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 // MinGW requires the Windows base types first.
@@ -55,6 +56,28 @@ struct ModuleIdentity {
     /// IMAGE_OPTIONAL_HEADER::SizeOfImage, as mapped.
     std::uint32_t imageSize = 0;
 
+    /**
+     * The CodeView build signature: the PDB GUID and age from the debug directory.
+     *
+     * This is the strong part of the identity, and it is why version, timestamp
+     * and image size are not relied on alone to authorise executing private
+     * Office internals. The linker generates a fresh GUID for every build, so two
+     * images sharing one are the same build in a way three coincidable integers
+     * cannot establish.
+     *
+     * It is also nearly free to read - twenty bytes from a read-only directory -
+     * which matters because it is checked on every process start. A full file
+     * hash of ppcore.dll, oart.dll and gfx.dll is about 38 MB of reading; see
+     * validation_cache.hpp for where that cost is actually paid.
+     *
+     * `hasBuildSignature` false means the module carries no debug directory. That
+     * is a fact about the module rather than a failure, but it does mean the
+     * identity is not strong enough to authorise private calls.
+     */
+    bool hasBuildSignature = false;
+    std::uint8_t buildGuid[16] = {};
+    std::uint32_t buildAge = 0;
+
     bool valid() const noexcept {
         return architecture != Architecture::Unknown && imageSize != 0;
     }
@@ -67,9 +90,23 @@ struct ModuleIdentity {
      * precisely the case this type exists to catch.
      */
     bool operator==(const ModuleIdentity& other) const noexcept {
-        return architecture == other.architecture && major == other.major && minor == other.minor &&
-               build == other.build && revision == other.revision && timestamp == other.timestamp &&
-               imageSize == other.imageSize && name == other.name;
+        if (architecture != other.architecture || major != other.major || minor != other.minor ||
+            build != other.build || revision != other.revision || timestamp != other.timestamp ||
+            imageSize != other.imageSize || name != other.name) {
+            return false;
+        }
+        // The build signature participates whenever either side has one. A
+        // profile derived against a signed build must not match an image with
+        // none, and two images with different GUIDs are different builds whatever
+        // their timestamps say.
+        if (hasBuildSignature != other.hasBuildSignature) {
+            return false;
+        }
+        if (!hasBuildSignature) {
+            return true;
+        }
+        return buildAge == other.buildAge &&
+               std::memcmp(buildGuid, other.buildGuid, sizeof(buildGuid)) == 0;
     }
 
     bool operator!=(const ModuleIdentity& other) const noexcept {
@@ -81,6 +118,20 @@ struct ModuleIdentity {
 
     /// `16.0.14334.20906`, or an empty string when there is no version resource.
     std::wstring VersionText() const;
+
+    /// The build GUID and age, or an empty string when the module carries none.
+    std::wstring BuildSignatureText() const;
+
+    /**
+     * Whether this identity may authorise calling private Office internals.
+     *
+     * Version, timestamp and image size identify a build well enough to look one
+     * up. They are not what a decision to execute reverse-engineered code should
+     * rest on, so that decision additionally requires a build signature.
+     */
+    bool strong() const noexcept {
+        return valid() && hasBuildSignature;
+    }
 };
 
 /**

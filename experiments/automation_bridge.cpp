@@ -17,6 +17,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::AbiCapabilities:
     case DispatchId::ClearImagesAbi:
     case DispatchId::AbiCounts:
+    case DispatchId::InspectModuleIdentities:
         return 0;
     case DispatchId::RunBenchmarks:
     case DispatchId::ProbeShapeCompatibility:
@@ -109,6 +110,9 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     }
     if (id == DispatchId::ClearImagesAbi) {
         return Value(clearImagesThroughAbi().c_str());
+    }
+    if (id == DispatchId::InspectModuleIdentities) {
+        return Value(inspectModuleIdentities().c_str());
     }
     if (id == DispatchId::AbiCounts) {
         return Value(abiCountsThroughAbi().c_str());

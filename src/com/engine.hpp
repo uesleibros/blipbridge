@@ -72,7 +72,8 @@ enum class DispatchId : DISPID {
     ClearImagesAbi,
     AbiCounts,
     AbiLifecycle,
-    InspectFillStructure
+    InspectFillStructure,
+    InspectModuleIdentities
 };
 
 /**

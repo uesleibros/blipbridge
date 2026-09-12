@@ -10,22 +10,45 @@ memory. Where something is a hypothesis it is labelled as one.
 | | |
 |---|---|
 | Product | Microsoft PowerPoint, ProPlus2021Volume |
-| Build | **16.0.14334.20906** |
 | Platform | **x86** (Click-to-Run `Platform=x86`) |
 | POWERPNT.EXE | `C:\Program Files (x86)\Microsoft Office\Root\Office16\POWERPNT.EXE`, PE machine x86, WOW64 process confirmed via `IsWow64Process` |
-| `ppcore.dll` | 16.0.14334.20906, x86 |
-| `oart.dll` | 16.0.14334.20906, x86 |
-| `gfx.dll` | 16.0.14334.20906, x86 |
+| Binary build | **16.0.14334.20848** - see the correction below |
 | Windows | 10.0.26200 |
 
-Two things differ from the host the accelerated x64 backend was derived on, and
-both matter:
+Module identities as the compatibility framework reads them, from the live
+process:
 
-1. **The architecture** - which is the point of this work.
-2. **The build**: `.20906`, not the `.20848` the x64 profile is guarded to. Even
-   on x64 hardware, the existing accelerated profile would refuse this build and
-   fall back to portable. Any x86 profile derived here is a profile for `.20906`
-   and must be labelled as such.
+```
+POWERPNT.EXE  x86 16.0.14334.20848 ts=0x6a73a611 size=0x1c9000  {817AC0EA-696D-439E-93AD-A982CDC88D66}+2
+ppcore.dll    x86 16.0.14334.20848 ts=0x6a73a5e1 size=0x1508000 {1EE1FE1D-E316-46CC-BAFA-4B9BD20A1EBD}+2
+oart.dll      x86 16.0.14334.20848 ts=0x6a73a340 size=0xbc8000  {94E0FD31-972C-477A-AFDD-F90A31B01378}+2
+gfx.dll       x86 16.0.14334.20848 ts=0x6a73a532 size=0x40a000  {0F773FF9-7D9E-40E2-970A-A77F46A724B9}+2
+mso.dll       x86 16.0.14334.20848 ts=0x6a73a5cf size=0x1851000 {5EA7220F-817B-4D19-802D-372268323804}+2
+```
+
+All six carry a build signature, so all are strong enough to authorise a profile.
+
+### Correction: the build number, and why the first reading was wrong
+
+An earlier note here recorded the build as **.20906**. That was wrong, and how it
+was wrong is worth keeping.
+
+`.20906` is the **Click-to-Run package version**
+(`HKLM\...\ClickToRun\Configuration\ClientVersionToReport`). It is not the
+version of any binary. The modules' own `VS_FIXEDFILEINFO` says `.20848`, and
+that is what a profile is keyed to.
+
+The two also disagreed *over time*. At 12:19 the files on disk reported `.20906`;
+at 12:37 Click-to-Run rewrote them, and they now report `.20848`. Same paths,
+same session, different binaries - which is a live demonstration of the thing
+module identity exists for, and of why a resolved profile is re-checked against
+the modules on every process start rather than trusted from a previous run.
+
+Consequence for Phase C: the x86 binaries are **build .20848**, the same build
+number the accelerated x64 backend was derived against. That is better ground for
+an eventual same-build comparison than the earlier note suggested - but the build
+*number* matching is not the same as the binaries matching, and the x64 profile's
+own identity fields will have to be compared when an x64 install exists again.
 
 ## Method
 
@@ -148,6 +171,21 @@ Everything else. Specifically, none of the following has been started:
 * rebuilding the Shape compatibility matrix, which **must not** be inherited from
   x64;
 * any runtime execution of any of it.
+
+## Established since: module identity is strong enough to key a profile
+
+The compatibility framework (Phase A) now reads a **CodeView build signature** -
+the PDB GUID and age from the debug directory - for every Office module, and
+requires one before a profile may authorise private calls. Version, timestamp and
+image size are three integers that could coincide; a linker-generated GUID per
+build cannot.
+
+It is read from the *mapped* image rather than the file, which is safe precisely
+here and would not be for code: the debug directory sits in a read-only section
+with no relocations, so the mapped bytes are the file's bytes. On x86 that is
+emphatically not true of `.text`, where relocation rewrites absolute addresses
+throughout - a hash of mapped x86 code would differ between processes and be
+useless as an identity.
 
 ## Constraint on validating any of this
 

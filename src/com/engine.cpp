@@ -83,6 +83,7 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"AbiCounts", DispatchId::AbiCounts},
     {L"AbiLifecycle", DispatchId::AbiLifecycle},
     {L"InspectFillStructure", DispatchId::InspectFillStructure},
+    {L"InspectModuleIdentities", DispatchId::InspectModuleIdentities},
     {L"ProfileApplyStages", DispatchId::ProfileApplyStages}};
 
 /**

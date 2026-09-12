@@ -6,6 +6,8 @@
 #include "module_identity.hpp"
 
 #include "memory_safety.hpp"
+#include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <vector>
 
@@ -65,7 +67,91 @@ void ReadVersion(const std::wstring& path, ModuleIdentity& identity) noexcept {
     identity.revision = static_cast<std::uint16_t>(LOWORD(fixed->dwFileVersionLS));
 }
 
+/// The CodeView record a PDB-linked image carries in its debug directory.
+struct CodeViewRsds {
+    std::uint32_t signature; // 'RSDS'
+    std::uint8_t guid[16];
+    std::uint32_t age;
+    // A NUL-terminated PDB path follows. Deliberately not read: the path is a
+    // build-machine detail that says nothing about the image's contents.
+};
+
+constexpr std::uint32_t kRsds = 0x53445352; // 'RSDS' little-endian
+
+/**
+ * Reads the build GUID and age out of @p module's debug directory.
+ *
+ * Read from the **mapped image**, not from the file. The debug directory sits in
+ * a read-only section and carries no relocations, so the mapped bytes are the
+ * file's bytes - which is what makes this stable across loads. That is not true
+ * of code on x86, where relocation rewrites absolute addresses throughout .text
+ * and a hash of the mapped code would differ from one process to the next.
+ */
+void ReadBuildSignature(HMODULE module,
+                        const IMAGE_NT_HEADERS* headers,
+                        ModuleIdentity& identity) noexcept {
+    const auto base = reinterpret_cast<const std::uint8_t*>(module);
+    const IMAGE_DATA_DIRECTORY& directory =
+        headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG];
+    if (directory.VirtualAddress == 0 || directory.Size < sizeof(IMAGE_DEBUG_DIRECTORY)) {
+        return;
+    }
+
+    const auto* entries =
+        reinterpret_cast<const IMAGE_DEBUG_DIRECTORY*>(base + directory.VirtualAddress);
+    const std::size_t count = directory.Size / sizeof(IMAGE_DEBUG_DIRECTORY);
+    if (!IsReadable(entries, directory.Size)) {
+        return;
+    }
+
+    for (std::size_t index = 0; index < count; ++index) {
+        const IMAGE_DEBUG_DIRECTORY& entry = entries[index];
+        if (entry.Type != IMAGE_DEBUG_TYPE_CODEVIEW || entry.AddressOfRawData == 0) {
+            continue;
+        }
+        if (entry.SizeOfData < sizeof(CodeViewRsds)) {
+            continue;
+        }
+        const auto* record = reinterpret_cast<const CodeViewRsds*>(base + entry.AddressOfRawData);
+        if (!IsReadable(record, sizeof(CodeViewRsds)) || record->signature != kRsds) {
+            continue;
+        }
+        std::memcpy(identity.buildGuid, record->guid, sizeof(identity.buildGuid));
+        identity.buildAge = record->age;
+        identity.hasBuildSignature = true;
+        return;
+    }
+}
+
 } // namespace
+
+std::wstring ModuleIdentity::BuildSignatureText() const {
+    if (!hasBuildSignature) {
+        return std::wstring();
+    }
+    // Printed in the GUID's own field order, so it can be compared by eye against
+    // a symbol server or a debugger's module list.
+    const auto data1 = static_cast<std::uint32_t>(buildGuid[0]) |
+                       (static_cast<std::uint32_t>(buildGuid[1]) << 8) |
+                       (static_cast<std::uint32_t>(buildGuid[2]) << 16) |
+                       (static_cast<std::uint32_t>(buildGuid[3]) << 24);
+    const auto data2 = static_cast<std::uint16_t>(buildGuid[4] | (buildGuid[5] << 8));
+    const auto data3 = static_cast<std::uint16_t>(buildGuid[6] | (buildGuid[7] << 8));
+
+    std::wostringstream out;
+    out << std::hex << std::uppercase << std::setfill(L'0');
+    out << L'{' << std::setw(8) << data1 << L'-' << std::setw(4) << data2 << L'-' << std::setw(4)
+        << data3 << L'-';
+    for (int index = 8; index < 10; ++index) {
+        out << std::setw(2) << static_cast<unsigned>(buildGuid[index]);
+    }
+    out << L'-';
+    for (int index = 10; index < 16; ++index) {
+        out << std::setw(2) << static_cast<unsigned>(buildGuid[index]);
+    }
+    out << L"}+" << std::dec << buildAge;
+    return out.str();
+}
 
 std::wstring ModuleIdentity::VersionText() const {
     if (major == 0 && minor == 0 && build == 0 && revision == 0) {
@@ -84,6 +170,14 @@ std::wstring ModuleIdentity::Describe() const {
         out << L' ' << version;
     }
     out << L" ts=0x" << std::hex << timestamp << L" size=0x" << imageSize << std::dec;
+    const std::wstring signature = BuildSignatureText();
+    if (!signature.empty()) {
+        out << L' ' << signature;
+    } else {
+        // Said out loud, because an identity with no build signature cannot
+        // authorise a native profile and a reader needs to know that is why.
+        out << L" (no build signature)";
+    }
     return out.str();
 }
 
@@ -103,6 +197,7 @@ ModuleIdentity IdentifyModule(HMODULE module) noexcept {
     identity.architecture = ArchitectureOf(module);
     identity.timestamp = headers->FileHeader.TimeDateStamp;
     identity.imageSize = headers->OptionalHeader.SizeOfImage;
+    ReadBuildSignature(module, headers, identity);
 
     wchar_t path[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);

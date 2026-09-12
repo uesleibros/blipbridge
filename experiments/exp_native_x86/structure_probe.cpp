@@ -32,11 +32,11 @@
  * Research only. Nothing in the shipping path calls this.
  */
 
+#include "../../src/backend/native/common/architecture.hpp"
+#include "../../src/backend/native/common/module_identity.hpp"
 #include "../experiment_api.hpp"
-
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
-
 #include <cstdint>
 #include <cstring>
 #include <iomanip>
@@ -236,6 +236,38 @@ std::wstring inspectFillStructure(IDispatch* fill, long slotCount, long byteCoun
                             static_cast<std::size_t>(byteCount));
         }
         out << L"\r\n";
+    }
+    return out.str();
+}
+
+/**
+ * Reports the identities of the Office modules, through the compatibility
+ * framework rather than around it.
+ *
+ * Two things at once: it produces the data an exact profile needs, and it
+ * exercises the framework's identity reading inside the host it will have to
+ * work in. A profile transcribed from a different tool's output would be a
+ * profile nothing had checked the reader against.
+ */
+std::wstring inspectModuleIdentities() {
+    std::wostringstream out;
+    out << L"build architecture: " << bb::native::Name(bb::native::Current()) << L"\r\n";
+    out << L"pointer size      : " << sizeof(void*) << L"\r\n\r\n";
+
+    for (const wchar_t* name : {L"POWERPNT.EXE",
+                                L"ppcore.dll",
+                                L"oart.dll",
+                                L"gfx.dll",
+                                L"mso.dll",
+                                L"mso20win32client.dll"}) {
+        const bb::native::ModuleIdentity identity = bb::native::IdentifyLoadedModule(name);
+        if (!identity.valid()) {
+            out << L"  " << name << L": not loaded\r\n";
+            continue;
+        }
+        out << L"  " << identity.Describe() << L"\r\n";
+        out << L"      strong=" << (identity.strong() ? L"yes" : L"NO - cannot authorise")
+            << L" arch=" << bb::native::Name(identity.architecture) << L"\r\n";
     }
     return out.str();
 }

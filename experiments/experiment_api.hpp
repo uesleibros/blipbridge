@@ -153,6 +153,9 @@ std::wstring loadTextureScaledThroughAbi(const std::wstring& path, const std::ws
  */
 std::wstring inspectFillStructure(IDispatch* fill, long slotCount, long byteCount);
 
+/// The Office module identities, read through the compatibility framework.
+std::wstring inspectModuleIdentities();
+
 std::wstring loadTextureBytesThroughAbi(SAFEARRAY* encoded);
 std::wstring loadTexturePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);
 std::wstring loadImagePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);
