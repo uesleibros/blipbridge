@@ -26,6 +26,86 @@ The gap is real work, not a trick: Office re-decodes and writes a temporary imag
 per `UserPicture` call - 24 Content.MSO file events for 12 calls, against zero
 for the native path. Full context in `native_texture.md`.
 
+## The portable backend against the accelerated one
+
+Measured 2026-09-12, Office 16.0.14334.20848 x64, Windows 10.0.26200, 16 logical
+processors, by `tools/benchmark_backends.ps1`. The two runs were taken back to
+back on the same machine with nothing else changed but which backend was
+registered.
+
+**Every figure below includes PowerShell's COM marshalling**, paid once per call
+and belonging to no backend. That matters more than it sounds: the harness floor
+is several milliseconds per call, which is an order of magnitude more than an
+accelerated apply costs in process. So these numbers compare the two backends
+soundly - the overhead is identical in both - and they **understate** the
+accelerated advantage badly. For what an apply costs without a harness in the
+way, see the in-process figures at the top of this page.
+
+The control is `Shape.Fill.UserPicture` called directly, which is what a caller
+would write without BlipBridge at all. It is also the check that the two runs are
+comparable: at 100 Shapes it came out at 7.23 ms and 7.31 ms per Shape, a 1%
+difference, so the backend rows can be read against each other.
+
+### 100 Shapes, per Shape
+
+| | accelerated | portable | portable / accelerated |
+|---|---|---|---|
+| `Fill.UserPicture` direct *(control)* | 7.23 ms | 7.31 ms | 1.01x |
+| `ApplyTexture` | 4.03 ms | 6.24 ms | **1.55x slower** |
+| `ApplyTextureIfChanged` (miss) | 3.50 ms | 5.10 ms | **1.46x slower** |
+| `ApplyTextureIfChanged` (skip) | 0.19 ms | 0.17 ms | 0.88x |
+| `ApplyTextureRange` | 0.149 ms | 0.153 ms | 1.03x |
+
+### 32 Shapes, per Shape
+
+| | accelerated | portable | portable / accelerated |
+|---|---|---|---|
+| `Fill.UserPicture` direct *(control)* | 6.07 ms | 5.77 ms | 0.95x |
+| `ApplyTexture` | 3.84 ms | 4.02 ms | 1.05x |
+| `ApplyTextureIfChanged` (miss) | 2.00 ms | 3.12 ms | 1.56x slower |
+| `ApplyTextureIfChanged` (skip) | 0.220 ms | 0.226 ms | 1.03x |
+| `ApplyTextureRange` | 0.178 ms | 0.232 ms | 1.31x slower |
+
+### One Shape
+
+At one Shape everything is first-call cost and the numbers say very little: means
+run 2-10 ms with medians less than half that on both backends, which is the shape
+of a distribution dominated by one warm-up outlier in five samples. They are in
+`artifacts/` for completeness and should not be quoted.
+
+### `ApplyPicture`
+
+| | accelerated | portable |
+|---|---|---|
+| first sight of the file | 5.76 ms | 5.89 ms |
+| cache hit, same file | 0.73 ms | 2.23 ms |
+| same path, rewritten | 5.87 ms | 5.34 ms |
+
+The third row is a correctness measurement as much as a performance one. Serving
+the cached image there would be faster and would be showing the wrong picture;
+both backends pay for a real apply, which is the point.
+
+### What these numbers actually say
+
+**The portable backend is slower, and the harness hides how much.** Measured
+through PowerShell it is about 1.5x the accelerated backend on a per-Shape apply.
+In process the gap is larger, because the several milliseconds of COM marshalling
+in every row above is a constant that both backends pay and neither causes.
+
+**The skip and the range apply are indistinguishable between backends**, for the
+same reason in both cases: they are not doing the work. A skip does nothing on
+either backend, and a range is one Office edit covering every member on either
+backend. Quoting either as evidence that "portable is fast" would be describing
+an absent operation.
+
+**Both beat naive `Fill.UserPicture` per call**, because BlipBridge decodes once
+and the direct call re-reads and re-decodes the file every time. That is worth
+knowing, and it is not the reason the portable backend exists.
+
+The portable backend's value is compatibility: the same API, through documented
+Office calls, where the accelerated path is unavailable. It is not performance
+parity and is not described as such anywhere.
+
 ## Earlier fallback measurements
 
 ## Native texture against Fill.UserPicture

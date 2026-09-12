@@ -186,6 +186,41 @@ jobs:
 
           echo "Backend linked: $expected"
 
+      - name: Verify the research DLL is a valid COM server
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          # DllGetClassObject and DllCanUnloadNow are stdcall, so on x86 they
+          # export as `DllGetClassObject@12` unless --kill-at strips the
+          # decoration - and COM looks them up undecorated. That shipped once.
+          #
+          # Checked by reading the export table rather than by loading the DLL,
+          # because a 64-bit runner cannot load the 32-bit one at all.
+          dir="build/${{ matrix.arch }}/${{ matrix.configuration }}"
+          research="$(find "$dir" -name 'BlipBridgeResearch-*.dll' -print -quit)"
+          if [ -z "$research" ]; then
+            echo "::error::No research DLL was built for ${{ matrix.arch }}"
+            exit 1
+          fi
+
+          exports="$(objdump -p "$research" | grep -oE '\bDll[A-Za-z]+(@[0-9]+)?')"
+          echo "$exports"
+
+          for required in DllGetClassObject DllCanUnloadNow; do
+            if ! grep -qx "$required" <<< "$exports"; then
+              echo "::error::$research does not export $required undecorated"
+              exit 1
+            fi
+          done
+
+          if grep -qE '@[0-9]+$' <<< "$exports"; then
+            echo "::error::$research exports a decorated COM entry point"
+            exit 1
+          fi
+
+          echo "COM server exports present and undecorated in $(basename "$research")."
+
       - name: Test
         shell: msys2 {0}
         run: |

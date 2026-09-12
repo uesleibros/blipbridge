@@ -20,83 +20,125 @@ Callers written against 0.4.0 need the changes shown in the release notes.
   causing `EXTERN_C`, `DWORD`, and cascading `LCID` build errors. The formatter
   now prioritizes `windows.h` so subsequent formatting preserves this dependency.
 
-## [Unreleased]
+## [0.8.0] - 2026-09-12
 
-The portable Office backend and the functional x86 implementation. Not yet
-released; see the freeze report for what is validated and what is not.
+The portable Office backend, and a functional x86 implementation. **ABI is still
+5** - the exported C surface is byte-for-byte identical to 0.7.1 on both
+architectures, and everything here is behind it.
 
 ### Added
 
-- **BlipBridge works on 32-bit PowerPoint.** x86 previously loaded, reported its
-  version, and refused every texture call, because the accelerated backend is a
-  reconstruction of one 64-bit Office build's internals and none of it transfers.
-  There is now a second backend - `src/backend/portable_office_backend.cpp` -
-  implementing the same `Backend` interface over documented Office Automation,
-  and x86 gets it.
+- **A portable Office backend, so BlipBridge works where the accelerated one
+  cannot.** `src/backend/portable_office_backend.cpp` implements the same
+  `Backend` interface over documented Office Automation - `Shape.Fill.UserPicture`
+  and `ShapeRange.Fill` - instead of over Office internals.
 
-  Everything the public API promises works there: textures from bytes or pixels,
-  `BB_ApplyTexture`, `BB_ApplyTextureRange`, `BB_ApplyTextureIfChanged` and its
-  skip cache, `BB_ApplyPicture`, and the whole image pipeline including the quad
-  warp. The image pipeline was always portable maths; only its last step needed a
-  backend.
+- **A functional x86 implementation.** x86 previously loaded, reported its
+  version and refused every texture call. It now does the whole job: textures
+  from encoded bytes, raw BGRA or a file; `BB_ApplyTexture`,
+  `BB_ApplyTextureBatch`, `BB_ApplyTextureRange`, `BB_ApplyTextureIfChanged` and
+  its skip cache; `BB_ApplyPicture`; and the whole image pipeline including the
+  quad warp.
 
-  It is **not** accelerated, and says so: `BB_CAP_NATIVE_BACKEND` is clear, so the
-  mask inside PowerPoint is `0x03FE` rather than `0x03FF`. Every fill goes through
-  `Fill.UserPicture`, which takes a path, so a texture holds its decoded pixels
-  and writes one temporary PNG the first time it is applied - once per texture,
-  not once per apply.
+  The accelerated backend is still not compiled into the x86 binary. It is a
+  reconstruction of one 64-bit Office build's internals, and code that links and
+  is wrong is the worst outcome available to a library that drives them.
 
-  The Shape class policy, the Shape identity key and the skip cache are the *same
-  code* on both backends rather than a second implementation, so the two cannot
-  disagree about which Shapes may be filled, which may be cached, or when an
-  apply may be skipped. `BB_ApplyTextureRange` refuses a range containing a Table
-  on both, even though the portable backend could fill one, because a range that
-  filled on 32-bit and was refused on 64-bit would be a difference discovered in
-  production from a document that came out wrong.
+- **`IsAccelerated()`** in the VBA wrapper, for the question `IsAvailable` used
+  to answer by accident. See Changed.
 
-  Validated two ways, neither sufficient alone: the backend's behaviour is
-  exercised in a real PowerPoint by eight of the Office harnesses
-  (`-DBB_FORCE_PORTABLE_BACKEND=ON` builds it in place of the accelerated one,
-  including into the research COM surface), and its x86 build is exercised by the
-  full contract suite in CI. **No build has been run inside a real 32-bit
-  PowerPoint** - Office does not install both architectures side by side - so the
-  composition of the two is still not claimed. See
-  [docs/windows_x86.md](docs/windows_x86.md).
+- **`BB_FORCE_PORTABLE_BACKEND`**, a CMake option that builds the portable
+  backend in place of the accelerated one - including into the research COM
+  surface - so the portable backend can be driven inside a real PowerPoint rather
+  than only compiled. It is asserted against in CI so it can never be what ships.
 
-- `BlipBridge.IsAccelerated()` in the VBA module, and `BlipBridge.IsAvailable()`
-  now answers the question its name asks. `IsAvailable` tested
-  `BB_CAP_NATIVE_BACKEND`, which was the same thing while only one backend
-  existed; keeping it would have reported a fully working 32-bit install as
-  unavailable. It now means "BlipBridge can fill Shapes here" and is true on both
-  architectures. `IsAccelerated` is the performance question, and is the one to
-  ask before quoting a benchmark.
+- **`tools/test_portable_matrix.ps1`**, which runs the whole public surface
+  against whichever backend is loaded and asserts identical behaviour either way:
+  73 checks on portable, 72 on accelerated. Where a result is visible it samples
+  the rendered Shape rather than asking a cache what it believes.
 
-- PNG encoding (`src/image/encode.cpp`), with a contract test that round-trips
-  pixel-exact through decode on both architectures, including straight alpha and
-  padded strides. It exists only for the portable backend, which needs a file to
-  hand to Office.
+- **`tools/benchmark_backends.ps1`**, measuring both backends against
+  `Fill.UserPicture` as the control. Results in docs/benchmarks.md.
 
 ### Changed
 
-- The x64 accelerated backend and the portable backend now share their Shape
-  validation, error translation and exception boundary through
-  `src/backend/backend_guard.hpp`, so "what is a usable Shape" has one definition
-  rather than one per backend.
+- **`IsAvailable()` now means "can BlipBridge provide its service in this host".**
+  It tested `BB_CAP_NATIVE_BACKEND`, which was the same question while only one
+  backend existed and would now report a fully working 32-bit install as
+  unavailable. `IsAccelerated()` is the performance question and is exactly that
+  bit.
+
+- The portable capability mask is `0x03FE`: every feature bit set,
+  `BB_CAP_NATIVE_BACKEND` clear. A capability says whether a feature works, not
+  whether it is fast.
+
+- Both backends share their Shape class policy, Shape identity key and skip
+  cache, and share Shape validation through `src/backend/backend_guard.hpp`. Two
+  implementations would be two sets of answers about which Shapes may be filled.
 
 - The research COM surface builds over either backend. Probes that instrument
   Office internals keep their Automation ids - those are a stable ABI - and
-  answer with the reason they are unavailable instead of "unknown member".
+  answer with the reason they are unavailable rather than "unknown member".
+
+- Both backends now tell a released handle from one that was never issued. They
+  are different mistakes - a lifetime bug against a typo - and a caller should not
+  be able to tell which backend refused them.
 
 ### Fixed
 
+- **`BB_ClearTextures` left the portable backend unable to apply anything.** It
+  removed the temporary directory and nothing recreated it, so every later apply
+  failed with "the system cannot find the path specified". The directory is now
+  recreated lazily on the next write, and the load-apply-clear-load-apply cycle
+  is asserted.
+
+- **`BB_ApplyPicture` could show the wrong picture.** The portable cache keyed
+  images by path alone, so rewriting a file at the same path was reported as
+  already applied and the Shape kept the old image, silently. The key is now the
+  same composite the accelerated cache uses - path, size and last-write time -
+  and the regression test asserts the rendered pixels rather than the cache.
+
+- x86 exported `DllGetClassObject` decorated, so the research DLL could never
+  have been registered as a COM server. CI now inspects the export table on both
+  architectures.
+
+- The portable research surface initialised the library before validating
+  arguments, so off-host a malformed argument reported "not running in
+  PowerPoint" instead of what was actually wrong.
+
 - Three assertions in the Office harnesses passed without measuring what they
-  claimed, found by running them against the portable backend:
-  `test_apply_if_changed` asserted `Fill.Type -ne 6` after an Undo that had
-  removed the Shape entirely (a deleted Shape reports no `Fill.Type` at all, which
-  is also "not a picture fill"); `test_range_apply` and
-  `test_shape_lifecycle_cache` let PowerPoint choose the undo grouping and then
-  assumed a boundary that only the accelerated backend guarantees. All three now
-  set the boundary explicitly and assert the positive condition.
+  claimed, found by running them against a second backend: one read `Fill.Type`
+  from a Shape that Undo had removed - which reports nothing, and "nothing" is
+  also "not a picture fill" - and two assumed an undo boundary only the
+  accelerated backend guarantees. All three now set the boundary explicitly,
+  re-acquire the Shape by name, and assert the positive condition.
+
+### Validation
+
+- Accelerated x64 Office matrix: 16/16.
+- Forced-portable behavioural matrix in real PowerPoint: 73/73; the same suite
+  against the accelerated backend: 72/72.
+- CI: x64 Debug and Release, x86 Debug and Release.
+- Package-level VBA validation, on the module extracted from the finished archive.
+
+### Limitations
+
+- **Runtime validation inside real 32-bit PowerPoint remains outstanding.** The
+  full public API is implemented for the x86 build through the portable backend,
+  and portable backend behaviour is validated against real PowerPoint using
+  forced-portable x64 testing - but no build has been executed inside a 32-bit
+  `POWERPNT.EXE`. Office does not install both architectures side by side.
+
+- The portable backend is slower. Measured through a PowerShell harness it is
+  about 1.5x the accelerated backend per Shape; in process the gap is larger,
+  because the harness adds a constant both backends pay. See docs/benchmarks.md.
+
+- The portable backend writes a temporary PNG per texture, because
+  `Fill.UserPicture` takes a path. Lifecycle documented in docs/windows_x86.md.
+
+- Dynamic textures remain unshipped and unchanged: the obvious
+  externally-owned-buffer mutation path was ruled out by evidence, and deeper
+  mutable GFX internals remain future research.
 
 ## [0.7.1] - 2026-09-12
 

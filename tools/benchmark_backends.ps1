@@ -19,6 +19,13 @@ can be put side by side.
 
 ## Reading the results
 
+**Every per-Shape number here includes PowerShell's COM marshalling**, which is
+paid once per call and is not part of any backend. It is the same overhead in
+both runs, so comparing the two backends is sound - but these are not the numbers
+to quote for "how fast is an apply". They understate the accelerated backend's
+advantage, because a large constant is added to both sides. The in-process
+figures in benchmarks.md are the ones measured without a harness in the way.
+
 Per-operation cost is the number that matters, and it is not the same as
 throughput for the range apply: a range is one Office edit covering many Shapes,
 so its per-Shape cost falls as the range grows while a per-Shape loop's does not.
@@ -78,7 +85,11 @@ total. A median alongside the mean is worth having here because Office
 occasionally stalls on something unrelated - an autosave, a redraw - and one
 outlier moves a mean far more than it moves the truth.
 #>
-function Measure-Operation([string]$name, [int]$shapes, [int]$iterations, [scriptblock]$action) {
+# $shapeCount, not $shapes: the scriptblocks below are invoked from inside this
+# function and resolve their variables up the call stack, so a parameter sharing
+# a name with the caller's Shape array would shadow it - and the block would see
+# an integer where it expected the Shapes.
+function Measure-Operation([string]$name, [int]$shapeCount, [int]$iterations, [scriptblock]$action) {
     $samples = New-Object System.Collections.Generic.List[double]
     for ($i = 0; $i -lt $iterations; $i++) {
         $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -94,16 +105,16 @@ function Measure-Operation([string]$name, [int]$shapes, [int]$iterations, [scrip
 
     $script:rows.Add([pscustomobject]@{
         Operation = $name
-        Shapes = $shapes
+        Shapes = $shapeCount
         Calls = $iterations
         TotalMs = [Math]::Round($total, 2)
         MeanMs = [Math]::Round($mean, 3)
         MedianMs = [Math]::Round($median, 3)
-        PerShapeMs = [Math]::Round($mean / [Math]::Max($shapes, 1), 4)
+        PerShapeMs = [Math]::Round($mean / [Math]::Max($shapeCount, 1), 4)
         PerSec = [Math]::Round(1000.0 / [Math]::Max($mean, 0.0001), 1)
     })
     Write-Host ("  {0,-44} {1,4} shapes  mean {2,8:N3} ms  median {3,8:N3} ms" -f
-        $name, $shapes, $mean, $median)
+        $name, $shapeCount, $mean, $median)
 }
 
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('bb_bench_' + [Guid]::NewGuid().ToString('N'))
@@ -166,13 +177,13 @@ try {
         Measure-Operation "Fill.UserPicture (direct, per Shape)" $count 5 {
             param($iteration)
             $file = if ($iteration % 2 -eq 0) { $imageA } else { $imageB }
-            foreach ($s in $shapes) { $s.Fill.UserPicture($file) }
+            foreach ($s in $shapes) { $null = $s.Fill.UserPicture($file) }
         }
 
         Measure-Operation "ApplyTexture (per Shape)" $count 5 {
             param($iteration)
             $handle = if ($iteration % 2 -eq 0) { $textureA } else { $textureB }
-            foreach ($s in $shapes) { $engine.ApplyTexture($s, $handle) }
+            foreach ($s in $shapes) { $null = $engine.ApplyTexture($s, $handle) }
         }
 
         # A miss every time: the texture alternates, so the cache can never skip.
@@ -197,7 +208,7 @@ try {
             $null = $engine.ApplyTextureRange($range, $handle)
         }
 
-        foreach ($s in $shapes) { $s.Delete() }
+        foreach ($s in $shapes) { $null = $s.Delete() }
         Write-Host ''
     }
 
@@ -239,13 +250,21 @@ try {
     Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
 }
 
+# Windows PowerShell has no ternary, and this script has to run under it.
+if ([Environment]::Is64BitProcess) { $hostBitness = 'x64 host' } else { $hostBitness = 'x86 host' }
+
 $environment = @(
     "backend      : $backend",
     "capabilities : 0x$('{0:X4}' -f $mask)",
-    "PowerPoint   : $($app.Version) ($([Environment]::Is64BitProcess ? 'x64 host' : 'x86 host'))",
+    "PowerPoint   : $($app.Version) ($hostBitness)",
     "OS           : $([Environment]::OSVersion.VersionString)",
     "machine      : $([Environment]::ProcessorCount) logical processors",
-    "measured     : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    "measured     : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+    '',
+    'Every per-Shape figure includes PowerShell COM marshalling, paid once per',
+    'call and belonging to no backend. It is identical in both runs, so the two',
+    'backends compare soundly; it is not the number to quote for how fast an',
+    'apply is. See docs/benchmarks.md for in-process measurements.'
 )
 
 New-Item -ItemType Directory -Path (Split-Path $Output -Parent) -Force | Out-Null
