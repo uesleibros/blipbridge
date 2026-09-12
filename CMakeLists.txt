@@ -128,6 +128,28 @@ set(BB_SOURCES
 )
 
 #[[
+    The native compatibility framework: architecture detection, module identity,
+    guarded reads, structural validation, profiles and the resolver.
+
+    Built on every architecture, and that is the point of it. It is the frame a
+    native backend plugs its own facts into, and it decides only whether a
+    profile may be used - never what one says. Probing 32-bit Office showed why
+    that separation is load-bearing: x64's central structural invariant, a vtable
+    of identity thunks, does not exist there at all, so a frame that knew about
+    thunks would have been a frame only one architecture could use.
+
+    Nothing here calls an Office internal. It reads, validates, and refuses.
+]]
+set(BB_NATIVE_COMMON_SOURCES
+    src/backend/native/common/architecture.cpp
+    src/backend/native/common/memory_safety.cpp
+    src/backend/native/common/module_identity.cpp
+    src/backend/native/common/structural_validation.cpp
+    src/backend/native/common/profile.cpp
+    src/backend/native/common/resolver.cpp
+)
+
+#[[
     Documented Office Automation, shared by both backends.
 
     Nothing here reads an Office internal. These three decide which Shape classes
@@ -229,6 +251,7 @@ endif()
     what actually enforces the platform, not that file.
 ]]
 list(APPEND BB_SOURCES ${BB_OFFICE_PORTABLE_SOURCES})
+list(APPEND BB_SOURCES ${BB_NATIVE_COMMON_SOURCES})
 if(BB_NATIVE_BACKEND)
     set(BB_BACKEND_SOURCES ${BB_OFFICE_NATIVE_SOURCES})
 else()
@@ -260,9 +283,17 @@ endif()
 if(BB_NATIVE_BACKEND)
     target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
 else()
-    # The portable core needs the OLE allocator, string types, and WIC - the
-    # decoder is image work rather than Office work, so it exists on x86 too.
-    target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 windowscodecs)
+    #[[
+        The portable core needs the OLE allocator, string types, and WIC - the
+        decoder is image work rather than Office work, so it exists on x86 too.
+
+        psapi and version are for the native compatibility framework, which is
+        built on every architecture: it reads module identities in order to
+        decide that no native profile applies. Refusing to accelerate is a
+        decision that has to be made on both, so its dependencies are needed on
+        both.
+    ]]
+    target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 psapi version windowscodecs)
 endif()
 
 #[[
@@ -329,6 +360,20 @@ if(BUILD_TESTING)
     target_link_libraries(bb_decode_contract PRIVATE ole32 oleaut32 windowscodecs)
     target_link_options(bb_decode_contract PRIVATE -static -static-libgcc -static-libstdc++)
     add_test(NAME decode_contract COMMAND bb_decode_contract)
+
+    #[[
+        The native compatibility framework, and above all its refusals.
+
+        Runs off-host on both architectures: the framework knows nothing about
+        Office, so its policy can be driven with a fake architecture resolver and
+        asserted exactly. Almost every check here is a way it must decline.
+    ]]
+    add_executable(bb_native_framework_contract tests/native_framework_contract.cpp
+                   ${BB_NATIVE_COMMON_SOURCES})
+    target_link_libraries(bb_native_framework_contract PRIVATE psapi version)
+    target_link_options(bb_native_framework_contract PRIVATE
+                        -static -static-libgcc -static-libstdc++)
+    add_test(NAME native_framework_contract COMMAND bb_native_framework_contract)
 
     #[[
         PNG encoding, and the round trip through it.
