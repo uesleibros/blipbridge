@@ -59,7 +59,19 @@ enum class DispatchId : DISPID {
     ClearPictureCache,
     PictureCacheStats,
     ProbeShapePolicy,
-    ProfileApplyStages
+    ProfileApplyStages,
+    // Appended for the portable behavioural matrix. Ids are a stable ABI: new
+    // ones go on the end, and nothing above this line ever moves.
+    LoadTextureBytesAbi,
+    LoadTexturePixelsAbi,
+    LoadImagePixelsAbi,
+    ImageSizeAbi,
+    CreateTextureFromImageAbi,
+    WarpImageQuadAbi,
+    ApplyTextureBatchAbi,
+    ClearImagesAbi,
+    AbiCounts,
+    AbiLifecycle
 };
 
 /**

@@ -15,6 +15,8 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::ClearPictureCache:
     case DispatchId::PictureCacheStats:
     case DispatchId::AbiCapabilities:
+    case DispatchId::ClearImagesAbi:
+    case DispatchId::AbiCounts:
         return 0;
     case DispatchId::RunBenchmarks:
     case DispatchId::ProbeShapeCompatibility:
@@ -24,10 +26,16 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::LoadCachedImageExperiment:
     case DispatchId::InspectTexture:
     case DispatchId::ReleaseImageAbi:
+    case DispatchId::LoadTextureBytesAbi:
+    case DispatchId::ImageSizeAbi:
+    case DispatchId::CreateTextureFromImageAbi:
+    case DispatchId::AbiLifecycle:
         return 1;
     case DispatchId::PixelTextureExperiment:
         return 6;
     case DispatchId::BenchmarkPixelLoad:
+    case DispatchId::LoadTexturePixelsAbi:
+    case DispatchId::LoadImagePixelsAbi:
         return 4;
     case DispatchId::MemoryFillExperiment:
     case DispatchId::TraceCachedApply:
@@ -41,6 +49,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::ApplyImageQuadAbi:
     case DispatchId::ProfileFillStages:
     case DispatchId::ProfileApplyStages:
+    case DispatchId::WarpImageQuadAbi:
         return 3;
     default:
         return 2;
@@ -96,6 +105,12 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
     }
     if (id == DispatchId::PictureCacheStats) {
         return Value(pictureCacheStatsThroughAbi().c_str());
+    }
+    if (id == DispatchId::ClearImagesAbi) {
+        return Value(clearImagesThroughAbi().c_str());
+    }
+    if (id == DispatchId::AbiCounts) {
+        return Value(abiCountsThroughAbi().c_str());
     }
 
     auto target = arguments.At(0);
@@ -338,6 +353,54 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
 #else
         RequireAcceleratedBackend("TraceCachedApply");
 #endif
+    case DispatchId::LoadTextureBytesAbi: {
+        if (target.v.vt != (VT_ARRAY | VT_UI1)) {
+            throw Error(E_INVALIDARG, "Expected a Byte array of encoded image data");
+        }
+        return Value(loadTextureBytesThroughAbi(target.v.parray).c_str());
+    }
+    case DispatchId::LoadTexturePixelsAbi: {
+        if (target.v.vt != (VT_ARRAY | VT_UI1)) {
+            throw Error(E_INVALIDARG, "Expected a Byte array of BGRA pixels");
+        }
+        return Value(loadTexturePixelsThroughAbi(target.v.parray,
+                                                 arguments.At(1).integer(),
+                                                 arguments.At(2).integer(),
+                                                 arguments.At(3).integer())
+                         .c_str());
+    }
+    case DispatchId::LoadImagePixelsAbi: {
+        if (target.v.vt != (VT_ARRAY | VT_UI1)) {
+            throw Error(E_INVALIDARG, "Expected a Byte array of BGRA pixels");
+        }
+        return Value(loadImagePixelsThroughAbi(target.v.parray,
+                                               arguments.At(1).integer(),
+                                               arguments.At(2).integer(),
+                                               arguments.At(3).integer())
+                         .c_str());
+    }
+    case DispatchId::ImageSizeAbi:
+        return Value(imageSizeThroughAbi(target.integer()).c_str());
+    case DispatchId::CreateTextureFromImageAbi:
+        return Value(createTextureFromImageThroughAbi(target.integer()).c_str());
+    case DispatchId::WarpImageQuadAbi: {
+        auto points = arguments.At(1);
+        if (points.v.vt != (VT_ARRAY | VT_R8) && points.v.vt != (VT_ARRAY | VT_VARIANT)) {
+            throw Error(E_INVALIDARG, "Expected an array of eight quad coordinates");
+        }
+        return Value(warpImageQuadThroughAbi(
+                         target.integer(), points.v.parray, arguments.At(2).integer())
+                         .c_str());
+    }
+    case DispatchId::ApplyTextureBatchAbi: {
+        if (!(target.v.vt & VT_ARRAY) || !target.v.parray) {
+            throw Error(E_INVALIDARG, "Expected an array of Shapes");
+        }
+        return Value(
+            applyTextureBatchThroughAbi(target.v.parray, arguments.At(1).integer()).c_str());
+    }
+    case DispatchId::AbiLifecycle:
+        return Value(lifecycleThroughAbi(target.str()).c_str());
     default:
         throw Error(DISP_E_MEMBERNOTFOUND, "Unknown research operation");
     }

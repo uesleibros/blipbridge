@@ -140,6 +140,23 @@ std::wstring releaseImageThroughAbi(long long image);
 std::wstring applyImageQuadThroughAbi(IDispatch* shape, long long image, SAFEARRAY* points);
 std::wstring loadTextureScaledThroughAbi(const std::wstring& path, const std::wstring& request);
 
+/*
+ * The rest of the public surface, forwarded so a harness can exercise every
+ * entry point a caller has rather than the subset the research probes needed.
+ * All of these are thin: they call the exported function and report what it
+ * returned, so an assertion about them is an assertion about the shipped ABI.
+ */
+std::wstring loadTextureBytesThroughAbi(SAFEARRAY* encoded);
+std::wstring loadTexturePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);
+std::wstring loadImagePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);
+std::wstring imageSizeThroughAbi(long long image);
+std::wstring createTextureFromImageThroughAbi(long long image);
+std::wstring warpImageQuadThroughAbi(long long image, SAFEARRAY* points, long filter);
+std::wstring applyTextureBatchThroughAbi(SAFEARRAY* shapes, long long texture);
+std::wstring clearImagesThroughAbi();
+std::wstring abiCountsThroughAbi();
+std::wstring lifecycleThroughAbi(const std::wstring& action);
+
 /**
  * Research: builds a cached image from raw pixels through the exported GFX
  * raw-pixel creator and applies it. The surface-format value is a parameter

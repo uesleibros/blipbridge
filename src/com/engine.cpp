@@ -72,6 +72,16 @@ constexpr DispatchEntry kDispatchEntries[] = {
     {L"ClearPictureCache", DispatchId::ClearPictureCache},
     {L"PictureCacheStats", DispatchId::PictureCacheStats},
     {L"ProbeShapePolicy", DispatchId::ProbeShapePolicy},
+    {L"LoadTextureBytesAbi", DispatchId::LoadTextureBytesAbi},
+    {L"LoadTexturePixelsAbi", DispatchId::LoadTexturePixelsAbi},
+    {L"LoadImagePixelsAbi", DispatchId::LoadImagePixelsAbi},
+    {L"ImageSizeAbi", DispatchId::ImageSizeAbi},
+    {L"CreateTextureFromImageAbi", DispatchId::CreateTextureFromImageAbi},
+    {L"WarpImageQuadAbi", DispatchId::WarpImageQuadAbi},
+    {L"ApplyTextureBatchAbi", DispatchId::ApplyTextureBatchAbi},
+    {L"ClearImagesAbi", DispatchId::ClearImagesAbi},
+    {L"AbiCounts", DispatchId::AbiCounts},
+    {L"AbiLifecycle", DispatchId::AbiLifecycle},
     {L"ProfileApplyStages", DispatchId::ProfileApplyStages}};
 
 /**

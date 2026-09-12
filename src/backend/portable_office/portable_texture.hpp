@@ -166,6 +166,18 @@ std::uint64_t RegisterTexture(TextureRef texture);
 TextureRef LookupTexture(std::uint64_t handle);
 
 /**
+ * True when @p handle is a value from this store's handle space at all.
+ *
+ * Distinct from OwnsHandle, and the distinction matters for diagnosis rather
+ * than for correctness. A caller who routes on "do I own this" sends a handle
+ * that was never issued somewhere else entirely, and that somewhere else answers
+ * with its own vaguer message - so the caller is told "not found" when the store
+ * could have told them the handle never existed. Routing on the space and
+ * diagnosing in the store keeps the specific answer.
+ */
+bool IsTextureHandle(std::uint64_t handle) noexcept;
+
+/**
  * True when @p handle names a live texture in this store.
  *
  * The question a caller asks before deciding whose handle this is, so it answers

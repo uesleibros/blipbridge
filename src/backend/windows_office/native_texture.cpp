@@ -165,16 +165,30 @@ class TextureStore {
         ++creations_;
     }
 
+    /**
+     * Why a handle is not usable, told apart rather than lumped together.
+     *
+     * A handle that was issued and released is a different mistake from one that
+     * was never issued - a lifetime bug against a typo - and the counter only
+     * ever rises, so the store can say which with certainty. The portable
+     * backend answers the same question the same way; a caller should not be
+     * able to tell which backend refused them.
+     */
+    std::string DescribeBadHandle(long handle) const {
+        std::ostringstream out;
+        out << "Texture handle " << handle << " is not valid (";
+        out << (handle >= kNativeHandleBase && handle < nextHandle_
+                    ? "it was released; handles are never recycled"
+                    : "it was never created");
+        out << ")";
+        return out.str();
+    }
+
     const TextureRef& GetRef(long handle) {
         RequireOwningThread(false);
         const auto found = textures_.find(handle);
         if (found == textures_.end()) {
-            std::ostringstream out;
-            out << "Texture handle " << handle << " is not valid";
-            if (handle > 0 && handle < nextHandle_) {
-                out << " (it was released; handles are never recycled)";
-            }
-            throw bb::Error(bb::BB_E_TEXTURE_NOT_FOUND, out.str());
+            throw bb::Error(bb::BB_E_TEXTURE_NOT_FOUND, DescribeBadHandle(handle));
         }
         return found->second;
     }
@@ -187,9 +201,7 @@ class TextureStore {
     void Release(long handle) {
         RequireOwningThread(false);
         if (textures_.erase(handle) == 0) {
-            std::ostringstream out;
-            out << "Texture handle " << handle << " is not valid";
-            throw bb::Error(bb::BB_E_TEXTURE_NOT_FOUND, out.str());
+            throw bb::Error(bb::BB_E_TEXTURE_NOT_FOUND, DescribeBadHandle(handle));
         }
     }
 

@@ -138,7 +138,11 @@ long Engine::LoadTexture(Value bytes) {
 
 void Engine::ApplyTexture(IDispatch* destination, long handle) {
     RequireNormalShape(destination, "Target must be AutoShape or Freeform");
-    if (portable::OwnsHandle(static_cast<std::uint64_t>(handle))) {
+    // Routed on the handle *space*, not on ownership: a value from the texture
+    // space that this store does not own is a stale or invented texture handle,
+    // and the store says which. Falling through to the donor map instead would
+    // answer "not found" and lose that.
+    if (portable::IsTextureHandle(static_cast<std::uint64_t>(handle))) {
         RequireInitialised();
         RequireOk(BB_ApplyTexture(destination, static_cast<BB_Handle>(handle)), "BB_ApplyTexture");
         return;
@@ -153,7 +157,7 @@ void Engine::ApplyTexture(IDispatch* destination, long handle) {
 }
 
 void Engine::ReleaseTexture(long handle) {
-    if (portable::OwnsHandle(static_cast<std::uint64_t>(handle))) {
+    if (portable::IsTextureHandle(static_cast<std::uint64_t>(handle))) {
         RequireInitialised();
         RequireOk(BB_ReleaseTexture(static_cast<BB_Handle>(handle)), "BB_ReleaseTexture");
         return;

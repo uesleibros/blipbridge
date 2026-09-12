@@ -310,6 +310,10 @@ TextureRef LookupTexture(std::uint64_t handle) {
     return texture;
 }
 
+bool IsTextureHandle(std::uint64_t handle) noexcept {
+    return handle >= kHandleBase;
+}
+
 bool OwnsHandle(std::uint64_t handle) noexcept {
     // Issued, not necessarily still live: a caller asking whose handle this is
     // needs the same answer before and after a release, or a released texture
