@@ -216,6 +216,7 @@ set(BB_RESEARCH_SOURCES
     # neutral on purpose: the same source runs on both, so a difference in its
     # output is a difference in Office rather than in the instrument.
     experiments/exp_native_x86/structure_probe.cpp
+    experiments/exp_native_x86/chain_probe.cpp
 )
 
 set(BB_RESEARCH_NATIVE_SOURCES

@@ -201,8 +201,19 @@ void StructuralValidationChecks() {
           "and is refused for being outside every known module");
 
     Check(!ValidateCodeAddress(world, 0, nullptr).ok, "a null candidate is refused");
-    Check(ValidateCodeAddress(world, real + 1, kernel).failure == ValidationFailure::Misaligned,
-          "a misaligned candidate is refused as misaligned");
+    /*
+     * An unaligned code address is accepted, and must be. Real 32-bit PPCORE
+     * vtable slots point at addresses like ppcore.dll+0x4e81fa - the compiler
+     * aligns hot functions and leaves the rest wherever they land - so demanding
+     * alignment here rejected valid vtables and would have sent the resolver to
+     * the portable backend on a build it could have accelerated.
+     *
+     * `real + 1` is still inside kernel32 and still in an executable section, so
+     * it passes. That is the honest answer: this check is about where an address
+     * lives, not about whether it is the entry point meant.
+     */
+    Check(ValidateCodeAddress(world, real + 1, kernel).ok,
+          "an unaligned address inside executable code is accepted");
 
     // A fabricated vtable of real code pointers validates; one with a data
     // pointer in it does not. The second is the case that matters - an object of
@@ -210,6 +221,9 @@ void StructuralValidationChecks() {
     std::uintptr_t goodVtable[4] = {real, real, real, real};
     Check(ValidateVtable(world, reinterpret_cast<std::uintptr_t>(goodVtable), 4).ok,
           "a table of code pointers validates as a vtable");
+    Check(ValidateVtable(world, reinterpret_cast<std::uintptr_t>(goodVtable) + 1, 1).failure ==
+              ValidationFailure::Misaligned,
+          "but a misaligned vtable is still refused, because a vtable is data");
 
     std::uintptr_t mixedVtable[4] = {real, real, stack, real};
     const Validation mixed =

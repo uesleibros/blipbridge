@@ -156,6 +156,23 @@ std::wstring inspectFillStructure(IDispatch* fill, long slotCount, long byteCoun
 /// The Office module identities, read through the compatibility framework.
 std::wstring inspectModuleIdentities();
 
+/*
+ * Follows a chain of offsets from Shape.Fill and reports each hop - vtable,
+ * fields, slots - calling none of it. `digestChain` is the same walk reduced to
+ * one line per hop, so a harness can take it either side of an operation and see
+ * which object changed.
+ */
+std::wstring
+inspectChain(IDispatch* fill, const std::wstring& chain, long slotCount, long wordSpan);
+std::wstring digestChain(IDispatch* fill, const std::wstring& chain, long wordSpan);
+
+/*
+ * A bounded breadth-first walk of everything reachable from Shape.Fill that
+ * looks like an object, one line each. Diffing two of these answers "which
+ * object changed when Office did that" without anyone having to guess a chain.
+ */
+std::wstring digestGraph(IDispatch* fill, long maxDepth, long maxNodes, long wordSpan);
+
 std::wstring loadTextureBytesThroughAbi(SAFEARRAY* encoded);
 std::wstring loadTexturePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);
 std::wstring loadImagePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);

@@ -143,14 +143,152 @@ address. That recogniser cannot be reused: there are no identity thunks here to
 count. An x86 recogniser will need a different structural invariant, and finding
 one is a prerequisite for the adaptive resolver, not a detail of it.
 
+## Observation 4: the object at `+0x4` is a COM object, and its vtable says so
+
+Its first three slots are `IUnknown`, read from the prologues:
+
+```
+[0] oart.dll+0x1c3ad3  55 8b ec 57 8b 7d 10 85 ff 0f 84 cf
+                       push ebp; mov ebp,esp; push edi
+                       mov edi,[ebp+0x10]     ; third stack argument
+                       test edi,edi; jz ...   ; ppvObject != null
+[1] oart.dll+0x19c8a4  55 8b ec 8b 4d 08 8b 41 18 40 89 41
+                       mov ecx,[ebp+8]        ; this, from the stack
+                       mov eax,[ecx+0x18]; inc eax; mov [ecx+0x18],eax
+[2] oart.dll+0x1ac901  55 8b ec 8b 4d 08 56 83 69 18 01 8b
+                       mov ecx,[ebp+8]        ; this, from the stack
+                       sub dword [ecx+0x18],1
+```
+
+**Established:**
+
+* Slots 0/1/2 are `QueryInterface` / `AddRef` / `Release`. Slot 0 null-checks its
+  third stack argument, which is `ppvObject`; slots 1 and 2 increment and
+  decrement the same field.
+* The convention is **`__stdcall`**: `this` arrives as the first stack argument
+  (`[ebp+8]`), not in ECX.
+* **The reference count is at `this+0x18`.**
+* The object carries **two vtable pointers**, at `+0x0` (`oart.dll+0x90d888`) and
+  `+0x4` (`oart.dll+0x90d84c`) - a multiple-inheritance layout, so it implements
+  at least two interfaces.
+* It holds a **back-pointer to the PPCORE Fill wrapper at `+0x8`**.
+
+**Still not established:** which interface it is. "A reference-counted OART COM
+object reachable from `Shape.Fill`, holding a back-pointer to its wrapper" is
+what the evidence supports; it is not yet a FillFormat or anything else by name.
+
+## Observation 5: the next object down uses a *different* calling convention
+
+Reached at `+0x1c` from the object above; vtable `ppcore.dll+0xf50b4c`.
+
+```
+[0] ppcore.dll+0x2677ab  8b 41 0c 40 89 41 0c c3
+                         mov eax,[ecx+0xc]; inc eax; mov [ecx+0xc],eax; ret
+[1] ppcore.dll+0x48951f  56 8b f1 57 83 6e 0c 01
+                         push esi; mov esi,ecx; push edi
+                         sub dword [esi+0xc],1
+[5] ppcore.dll+0x2af7e   8b 41 04 c3
+                         mov eax,[ecx+4]; ret
+```
+
+**Established:**
+
+* This object's methods are **`__thiscall`**: `this` is in **ECX**, and slot 0
+  returns with a bare `ret` - no stack argument to clean.
+* Its **reference count is at `this+0xc`**, not `+0x18`.
+* It is therefore *not* the same kind of object as the one above it, and shares
+  neither its convention nor its layout.
+
+**This is the single most important result so far for correctness.** Two objects,
+one hop apart in the same chain, use different calling conventions and keep their
+reference counts at different offsets. Any model that assumed one convention for
+"the x86 private objects" would be wrong for half of them, and the failure mode -
+a stack imbalance on every call - is the kind that survives one successful call
+and corrupts the process later.
+
+It also confirms the rule the brief set: **the callee's convention must be read
+per function, never inferred from the caller's.**
+
+## Observation 6: where the picture fill actually lands
+
+Found by walking every object reachable from `Shape.Fill` and diffing the walk
+across documented `Fill.UserPicture` calls - `tools/probe_fill_graph_diff.ps1`.
+Twelve objects are reachable at depth 3. The transitions:
+
+| transition | objects mutated |
+|---|---|
+| no fill → picture A | the OART COM object (d1); an object with vtable `oart.dll+0x824198` (d3) |
+| picture A → picture B *(different image and size)* | the `ppcore.dll+0xf50b4c` object (d2); the `oart.dll+0x824198` object (d3) |
+| picture B → solid colour | the `oart.dll+0x824198` object (d3) |
+
+**Established:**
+
+* The object with vtable **`oart.dll+0x824198`** changes on *every* fill
+  transition, including between two different pictures. It holds picture-specific
+  state.
+* The OART COM object changes when a fill *appears* but **not** between two
+  different pictures - consistent with a type or dirty field rather than the
+  image.
+* Nothing at all changes in the PPCORE wrapper's or the OART object's first
+  `0x80` bytes between two different pictures. An earlier reading that appeared
+  to show the wrapper changing was **lazy initialisation on first touch**, not
+  the fill; the harness now touches `Fill.Type` before the baseline so the two
+  cannot be confused.
+
+**Hypothesis:** the `oart.dll+0x824198` object is the picture-fill record, or
+holds it. Not established - only that it is picture-dependent.
+
+### Why the path to it is not a fixed chain
+
+The intermediate object (`ppcore.dll+0xf50b4c`) looks like a **property list
+rather than a struct**. Its fields repeat in a pattern:
+
+```
++0x18 ptr  +0x1c ptr  +0x20 0x3dc  +0x24 ptr
++0x48 ptr  +0x4c ptr  +0x50 0x3dd  +0x54 ptr
++0x60 ...  +0x64 1    +0x68 1
+```
+
+Two parallel records with what look like consecutive property ids (`0x3dc`,
+`0x3dd`). Dumping a fixed chain `4,0x1c,0x54` on a *second* presentation reached a
+different object entirely, whose "vtable" was outside every known module - so
+**`+0x54` is an entry in a list whose position depends on which properties exist**,
+not a stable field offset.
+
+Consequence for the resolver: the x86 invariant cannot be a fixed offset chain
+from the wrapper. It will have to be structural - recognise the property list,
+then find the entry by its id - which is a different shape of invariant from
+x64's, exactly as the framework was built to allow.
+
+## Correction: code addresses are not aligned on x86
+
+The framework's structural validation required candidate code addresses to be
+pointer-aligned. That is true enough on x64 and **false on x86**: real PPCORE
+vtable slots point at `ppcore.dll+0x4e81fa`, `+0x73fd1e` and similar, none of
+them 4-byte aligned. The compiler aligns hot functions and leaves the rest where
+they fall.
+
+The check was rejecting valid vtables, which is the expensive direction of wrong
+- it would have sent the resolver to the portable backend on a build it could
+have accelerated. Alignment is now required only of vtables, which are data.
+
+Found by pointing the probe at real Office objects and reading "vtable valid: NO"
+against a vtable that was plainly fine.
+
 ## Calling conventions: current state of knowledge
 
-| | status |
-|---|---|
-| PPCORE wrapper vtable methods | `__stdcall`, `this` first on the stack - **read from the prologues**, consistent across every slot examined |
-| Inner call from slot 3 | `__thiscall`, `this` in ECX - **read from `lea ecx, [ecx+0x20]` before the call** |
-| OART private entry points | **unknown** - none located yet |
-| GFX exports | **unknown** - not yet examined on x86 |
+| object / function | convention | `this` | refcount | how established |
+|---|---|---|---|---|
+| PPCORE `Shape.Fill` wrapper vtable | `__stdcall` | `[ebp+8]` | not seen | prologues, every slot examined |
+| Inner call from wrapper slot 3 | `__thiscall` | ECX | - | `lea ecx,[ecx+0x20]` before the call |
+| OART COM object at wrapper `+0x4` | `__stdcall` | `[ebp+8]` | `this+0x18` | `IUnknown` prologues (obs. 4) |
+| `ppcore.dll+0xf50b4c` object at `+0x1c` | **`__thiscall`** | **ECX** | **`this+0xc`** | `mov eax,[ecx+0xc]` / bare `ret` (obs. 5) |
+| The picture-bearing `oart.dll+0x824198` object | **unknown** | - | - | located, not yet decoded |
+| OART private entry points | **unknown** - none located yet | | | |
+| GFX exports | **unknown** - not examined on x86 | | | |
+
+Two objects one hop apart use different conventions and keep their reference
+counts at different offsets. Nothing may be inferred from a neighbour.
 
 One successful call would not establish any of these. They will need the
 repeated-call stress the v0.9 brief asks for, and they will need it before
@@ -160,7 +298,8 @@ anything is called in anger.
 
 Everything else. Specifically, none of the following has been started:
 
-* identifying the OART object at `+0x4`;
+* decoding the picture-bearing `oart.dll+0x824198` object;
+* finding the property id that selects the picture entry in the `+0x1c` list;
 * locating anything equivalent to the x64 receiver, its control block, or the
   apply slot;
 * locating the record constructor, the image sub-record, the transfer, the

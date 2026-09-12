@@ -125,11 +125,20 @@ ValidateCodeAddress(const ModuleWorld& world, std::uintptr_t address, const Modu
         out << world.Describe(address) << L", expected " << expected->name;
         return Validation::Fail(ValidationFailure::NotInExpectedModule, out.str());
     }
-    if ((address & kPointerAlignmentMask) != 0) {
-        // Function entry points are aligned on both architectures, so this
-        // catches a read that landed mid-pointer inside the right module.
-        return Validation::Fail(ValidationFailure::Misaligned, world.Describe(address));
-    }
+    /*
+     * Deliberately no alignment requirement on a code address.
+     *
+     * An earlier version demanded pointer alignment here, on the reasoning that
+     * function entry points are aligned. That is true enough on x64 and false on
+     * x86: real PPCORE vtable slots in 32-bit Office point at addresses like
+     * `ppcore.dll+0x4e81fa` and `+0x73fd1e`, neither of which is 4-byte aligned.
+     * The compiler aligns hot functions and leaves the rest wherever they land.
+     *
+     * The check was rejecting perfectly good vtables, which is the expensive
+     * direction of wrong: it would have sent the resolver to the portable
+     * backend on a build it could have accelerated. Alignment stays where it is
+     * actually guaranteed - on the vtable itself, which is data.
+     */
     if (!IsExecutable(reinterpret_cast<const void*>(address))) {
         return Validation::Fail(ValidationFailure::NotExecutable, world.Describe(address));
     }

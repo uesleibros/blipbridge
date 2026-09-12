@@ -52,7 +52,11 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::ProfileApplyStages:
     case DispatchId::WarpImageQuadAbi:
     case DispatchId::InspectFillStructure:
+    case DispatchId::DigestChain:
         return 3;
+    case DispatchId::InspectChain:
+    case DispatchId::DigestGraph:
+        return 4;
     default:
         return 2;
     }
@@ -404,6 +408,22 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(
             applyTextureBatchThroughAbi(target.v.parray, arguments.At(1).integer()).c_str());
     }
+    case DispatchId::InspectChain:
+        // Read-only: follows the chain and reports it, calling none of it.
+        return Value(inspectChain(target.obj(),
+                                  arguments.At(1).str(),
+                                  arguments.At(2).integer(),
+                                  arguments.At(3).integer())
+                         .c_str());
+    case DispatchId::DigestGraph:
+        return Value(digestGraph(target.obj(),
+                                 arguments.At(1).integer(),
+                                 arguments.At(2).integer(),
+                                 arguments.At(3).integer())
+                         .c_str());
+    case DispatchId::DigestChain:
+        return Value(
+            digestChain(target.obj(), arguments.At(1).str(), arguments.At(2).integer()).c_str());
     case DispatchId::InspectFillStructure:
         // Read-only: it reports what it finds and calls none of it.
         return Value(inspectFillStructure(

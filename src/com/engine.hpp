@@ -73,7 +73,10 @@ enum class DispatchId : DISPID {
     AbiCounts,
     AbiLifecycle,
     InspectFillStructure,
-    InspectModuleIdentities
+    InspectModuleIdentities,
+    InspectChain,
+    DigestChain,
+    DigestGraph
 };
 
 /**
