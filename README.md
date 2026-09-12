@@ -166,20 +166,34 @@ all.
 | **Windows x86** | yes | portable - documented Office Automation | no |
 | macOS | no | not implemented, and not a port | - |
 
-**Both architectures fill Shapes.** x86 does the whole job - textures, the range
-apply, the skip cache, crop, orient, resize, quad warp - through
-`Fill.UserPicture` rather than through Office internals, so it is slower and says
-so: `BB_CAP_NATIVE_BACKEND` is not set there.
+**Both architectures fill Shapes**, through the same API. x86 does the whole job -
+textures, the batch and range applies, the skip cache, crop, orient, resize, quad
+warp - through `Fill.UserPicture` rather than through Office internals, so it is
+slower and says so: `BB_CAP_NATIVE_BACKEND` is not set there, making the mask
+`0x03FE` rather than `0x03FF`.
 
 The accelerated backend is not compiled into the x86 binary at all, because code
 that links and is wrong is the worst possible outcome for a library that drives
 undocumented Office internals.
 
-The portable backend's *behaviour* is validated in a real PowerPoint - the Office
-harnesses run against it, in-process, through the real C ABI - and its *x86
-build* is validated in CI. What has not been observed is the two together: no
-build has been run inside a real 32-bit PowerPoint, because Office does not
-install both architectures side by side. See
+### What is and is not validated on x86
+
+> The full public API is implemented for the x86 build through the portable
+> backend. Portable backend behaviour is validated against real PowerPoint using
+> forced-portable x64 testing. Runtime validation inside real 32-bit PowerPoint
+> remains outstanding.
+
+Four separate facts, kept separate on purpose:
+
+| | |
+|---|---|
+| x86 implementation | yes |
+| x86 compilation and CI | yes |
+| Portable backend behaviour against real PowerPoint, via forced-portable x64 | yes |
+| Real 32-bit PowerPoint runtime | **not yet validated** |
+
+The gap is the compiler, not the logic - but it is a real gap, and it is not
+rounded up anywhere in this repository. See
 [docs/windows_x86.md](docs/windows_x86.md).
 
 Backend validation happens on a machine with the validated Office build, and the
@@ -421,6 +435,30 @@ The file is read and decoded once no matter how many Shapes get it, and a Shape
 that already carries that image is skipped entirely. If you change a Shape's fill
 by other means, call `BlipBridge.InvalidateShape shp` so the next call does real
 work - see [docs/picture_cache.md](docs/picture_cache.md).
+
+### Which backend am I on?
+
+Two questions, and they are genuinely different:
+
+```vb
+If Not BlipBridge.IsAvailable Then
+    ' BlipBridge cannot provide its service here at all.
+ElseIf BlipBridge.IsAccelerated Then
+    ' The accelerated Office-native path.
+Else
+    ' The portable path: documented Office Automation. Everything works; an
+    ' apply costs what Office charges for one.
+End If
+```
+
+`IsAvailable` asks **can BlipBridge do its job in this host**, and is true on
+both backends. `IsAccelerated` asks **is this the fast one**, and is exactly
+`BB_CAP_NATIVE_BACKEND`.
+
+Almost every caller wants `IsAvailable`. Reach for `IsAccelerated` when you are
+about to quote a benchmark, or about to do something that is only worth doing
+because applies are cheap. Using it to decide whether to call BlipBridge at all
+would refuse a 32-bit install that works perfectly well.
 
 More in [examples/](examples/).
 

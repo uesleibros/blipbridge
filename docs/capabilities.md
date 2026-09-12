@@ -16,6 +16,36 @@ same probe: PowerPoint host, `oart.dll`/`ppcore.dll`/`gfx.dll` all at the
 validated build, the exported GFX creator present, and every private entry
 point's signature bytes intact. Any failure means `False`.
 
+## Two backends, and the one bit that separates them
+
+There are two Office backends, and the capability mask is how a caller tells them
+apart:
+
+| | mask | `BB_CAP_NATIVE_BACKEND` |
+|---|---|---|
+| accelerated (x64, validated Office build) | `0x03FF` | set |
+| portable (x86, or a forced-portable build) | `0x03FE` | clear |
+
+**Every other bit is identical, and that is deliberate.** A capability bit says
+whether a feature *works*, not whether it is fast. The portable backend really
+does load textures from bytes, raw pixels and files, really does run the whole
+image pipeline including the quad warp, really does apply to a Shape, a batch, a
+range and conditionally with a skip cache, and really does serve
+`BB_ApplyPicture`. So those bits stay set. Clearing them to signal "this is the
+slow one" would tell callers a feature is missing when it is present, and the
+feature-detection story would stop meaning anything.
+
+`BB_CAP_NATIVE_BACKEND` is the bit that means "the accelerated Office-native
+implementation is active". It is the only one that differs, and it is not a
+synonym for "BlipBridge works" - see the `IsAvailable` against `IsAccelerated`
+distinction in the README. A caller that tests the native bit to decide whether
+to use BlipBridge at all would refuse a 32-bit install that works.
+
+Both masks are asserted from inside PowerPoint by
+`tools/test_portable_matrix.ps1`, which reads which backend answered and requires
+the matching mask. Outside PowerPoint the mask is zero on both, because no
+capability here is true without a host.
+
 ## MemoryImageToFill
 
 **Claim.** Bytes already in memory reach a Shape fill with no temporary image

@@ -1,15 +1,39 @@
 # Windows x86: the portable backend
 
-**Status: BlipBridge works on 32-bit PowerPoint. It is not accelerated there.**
+**The full public API is implemented for the x86 build through the portable
+backend. Portable backend behaviour is validated against real PowerPoint using
+forced-portable x64 testing. Runtime validation inside real 32-bit PowerPoint
+remains outstanding.**
 
-Two statements that are easy to run together, and must not be:
+Those are three different statements and this page keeps them apart. Blurring
+them is the easy mistake, so here they are as four separate facts, each with what
+backs it:
 
-| | |
-|---|---|
-| **What x86 does** | Everything the public API promises: textures from bytes or pixels, `BB_ApplyTexture`, `BB_ApplyTextureRange`, `BB_ApplyTextureIfChanged` and its skip cache, `BB_ApplyPicture`, and the whole image pipeline - decode, crop, orient, resize and quad warp. It fills Shapes. |
-| **How it does it** | Through documented Office Automation - `Shape.Fill.UserPicture` and `ShapeRange.Fill` - not through Office internals. **`BB_CAP_NATIVE_BACKEND` is not set on x86**, and a caller who measures will find it slower than x64. |
+| | | Evidence |
+|---|---|---|
+| **x86 implementation** | yes | The portable backend implements the whole `Backend` interface; x86 compiles it instead of the accelerated one. |
+| **x86 compilation and CI** | yes | Debug and Release build in CI and pass the full contract suite, including the COM contract in a 32-bit process. |
+| **Portable backend behaviour against real PowerPoint** | yes | `tools/test_portable_matrix.ps1` runs the whole public surface against the portable backend inside a real PowerPoint, via `BB_FORCE_PORTABLE_BACKEND=ON`. |
+| **Real 32-bit PowerPoint runtime** | **not yet validated** | No build of BlipBridge has been executed inside a 32-bit `POWERPNT.EXE`. Office does not install both architectures side by side, and the development machine has 64-bit Office. |
 
-The second row is the honest part and this page is mostly about it.
+The fourth row is the one that matters when deciding whether to depend on this.
+The gap it names is the compiler, not the logic: the portable backend is
+architecture-neutral by construction, and forced-portable testing exercises every
+line of it that could be wrong in a real host. That is a reason to expect it to
+work on 32-bit PowerPoint. It is not evidence that it does.
+
+## What x86 does, and how
+
+Everything the public API promises: textures from encoded bytes, raw BGRA or a
+file; `BB_ApplyTexture`, `BB_ApplyTextureBatch`, `BB_ApplyTextureRange`,
+`BB_ApplyTextureIfChanged` and its skip cache; `BB_ApplyPicture`; and the whole
+image pipeline - decode, crop, orient, resize and quad warp.
+
+It does that through documented Office Automation - `Shape.Fill.UserPicture` and
+`ShapeRange.Fill` - rather than through Office internals. **`BB_CAP_NATIVE_BACKEND`
+is not set on x86**, so the capability mask there is `0x03FE` rather than
+`0x03FF`, and a caller who measures will find it slower. See
+[benchmarks.md](benchmarks.md) for how much.
 
 ## What changed, and what did not
 
@@ -95,6 +119,42 @@ Three differences, all deliberate, all measured:
    is the way to force a boundary. A range apply is still exactly one entry on
    both.
 
+### Temporary files, and their lifecycle
+
+The portable backend writes files. `Fill.UserPicture` takes a path, so a texture
+built from raw pixels - a resample, a crop, a quad warp - has to become one. This
+is stated plainly rather than buried, because it is a real difference: the
+accelerated backend hands Office an in-memory image and writes nothing.
+
+The rules:
+
+* **Where.** `%TEMP%\BlipBridge-<pid>\`. Per-process, so two PowerPoint
+  instances with the add-in loaded cannot delete each other's files, and no
+  locking is needed to guarantee it.
+* **What.** One PNG per texture, named from the texture's process-unique image
+  id, so two textures never collide.
+* **When.** On the texture's **first apply**, not at load. A texture that is
+  created and never applied never touches the disk. Encoding is the expensive
+  part and the pixels do not change, so a texture applied to fifty Shapes encodes
+  once.
+* **Until when.** The file lives as long as the texture and is deleted with it -
+  on `BB_ReleaseTexture`, on `BB_ClearTextures`, or when the last owner drops it.
+* **The directory.** `BB_ClearTextures` removes it once empty. It is recreated
+  lazily on the next write, so a cleared library keeps working without being
+  re-initialised. That was a real bug once - clearing left every later apply
+  failing with "the system cannot find the path specified" - and
+  `tools/test_portable_matrix.ps1` asserts the load-apply-clear-load-apply cycle
+  because of it.
+* **When cleanup fails.** Best effort. A file that will not delete is a stray
+  temporary, not a reason to fail a destructor or an apply; the directory is only
+  ever removed when empty, so a file that outlived its texture is left where a
+  human can find it rather than taken down with something else.
+* **What is never touched.** Only files this process wrote, only inside its own
+  directory.
+
+A caller who needs to know whether anything is on disk can ask: the research
+surface's texture report includes `encoded=1` once a texture's file exists.
+
 ## What the portable backend refuses, and why it refuses more than it must
 
 `BB_ApplyTextureRange` refuses a range containing a Table, even though
@@ -123,7 +183,8 @@ pass against it:
 
 | suite | what it covers |
 |---|---|
-| `test_image_api` | the whole ABI 5 image surface, quad warp applied to a Shape, save and reopen |
+| `test_portable_matrix` | the whole public surface, end to end - see below |
+| `test_image_api` | the ABI 5 image surface, quad warp applied to a Shape, save and reopen |
 | `test_apply_if_changed` | the skip cache, staleness, refusals, WordArt and Freeform, save and reopen |
 | `test_range_apply` | range fills, all-or-nothing refusal, one undo entry, mixed classes, groups |
 | `test_picture_cache` | `BB_ApplyPicture`, its caches, and a file rewritten on disk |
@@ -131,6 +192,17 @@ pass against it:
 | `test_cache_ownership` | the two owners, and released handles staying stale forever |
 | `test_semantic_guards` | Connector, Line and WordArt |
 | `test_release_stress` | 2000 applies, leak behaviour, and the store's own accounting |
+
+`test_portable_matrix.ps1` is the one written for this release, and it is
+deliberately **backend-aware rather than portable-only**: it reads which backend
+is loaded, asserts the capability mask that backend owes, and then asserts
+identical behaviour for everything else. Running it against both builds is what
+turns "the same API either way" from a design intention into a measured claim.
+
+Where a result is visible it samples the rendered Shape rather than asking a
+cache what it believes. `Fill.Type` reports that a picture is present and never
+which one, and the failure worth guarding against is a cache that shows the wrong
+picture confidently.
 
 The suites that do **not** run against it are the ones that instrument Office
 internals - receiver layouts, transaction splitting, GFX image lifetimes. There
@@ -144,17 +216,21 @@ exporting the full undecorated C ABI.
 
 ### What is still not claimed
 
-**No build of BlipBridge has been run inside a real 32-bit PowerPoint.** The
-machine this was developed on has 64-bit Office, and Office does not install both
-architectures side by side. What is claimed is precise:
+**No build of BlipBridge has been executed inside a real 32-bit `POWERPNT.EXE`.**
+The development machine has 64-bit Office, and Office does not install both
+architectures side by side.
 
-* the portable backend's *behaviour* is validated in a real PowerPoint;
-* the portable backend's *x86 build* is validated in CI;
-* the composition of the two has not been observed directly.
+So the claim is worded exactly this way, and no more strongly:
+
+> The full public API is implemented for the x86 build through the portable
+> backend. Portable backend behaviour is validated against real PowerPoint using
+> forced-portable x64 testing. Runtime validation inside real 32-bit PowerPoint
+> remains outstanding.
 
 That is a much stronger position than "it compiles", and it is not the same thing
-as "validated on 32-bit Office". The gap that remains is the compiler, not the
-logic.
+as "validated on 32-bit Office". Anyone deciding whether to depend on the x86
+package should read it as: the logic is tested, the composition with a 32-bit
+host is not.
 
 ## The x86 calling convention decision
 

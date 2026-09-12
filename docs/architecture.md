@@ -1,5 +1,16 @@
 # Architecture
 
+> **Scope.** This page describes the **research COM surface** - the
+> `BlipBridge.Engine` Automation object the Office harnesses drive - and dates
+> from before the shipped C ABI existed. For the architecture of the library
+> people actually install, read [c_abi.md](c_abi.md): it has the seam between the
+> C ABI and the two Office backends, which of the two each architecture gets, and
+> which modules they share. For what separates the backends at runtime, see
+> [compatibility.md](compatibility.md) and [capabilities.md](capabilities.md).
+>
+> The research surface itself is now built over whichever backend a configuration
+> has, which is what lets one harness suite drive both.
+
 The compatibility interface is an apartment-threaded in-process IDispatch COM class, BlipBridge.Engine. VBA CreateObject loads it into the VBA host. Creating it from PowerShell instead loads it into PowerShell; use the research COM add-in to invoke benchmarks inside PowerPoint. GetHostProcessId makes this verifiable.
 
 Current implementation has one explicit public-COM fallback. RegisterTextureShape retains a normal AutoShape/Freeform donor whose Fill.Type is picture. ApplyTexture calls donor.PickUp and destination.Apply, preserving destination geometry but replacing broader formatting. It does not create a Picture Shape. It neither reads an image file nor processes PNG bytes during ApplyTexture; Office's internal decoding/resource behavior remains unproven.

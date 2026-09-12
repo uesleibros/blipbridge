@@ -145,15 +145,28 @@ BACKEND - READ THIS
   Portable, not accelerated. It works; it is not fast.
 
   Everything the API offers works here: textures, ApplyTexture,
-  ApplyTextureRange, ApplyTextureIfChanged and its skip cache, ApplyPicture, and
-  the whole image pipeline - crop, orient, resize and quad warp. Shapes get
-  filled.
+  ApplyTextureBatch, ApplyTextureRange, ApplyTextureIfChanged and its skip cache,
+  ApplyPicture, and the whole image pipeline - crop, orient, resize and quad
+  warp. Shapes get filled.
 
   It does that through Office's own Fill.UserPicture rather than through the
-  accelerated path, so an apply costs what Office charges for one.
-  BlipBridge.IsAccelerated returns False here and BlipBridge.IsAvailable returns
-  True, which is the distinction: usable, not accelerated. Do not quote the x64
-  benchmark numbers for this package.
+  accelerated path, so an apply costs what Office charges for one, and it writes
+  a temporary PNG per texture under %TEMP%\BlipBridge-<pid>\ because
+  Fill.UserPicture takes a path. Do not quote the x64 benchmark numbers for this
+  package.
+
+  Two questions, and they are different:
+
+    If Not BlipBridge.IsAvailable Then
+        ' BlipBridge cannot help in this host.
+    ElseIf BlipBridge.IsAccelerated Then
+        ' The accelerated Office-native path.
+    Else
+        ' This package: the portable documented-Office path.
+    End If
+
+  IsAvailable is True here. IsAccelerated is False. Testing the wrong one would
+  refuse an install that works perfectly well.
 
   The accelerated backend is a reconstruction of one 64-bit Office build's
   internals. It depends on the x64 calling convention, on per-build module
@@ -161,9 +174,21 @@ BACKEND - READ THIS
   built into this binary at all - shipping something that compiles and might
   corrupt a document would be worse than shipping the slower route.
 
-  One thing this package has not had: no build of BlipBridge has been run inside
-  a real 32-bit PowerPoint. The backend's behaviour is validated in a real
-  PowerPoint and its 32-bit build is validated in CI, but not the two together.
+SUPPORT LEVEL - PLEASE READ BEFORE DEPENDING ON THIS
+  The full public API is implemented for the x86 build through the portable
+  backend. Portable backend behaviour is validated against real PowerPoint using
+  forced-portable x64 testing. Runtime validation inside real 32-bit PowerPoint
+  remains outstanding.
+
+  Said as four separate facts:
+
+    x86 implementation                              yes
+    x86 compilation and CI                          yes
+    portable behaviour vs real PowerPoint (x64)     yes
+    real 32-bit PowerPoint runtime                  NOT YET VALIDATED
+
+  No build of BlipBridge has been executed inside a 32-bit POWERPNT.EXE. The gap
+  is the compiler, not the logic - but it is a real gap and it is not rounded up.
 
   Details: $repo/blob/main/docs/windows_x86.md
 "@

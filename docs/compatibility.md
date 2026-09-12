@@ -1,5 +1,36 @@
 # Compatibility
 
+## Which backend runs where
+
+BlipBridge has two Office backends behind one public API. Everything below this
+section is about the **accelerated** one - the Office build profile it is guarded
+to, and the evidence behind each private entry point it uses. None of it applies
+to the portable backend, which calls no Office internals at all.
+
+| | accelerated | portable |
+|---|---|---|
+| how it fills | reverse-engineered OART picture-fill transaction | `Shape.Fill.UserPicture`, `ShapeRange.Fill` |
+| Office builds | exactly 16.0.14334.20848, x64; fails closed elsewhere | any build that has the documented API |
+| architectures | x64 only | x64 (forced) and x86 |
+| capability mask | `0x03FF` | `0x03FE` |
+| tied to an Office version | yes, by design | no |
+
+The portable backend is therefore the answer to "what happens on an Office build
+BlipBridge has not been validated against" as well as to "what happens on 32-bit".
+On an unvalidated x64 build the accelerated backend refuses and `BB_ApplyPicture`
+still works through Office's own route; a build configured for the portable
+backend has no version guard to fail in the first place.
+
+**What is not a fallback.** Backend *selection* happens once, at build time, and
+is visible through `BB_CAP_NATIVE_BACKEND`. It is not a runtime failover: the
+accelerated backend does not quietly hand work to the portable one when an
+internal call fails. A genuine internal failure is reported as itself, because
+retrying it on a slower path would turn "your Office build is unsupported" into
+"everything is a bit slow" and hide exactly the problems worth knowing about. The
+one documented dispatch that does choose a route per call is
+`BB_ApplyPicture`, which picks from the Shape's *class* before doing any work -
+see picture_cache.md.
+
 The 2026-09-09 COM refactor preserves existing registration, DISPIDs, public
 return types and Office profile behavior. Native COM contract tests pass for
 Release and Debug; PowerPoint integration tests ran against the Release DLL.
