@@ -81,7 +81,22 @@ Copy-Item (Join-Path $root 'LICENSE') (Join-Path $target 'LICENSE')
 $repo = 'https://github.com/uesleibros/blipbridge'
 
 # The two architectures make different promises. Rather than one README hedged
-# to cover both, each says exactly what is true of the binary beside it.
+# to cover both, each says exactly what is true of the binary beside it - and
+# that includes the closing disclaimer, which describes the accelerated backend
+# and would be simply false printed under the portable one.
+if ($Architecture -eq 'x64') {
+    $disclaimer = @"
+It calls undocumented internals of Microsoft Office, which may change or break
+in any update; the version guards exist so that a change stops it rather than
+corrupts anything.
+"@
+} else {
+    $disclaimer = @"
+This build calls only documented Office automation, so it is not tied to an
+Office version the way the x64 build is.
+"@
+}
+
 if ($Architecture -eq 'x64') {
     $status = @"
 REQUIREMENTS
@@ -190,10 +205,8 @@ $status
 DOCUMENTATION AND SOURCE
   $repo
 
-BlipBridge is not affiliated with or endorsed by Microsoft. It calls
-undocumented internals of Microsoft Office, which may change or break in any
-update; the version guards exist so that a change stops it rather than corrupts
-anything.
+BlipBridge is not affiliated with or endorsed by Microsoft.
+$disclaimer
 "@ | Set-Content (Join-Path $target 'README.txt') -Encoding utf8
 
 # --- archive and checksum ----------------------------------------------------
