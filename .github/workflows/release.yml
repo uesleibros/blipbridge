@@ -75,6 +75,7 @@ jobs:
       matrix:
         include:
           - arch: x64
+            backend: windows-office-native
             msystem: UCRT64
             dll_name: BlipBridge-x64.dll
             machine: pei-x86-64
@@ -84,6 +85,7 @@ jobs:
               mingw-w64-ucrt-x86_64-make
 
           - arch: x86
+            backend: windows-office-portable
             msystem: MINGW32
             dll_name: BlipBridge-x86.dll
             machine: pei-i386
@@ -206,6 +208,43 @@ jobs:
             echo "Architecture mismatch."
             exit 1
           fi
+
+      - name: Verify which backend is being released
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          # This is the gate that matters most, because this workflow is the one
+          # that ships. Each backend names itself and the name is a string in the
+          # DLL, so this reads what was actually linked rather than what the
+          # configure step decided.
+          #
+          # BB_FORCE_PORTABLE_BACKEND exists so the portable backend can be run
+          # against a real PowerPoint on x64. It must never be what ships, and an
+          # x64 DLL naming the portable backend is exactly what that mistake
+          # would look like on the release page.
+          dll="${{ steps.dll.outputs.path }}"
+          expected="${{ matrix.backend }}"
+          case "$expected" in
+            windows-office-native)   forbidden="windows-office-portable" ;;
+            windows-office-portable) forbidden="windows-office-native" ;;
+            *) echo "Unknown expected backend: $expected"; exit 1 ;;
+          esac
+
+          if ! grep -a -F -q -- "$expected" "$dll"; then
+            echo "The DLL does not name the $expected backend."
+            exit 1
+          fi
+          if grep -a -F -q -- "$forbidden" "$dll"; then
+            echo "The DLL names $forbidden, which must not ship for ${{ matrix.arch }}."
+            exit 1
+          fi
+          if grep -a -F -q -- "windows-x86-unvalidated" "$dll"; then
+            echo "The DLL still contains the backend that refuses everything."
+            exit 1
+          fi
+
+          echo "Releasing with backend: $expected"
 
       - name: Verify exported ABI
         shell: msys2 {0}
