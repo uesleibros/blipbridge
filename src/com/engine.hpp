@@ -71,7 +71,8 @@ enum class DispatchId : DISPID {
     ApplyTextureBatchAbi,
     ClearImagesAbi,
     AbiCounts,
-    AbiLifecycle
+    AbiLifecycle,
+    InspectFillStructure
 };
 
 /**

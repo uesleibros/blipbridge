@@ -50,6 +50,7 @@ UINT ExpectedResearchArgumentCount(DispatchId id) {
     case DispatchId::ProfileFillStages:
     case DispatchId::ProfileApplyStages:
     case DispatchId::WarpImageQuadAbi:
+    case DispatchId::InspectFillStructure:
         return 3;
     default:
         return 2;
@@ -399,6 +400,12 @@ Value Engine::DispatchResearch(DispatchId id, const AutomationArguments& argumen
         return Value(
             applyTextureBatchThroughAbi(target.v.parray, arguments.At(1).integer()).c_str());
     }
+    case DispatchId::InspectFillStructure:
+        // Read-only: it reports what it finds and calls none of it.
+        return Value(inspectFillStructure(
+                         target.obj(), arguments.At(1).integer(),
+                         arguments.At(2).integer())
+                         .c_str());
     case DispatchId::AbiLifecycle:
         return Value(lifecycleThroughAbi(target.str()).c_str());
     default:

@@ -146,6 +146,13 @@ std::wstring loadTextureScaledThroughAbi(const std::wstring& path, const std::ws
  * All of these are thin: they call the exported function and report what it
  * returned, so an assertion about them is an assertion about the shipped ABI.
  */
+/*
+ * Read-only structural reconnaissance of the Shape.Fill object graph, for
+ * deriving the 32-bit equivalent of the x64 receiver walk. It never calls
+ * anything it finds - see exp_native_x86/structure_probe.cpp.
+ */
+std::wstring inspectFillStructure(IDispatch* fill, long slotCount, long byteCount);
+
 std::wstring loadTextureBytesThroughAbi(SAFEARRAY* encoded);
 std::wstring loadTexturePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);
 std::wstring loadImagePixelsThroughAbi(SAFEARRAY* pixels, long width, long height, long stride);

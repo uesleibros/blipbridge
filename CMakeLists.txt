@@ -189,6 +189,10 @@ set(BB_RESEARCH_SOURCES
     experiments/exp_internal_blip/range_apply.cpp
     experiments/exp_internal_blip/image_api_driver.cpp
     experiments/exp_internal_blip/picture_cache_driver.cpp
+    # Read-only reconnaissance for the 32-bit native backend. Architecture-
+    # neutral on purpose: the same source runs on both, so a difference in its
+    # output is a difference in Office rather than in the instrument.
+    experiments/exp_native_x86/structure_probe.cpp
 )
 
 set(BB_RESEARCH_NATIVE_SOURCES
