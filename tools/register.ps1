@@ -1,11 +1,19 @@
-param([ValidateSet('Release','Debug')][string]$Configuration='Release',[switch]$ResearchAddin)
+param([ValidateSet('Release','Debug')][string]$Configuration='Release',
+      [switch]$ResearchAddin,
+      # Registers a research DLL from somewhere other than the default build
+      # tree. The reason it exists: a build configured with
+      # BB_FORCE_PORTABLE_BACKEND puts the portable backend in the same research
+      # surface, and registering that one is how the Office harnesses exercise
+      # the portable backend in a real PowerPoint instead of only compiling it.
+      [string]$Dll)
 $ErrorActionPreference='Stop'
 if(![Environment]::Is64BitProcess){throw 'Run 64-bit PowerShell'}
 # The DLL carries its architecture in its name. The research COM surface only
 # exists in the x64 build, so that is the one registered.
 # The COM Automation surface lives only in the research DLL: the shipped
 # BlipBridge-x64.dll deliberately contains no research code at all.
-$dll=(Resolve-Path "$PSScriptRoot/../build/$Configuration/BlipBridgeResearch-x64.dll").Path
+if($Dll){$dll=(Resolve-Path $Dll).Path}
+else{$dll=(Resolve-Path "$PSScriptRoot/../build/$Configuration/BlipBridgeResearch-x64.dll").Path}
 $id='{2E2E2731-C523-486B-89CB-2A89484F1E32}'
 $base='HKCU:\Software\Classes'
 New-Item "$base/CLSID/$id/InprocServer32" -Force | Out-Null

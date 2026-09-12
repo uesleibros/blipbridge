@@ -160,16 +160,26 @@ Two different things, kept apart on purpose. **A green build says nothing about
 whether the PowerPoint backend is safe** - hosted CI runners have no Office at
 all.
 
-| | Builds in CI | Native PowerPoint backend |
-|---|---|---|
-| **Windows x64** | yes | **validated** on Office 16.0.14334.20848 |
-| **Windows x86** | yes | **not validated** - never run in a real 32-bit PowerPoint; loads and refuses every texture call |
-| macOS | no | not implemented, and not a port |
+| | Builds in CI | Backend | Accelerated |
+|---|---|---|---|
+| **Windows x64** | yes | accelerated - Office internals, **validated** on Office 16.0.14334.20848 | yes |
+| **Windows x86** | yes | portable - documented Office Automation | no |
+| macOS | no | not implemented, and not a port | - |
 
-The x86 package is real and useful for testing the ABI, the wrapper and the
-packaging on 32-bit Office. It will not accelerate anything: the 64-bit backend
-is not even compiled into it, because code that links and is wrong is the worst
-possible outcome for a library that drives undocumented Office internals. See
+**Both architectures fill Shapes.** x86 does the whole job - textures, the range
+apply, the skip cache, crop, orient, resize, quad warp - through
+`Fill.UserPicture` rather than through Office internals, so it is slower and says
+so: `BB_CAP_NATIVE_BACKEND` is not set there.
+
+The accelerated backend is not compiled into the x86 binary at all, because code
+that links and is wrong is the worst possible outcome for a library that drives
+undocumented Office internals.
+
+The portable backend's *behaviour* is validated in a real PowerPoint - the Office
+harnesses run against it, in-process, through the real C ABI - and its *x86
+build* is validated in CI. What has not been observed is the two together: no
+build has been run inside a real 32-bit PowerPoint, because Office does not
+install both architectures side by side. See
 [docs/windows_x86.md](docs/windows_x86.md).
 
 Backend validation happens on a machine with the validated Office build, and the
@@ -269,7 +279,7 @@ cannot skip.
 
 | | |
 |---|---|
-| Platform | Windows. x64 has a validated backend; x86 builds and refuses |
+| Platform | Windows. x64 accelerated; x86 portable, same API, not accelerated |
 | Host | PowerPoint (the accelerated path is refused elsewhere) |
 | Office | **16.0.14334.20848** (PowerPoint LTSC 2021 x64), the build every offset was validated against |
 | VBA | VBA7. One `.bas` serves both 32-bit and 64-bit Office |
@@ -446,7 +456,7 @@ Every claim in this README is backed by a measurement in [docs/](docs/):
 | [pixel_textures.md](docs/pixel_textures.md) | raw pixels, why mutation is unavailable, slowdown findings |
 | [benchmarks.md](docs/benchmarks.md) | the numbers and how they were taken |
 | [cost_profile.md](docs/cost_profile.md) | where each microsecond of an apply goes |
-| [windows_x86.md](docs/windows_x86.md) | what x86 is today, and what validating it would take |
+| [windows_x86.md](docs/windows_x86.md) | the portable backend, how it differs, and what an accelerated x86 backend would take |
 | [research.md](docs/research.md) | the journal, including the wrong turns |
 
 Raw transcripts are in `docs/evidence/`.

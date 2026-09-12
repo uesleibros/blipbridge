@@ -6,6 +6,7 @@
 #include "decode.hpp"
 
 #include "resample.hpp"
+#include "wic.hpp"
 
 #include <wincodec.h>
 
@@ -14,68 +15,6 @@
 
 namespace bb::image {
 namespace {
-
-/// Releases a COM pointer on scope exit, so every early return stays correct.
-template <typename T>
-class ComPtr {
-  public:
-    ComPtr() = default;
-    ComPtr(const ComPtr&) = delete;
-    ComPtr& operator=(const ComPtr&) = delete;
-
-    ~ComPtr() {
-        if (value_) {
-            value_->Release();
-        }
-    }
-
-    T** put() noexcept {
-        return &value_;
-    }
-
-    T* get() const noexcept {
-        return value_;
-    }
-
-    T* operator->() const noexcept {
-        return value_;
-    }
-
-    explicit operator bool() const noexcept {
-        return value_ != nullptr;
-    }
-
-  private:
-    T* value_ = nullptr;
-};
-
-/**
- * The imaging factory, created once per thread that asks for one.
- *
- * WIC objects are apartment-bound and this library is single-threaded-apartment
- * throughout, so a thread-local factory is both correct and one fewer
- * CoCreateInstance per image. It is deliberately never released: it lives as
- * long as the thread, which is what a factory is for, and releasing it during
- * DLL teardown would mean touching COM at a moment when COM may be gone.
- */
-IWICImagingFactory* Factory() noexcept {
-    static thread_local IWICImagingFactory* factory = nullptr;
-    if (factory) {
-        return factory;
-    }
-    // Succeeds whether or not this thread has already called CoInitialize: WIC
-    // is a free-threaded-marshalled in-proc server, so an uninitialised
-    // apartment is the one case worth retrying after initialising.
-    HRESULT hr = CoCreateInstance(
-        CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-    if (hr == CO_E_NOTINITIALIZED) {
-        if (SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
-            hr = CoCreateInstance(
-                CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-        }
-    }
-    return SUCCEEDED(hr) ? factory : nullptr;
-}
 
 /// Maps a WIC failure onto the reason a caller can act on.
 DecodeStatus StatusFor(HRESULT hr) noexcept {
@@ -170,10 +109,8 @@ DecodeStatus DecodeFirstFrame(IWICBitmapDecoder* decoder, DecodedImage& out) noe
         return DecodeStatus::OutOfMemory;
     }
 
-    hr = converter->CopyPixels(nullptr,
-                               static_cast<UINT>(stride),
-                               static_cast<UINT>(bytes),
-                               decoded.pixels.data());
+    hr = converter->CopyPixels(
+        nullptr, static_cast<UINT>(stride), static_cast<UINT>(bytes), decoded.pixels.data());
     if (FAILED(hr)) {
         return StatusFor(hr);
     }
@@ -261,8 +198,8 @@ DecodeStatus DecodeFile(const wchar_t* path, DecodedImage& out) noexcept {
     if (!GetFileAttributesExW(path, GetFileExInfoStandard, &attributes)) {
         return DecodeStatus::NoData;
     }
-    const std::uint64_t size = (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) |
-                               attributes.nFileSizeLow;
+    const std::uint64_t size =
+        (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
     if (size == 0) {
         return DecodeStatus::NoData;
     }

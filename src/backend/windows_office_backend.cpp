@@ -16,13 +16,13 @@
  * here as UnsupportedHost or UnsupportedBuild rather than as a crash.
  */
 
+#include "../image/resample.hpp"
 #include "backend.hpp"
+#include "backend_guard.hpp"
 #include "windows_office/native_texture.hpp"
 #include "windows_office/picture_cache.hpp"
 #include "windows_office/range_texture.hpp"
 #include "windows_office/shape_policy.hpp"
-
-#include "../image/resample.hpp"
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
 #include <cstring>
@@ -34,137 +34,6 @@
 
 namespace bb {
 namespace {
-
-/// Public Office enumeration values, not private ABI offsets.
-
-/**
- * Maps an internal HRESULT onto the backend vocabulary.
- *
- * The distinction that matters to a caller is "your Office build is not
- * supported" versus "you passed something wrong", so E_NOTIMPL - which the
- * guards use for every unvalidated layout - becomes UnsupportedBuild.
- */
-BackendStatus StatusFor(HRESULT hr) {
-    switch (hr) {
-    case E_INVALIDARG:
-        return BackendStatus::InvalidArgument;
-    case E_ACCESSDENIED:
-        return BackendStatus::UnsupportedHost;
-    case E_NOTIMPL:
-        return BackendStatus::UnsupportedBuild;
-    case E_OUTOFMEMORY:
-        return BackendStatus::OutOfMemory;
-    case RPC_E_WRONG_THREAD:
-        return BackendStatus::Internal;
-    default:
-        break;
-    }
-    if (hr == BB_E_TEXTURE_NOT_FOUND) {
-        return BackendStatus::InvalidHandle;
-    }
-    if (hr == BB_E_SHAPE_CLASS_UNSUPPORTED) {
-        return BackendStatus::UnsupportedShapeClass;
-    }
-    if (hr == BB_E_IMAGE_FILE_MISSING) {
-        return BackendStatus::FileNotFound;
-    }
-    if (hr == BB_E_FALLBACK_REFUSED) {
-        return BackendStatus::FallbackFailed;
-    }
-    return BackendStatus::Internal;
-}
-
-/// Runs @p body, converting any failure into a BackendResult.
-template <typename Body>
-BackendResult Guarded(Body&& body) noexcept {
-    try {
-        body();
-        return BackendResult::Success();
-    } catch (const Error& error) {
-        return BackendResult::Failure(StatusFor(error.hr), error.what());
-    } catch (const std::bad_alloc&) {
-        return BackendResult::Failure(BackendStatus::OutOfMemory, "Out of memory");
-    } catch (const std::exception& error) {
-        return BackendResult::Failure(BackendStatus::Internal, error.what());
-    } catch (...) {
-        return BackendResult::Failure(BackendStatus::Internal, "Unknown internal failure");
-    }
-}
-
-/**
- * Turns a caller-supplied pointer into a Shape we are willing to fill.
- *
- * VBA hands over `ObjPtr(shape)`, a raw IDispatch with no reference taken, so
- * this validates rather than trusts: the pointer must be readable, must answer
- * QueryInterface for IDispatch, and the object must report a Shape type this
- * backend supports. The reference QueryInterface hands back is released before
- * returning - the caller's own reference is what keeps the Shape alive for the
- * duration of the call.
- */
-/**
- * Validates that @p shape is a live COM object, and nothing more.
- *
- * Split out from RequireFillableShape because the picture path needs the pointer
- * checks without the class decision: a class the native path refuses may still
- * be fillable through Office's own API, and that choice is made further in.
- *
- * The returned pointer carries a reference the caller must release.
- */
-IDispatch* RequireDispatchShape(void* shape) {
-    if (!shape) {
-        throw Error(E_INVALIDARG, "Shape pointer is null");
-    }
-    MEMORY_BASIC_INFORMATION information{};
-    if (VirtualQuery(shape, &information, sizeof(information)) != sizeof(information) ||
-        information.State != MEM_COMMIT) {
-        throw Error(E_INVALIDARG, "Shape pointer does not address committed memory");
-    }
-    auto candidate = static_cast<IUnknown*>(shape);
-    IDispatch* dispatch = nullptr;
-    if (FAILED(candidate->QueryInterface(IID_IDispatch, reinterpret_cast<void**>(&dispatch))) ||
-        !dispatch) {
-        throw Error(E_INVALIDARG, "Shape pointer is not an IDispatch");
-    }
-    return dispatch;
-}
-
-IDispatch* RequireFillableShape(void* shape, long* shapeType = nullptr) {
-    if (!shape) {
-        throw Error(E_INVALIDARG, "Shape pointer is null");
-    }
-    MEMORY_BASIC_INFORMATION information{};
-    if (VirtualQuery(shape, &information, sizeof(information)) != sizeof(information) ||
-        information.State != MEM_COMMIT) {
-        throw Error(E_INVALIDARG, "Shape pointer does not address committed memory");
-    }
-
-    auto candidate = static_cast<IUnknown*>(shape);
-    IDispatch* dispatch = nullptr;
-    if (FAILED(candidate->QueryInterface(IID_IDispatch, reinterpret_cast<void**>(&dispatch))) ||
-        !dispatch) {
-        throw Error(E_INVALIDARG, "Shape pointer is not an IDispatch");
-    }
-
-    // The QueryInterface reference is only needed while the type is checked.
-    struct Release {
-        IDispatch* value;
-
-        ~Release() {
-            value->Release();
-        }
-    } release{dispatch};
-
-    // Semantic eligibility: one authority, asked by every entry point, so the C
-    // ABI and the COM surface cannot disagree about what they accept. This is
-    // the gate in front of the private OART apply - nothing internal has been
-    // touched yet when it refuses.
-    const office::ShapeClassification classification =
-        office::RequireNativePictureFillTarget(dispatch);
-    if (shapeType) {
-        *shapeType = classification.shapeType;
-    }
-    return dispatch;
-}
 
 /**
  * The Windows implementation.
@@ -295,17 +164,15 @@ class WindowsOfficeBackend final : public Backend {
         });
     }
 
-    BackendResult ApplyTextureIfChanged(void* shape,
-                                        std::uint64_t texture,
-                                        bool* skipped) noexcept override {
+    BackendResult
+    ApplyTextureIfChanged(void* shape, std::uint64_t texture, bool* skipped) noexcept override {
         return Guarded([&] {
             // Same gate, same order: an ineligible Shape is refused before the
             // skip cache is consulted, so this cannot become a way to reach the
             // private backend with a Shape the ordinary apply would reject.
             long shapeType = 0;
             IDispatch* dispatch = RequireFillableShape(shape, &shapeType);
-            nativeTextureApplyIfChanged(
-                dispatch, static_cast<long>(texture), shapeType, skipped);
+            nativeTextureApplyIfChanged(dispatch, static_cast<long>(texture), shapeType, skipped);
         });
     }
 
@@ -317,12 +184,7 @@ class WindowsOfficeBackend final : public Backend {
             // asked about it here: the pointer is checked, and every *member* is
             // classified inside, before anything internal is touched.
             IDispatch* dispatch = RequireDispatchShape(shapeRange);
-            struct Release {
-                IDispatch* value;
-                ~Release() {
-                    value->Release();
-                }
-            } release{dispatch};
+            ReleaseDispatch release{dispatch};
 
             const std::uint32_t filled =
                 office::ApplyTextureToRange(dispatch, static_cast<long>(texture));
@@ -360,8 +222,14 @@ class WindowsOfficeBackend final : public Backend {
         // two disagree.
         std::vector<std::uint8_t> scaled;
         const image::ResampleStatus status =
-            image::Resample(pixels, width, height, stride, targetWidth, targetHeight,
-                            static_cast<image::ScaleFilter>(filter), scaled);
+            image::Resample(pixels,
+                            width,
+                            height,
+                            stride,
+                            targetWidth,
+                            targetHeight,
+                            static_cast<image::ScaleFilter>(filter),
+                            scaled);
         if (status != image::ResampleStatus::Ok) {
             const BackendStatus code = status == image::ResampleStatus::OutOfMemory
                                            ? BackendStatus::OutOfMemory
@@ -371,9 +239,8 @@ class WindowsOfficeBackend final : public Backend {
         return Guarded([&] {
             // The resampled buffer is tightly packed, so its stride is exactly
             // one row of BGRA.
-            *out = static_cast<std::uint64_t>(
-                nativeTextureLoadPixels(scaled.data(), targetWidth, targetHeight,
-                                        static_cast<long>(targetWidth) * 4));
+            *out = static_cast<std::uint64_t>(nativeTextureLoadPixels(
+                scaled.data(), targetWidth, targetHeight, static_cast<long>(targetWidth) * 4));
         });
     }
 
@@ -387,12 +254,7 @@ class WindowsOfficeBackend final : public Backend {
             // acceptable is decided inside, because the picture path also has a
             // fallback for classes the native path refuses.
             IDispatch* dispatch = RequireDispatchShape(shape);
-            struct Release {
-                IDispatch* value;
-                ~Release() {
-                    value->Release();
-                }
-            } release{dispatch};
+            ReleaseDispatch release{dispatch};
             office::ApplyPictureCached(dispatch, reinterpret_cast<const wchar_t*>(path));
         });
     }
@@ -400,12 +262,7 @@ class WindowsOfficeBackend final : public Backend {
     BackendResult InvalidateShape(void* shape) noexcept override {
         return Guarded([&] {
             IDispatch* dispatch = RequireDispatchShape(shape);
-            struct Release {
-                IDispatch* value;
-                ~Release() {
-                    value->Release();
-                }
-            } release{dispatch};
+            ReleaseDispatch release{dispatch};
             office::InvalidateShapeCache(dispatch);
         });
     }

@@ -603,19 +603,53 @@ End Sub
 
 '/**
 ' * @function IsAvailable
-' * @brief Reports whether the accelerated native backend can initialize in this PowerPoint process.
-' * @return True when initialization succeeds and the native-backend capability is active.
-' * @remarks This function intentionally converts initialization failure to False.
+' * @brief Reports whether BlipBridge can fill Shapes in this PowerPoint process.
+' * @return True when initialization succeeds and the library reports any capability at all.
+' * @remarks This is the question a caller almost always means: can I use it here. It is true on
+' * both architectures, because both fill Shapes - 64-bit through the accelerated backend and
+' * 32-bit through documented Office Automation.
+' *
+' * It is deliberately not a test of the accelerated backend. Asking for that bit here would report
+' * "unavailable" on 32-bit PowerPoint for a library that works completely, only more slowly. Use
+' * IsAccelerated when the difference matters, which is when you are measuring.
+' *
+' * The capability mask is zero outside PowerPoint by design, so this is also how a caller finds
+' * out it is running somewhere BlipBridge cannot help. This function intentionally converts
+' * initialization failure to False.
 ' */
 Public Function IsAvailable() As Boolean
     On Error GoTo Unavailable
 
     Initialize
-    IsAvailable = (Capabilities And BB_CAP_NATIVE_BACKEND) <> 0
+    IsAvailable = Capabilities <> 0
     Exit Function
 
 Unavailable:
     IsAvailable = False
+End Function
+
+'/**
+' * @function IsAccelerated
+' * @brief Reports whether the accelerated native backend is the one running.
+' * @return True only when BB_CAP_NATIVE_BACKEND is set.
+' * @remarks False is not a failure. It means picture fills go through Office's own
+' * Fill.UserPicture instead of through the accelerated path - every feature still works, and an
+' * apply costs what Office charges for one. That is the situation on 32-bit PowerPoint, and on a
+' * 64-bit Office build the accelerated backend has not been validated against.
+' *
+' * Worth checking before quoting a benchmark, or before doing something that is only worth doing
+' * because applies are cheap. Not worth checking to decide whether to call BlipBridge at all -
+' * IsAvailable answers that.
+' */
+Public Function IsAccelerated() As Boolean
+    On Error GoTo NotAccelerated
+
+    Initialize
+    IsAccelerated = (Capabilities And BB_CAP_NATIVE_BACKEND) <> 0
+    Exit Function
+
+NotAccelerated:
+    IsAccelerated = False
 End Function
 
 '/**

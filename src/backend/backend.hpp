@@ -9,9 +9,14 @@
  * PowerPoint internals which must not leak upwards.
  *
  * There is exactly one backend per process, chosen at build time by
- * `CreateBackend`. A host with no accelerated implementation gets a backend
- * that answers honestly rather than one that pretends: it reports no
- * capabilities and refuses every texture operation with a documented reason.
+ * `CreateBackend`. On Windows there are two, and both fill Shapes: the
+ * accelerated one drives Office internals on x64, and the portable one drives
+ * documented Automation everywhere else. They differ in speed and in one
+ * capability bit, never in which Shapes they accept.
+ *
+ * A platform with neither gets a backend that answers honestly rather than one
+ * that pretends: it reports no capabilities and refuses every texture operation
+ * with a documented reason.
  *
  * Ownership and threading are the ABI's contract, restated here because the
  * backend has to honour them:

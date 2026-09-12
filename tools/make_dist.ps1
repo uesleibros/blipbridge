@@ -14,8 +14,9 @@ Produces exactly what a user needs and nothing else:
     dist/blipbridge-v<version>-windows-<arch>.zip.sha256
 
 The README inside the archive is written per architecture, because the two say
-genuinely different things: x64 has a validated native backend, x86 does not yet
-and must say so plainly rather than leaving a user to discover it.
+genuinely different things: both fill Shapes, but only x64 does it through the
+accelerated backend. x86 must say plainly that it is the slower route rather
+than leaving a user to discover it from a benchmark.
 
 No macOS package is produced, because no macOS backend exists. Shipping an empty
 or stubbed .dylib would suggest support that is not there.
@@ -93,13 +94,17 @@ REQUIREMENTS
   To check: PowerPoint > File > Account > About PowerPoint. The first line ends
   with "64-bit" or "32-bit".
 
-NATIVE BACKEND STATUS
-  Validated against Office 16.0.14334.20848 and refused on any other build.
-  Call BlipBridge.IsAvailable to check; BlipBridge.Version explains what it
-  found.
+BACKEND
+  Accelerated. Validated against Office 16.0.14334.20848 and refused on any
+  other build, where picture fills fall back to Office's own route.
 
-  This is not universal Office compatibility. The backend depends on internal
-  Office layouts verified per build, and it fails closed rather than guessing.
+  Call BlipBridge.IsAvailable to check that BlipBridge works here at all, and
+  BlipBridge.IsAccelerated to check that this is the fast path.
+  BlipBridge.Version explains what it found.
+
+  This is not universal Office compatibility. The accelerated backend depends on
+  internal Office layouts verified per build, and it fails closed rather than
+  guessing.
 
 PERFORMANCE
   On the tested build and machine, ApplyTexture averaged 0.186 ms against
@@ -121,23 +126,31 @@ REQUIREMENTS
   To check: PowerPoint > File > Account > About PowerPoint. The first line ends
   with "64-bit" or "32-bit".
 
-NATIVE BACKEND STATUS - READ THIS
-  *** There is no accelerated backend in this package yet. ***
+BACKEND - READ THIS
+  Portable, not accelerated. It works; it is not fast.
 
-  The library loads, reports its version, and answers every texture call with a
-  specific refusal. It will not fill anything.
+  Everything the API offers works here: textures, ApplyTexture,
+  ApplyTextureRange, ApplyTextureIfChanged and its skip cache, ApplyPicture, and
+  the whole image pipeline - crop, orient, resize and quad warp. Shapes get
+  filled.
 
-  The 32-bit PowerPoint internals have not been reverse-engineered or validated,
-  and the 64-bit implementation is not portable to them by recompilation - it
-  depends on the x64 calling convention, on per-build module addresses, and on
-  object layouts 32-bit Office does not share. Rather than ship something that
-  compiles and might corrupt a document, the 64-bit backend is not built into
-  this binary at all.
+  It does that through Office's own Fill.UserPicture rather than through the
+  accelerated path, so an apply costs what Office charges for one.
+  BlipBridge.IsAccelerated returns False here and BlipBridge.IsAvailable returns
+  True, which is the distinction: usable, not accelerated. Do not quote the x64
+  benchmark numbers for this package.
 
-  This package exists so the ABI, the wrapper and the packaging can be tested on
-  32-bit Office. Use it for that. Do not expect it to accelerate anything.
+  The accelerated backend is a reconstruction of one 64-bit Office build's
+  internals. It depends on the x64 calling convention, on per-build module
+  addresses, and on object layouts 32-bit Office does not share, so it is not
+  built into this binary at all - shipping something that compiles and might
+  corrupt a document would be worse than shipping the slower route.
 
-  Progress: $repo/blob/main/docs/windows_x86.md
+  One thing this package has not had: no build of BlipBridge has been run inside
+  a real 32-bit PowerPoint. The backend's behaviour is validated in a real
+  PowerPoint and its 32-bit build is validated in CI, but not the two together.
+
+  Details: $repo/blob/main/docs/windows_x86.md
 "@
 }
 

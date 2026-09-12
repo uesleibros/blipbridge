@@ -1,6 +1,10 @@
 #include "engine.hpp"
 
+#if defined(BB_HAS_NATIVE_BACKEND)
+// The accelerated store, for the one capability that is about the backend
+// itself. Everything else this file reports is architecture-neutral.
 #include "../backend/windows_office/native_texture.hpp"
+#endif
 #include "server.hpp"
 
 #include <blipbridge/errors.hpp>
@@ -230,7 +234,14 @@ HRESULT Engine::Invoke(DISPID id,
  * evidence behind each one, and docs/capabilities.md for what they mean.
  */
 std::wstring Engine::Capabilities() const {
+#if defined(BB_HAS_NATIVE_BACKEND)
     const bool nativeBackend = nativeTextureBackendAvailable();
+#else
+    // The portable backend has no accelerated path to report, and saying so is
+    // the point: a harness asking this must see the same answer the C ABI's
+    // capability mask gives, or the two would contradict each other.
+    const bool nativeBackend = false;
+#endif
     const wchar_t* native = nativeBackend ? L"True" : L"False";
     std::wstring capabilities;
     // Bytes reach a Shape fill with no temporary image file. Verified against a

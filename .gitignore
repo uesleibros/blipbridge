@@ -3,3 +3,8 @@
 *.user
 
 /dist/
+
+# Out-of-tree build trees. build-portable/ is the one configured with
+# BB_FORCE_PORTABLE_BACKEND, which is how the portable backend gets driven
+# against a real PowerPoint; none of them belong in the repository.
+/build-*/

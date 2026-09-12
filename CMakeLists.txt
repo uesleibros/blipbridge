@@ -27,17 +27,27 @@ endif()
     Architecture is decided by the toolchain, and is then explicit everywhere.
 
     It is deliberately *not* a source-level `#ifdef` that quietly changes what a
-    single build produces. The two architectures ship different sets of files:
+    single build produces. The two architectures ship different backends:
 
-      x64  the validated PowerPoint backend, the COM research surface, and the
-           research probes that produced them
-      x86  the public C ABI over a backend that refuses, and nothing else
+      x64  the accelerated backend - reverse-engineered OART and GFX internals,
+           plus the COM research surface and the probes that produced them
+      x86  the portable backend - the same public API over documented Office
+           Automation, with no Office internals compiled into it at all
 
-    That exclusion is the safety property. The 64-bit backend depends on the x64
-    calling convention, on per-build module RVAs and on object layouts 32-bit
-    Office does not share, so compiling it as x86 would produce something that
-    links and is wrong - the single most dangerous outcome for a library that
-    drives undocumented Office internals. It is not compiled at all.
+    That exclusion is the safety property, and it is why there are two backends
+    rather than one with an `#ifdef` in it. The accelerated backend depends on
+    the x64 calling convention, on per-build module RVAs and on object layouts
+    32-bit Office does not share, so compiling it as x86 would produce something
+    that links and is wrong - the single most dangerous outcome for a library
+    that drives undocumented Office internals. It is not compiled there at all.
+
+    Three source sets, and the distinction between the first two is the whole
+    point:
+
+      BB_OFFICE_PORTABLE_SOURCES  documented Automation. Architecture-neutral,
+                                  built everywhere Office is.
+      BB_OFFICE_NATIVE_SOURCES    reverse-engineered internals. x64 only.
+      BB_BACKEND_SOURCES          whichever backend this architecture gets.
 ]]
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(BB_ARCH "x64")
@@ -47,20 +57,40 @@ else()
     message(FATAL_ERROR "Unrecognised pointer size ${CMAKE_SIZEOF_VOID_P}")
 endif()
 
-# True only where a validated native Office backend exists for this architecture.
+# True only where a validated accelerated Office backend exists for this
+# architecture. Where it is off the portable backend is built instead, so the
+# library is fully functional either way - the difference is speed, not features.
 if(BB_ARCH STREQUAL "x64")
     set(BB_NATIVE_BACKEND ON)
 else()
     set(BB_NATIVE_BACKEND OFF)
 endif()
 
+#[[
+    Builds the portable backend on x64 as well, replacing the accelerated one.
+
+    Off by default and never set for a release: this exists so the portable
+    backend can be exercised against a real PowerPoint. The only 32-bit-specific
+    thing about that backend is the compiler, so running it in the 64-bit host
+    tests every line of it that could be wrong, which is a far stronger statement
+    than "it compiles for x86".
+
+    A build with this on is a test build. It is asserted against in CI so it can
+    never be what ships.
+]]
+option(BB_FORCE_PORTABLE_BACKEND
+       "Build the portable Automation backend even where the accelerated one exists" OFF)
+if(BB_FORCE_PORTABLE_BACKEND)
+    set(BB_NATIVE_BACKEND OFF)
+    message(STATUS "BlipBridge backend override   : portable backend forced - this is a test build")
+endif()
+
 message(STATUS "BlipBridge version           : ${PROJECT_VERSION}")
 message(STATUS "BlipBridge architecture      : ${BB_ARCH}")
 if(BB_NATIVE_BACKEND)
-    message(STATUS "BlipBridge native backend    : validated PowerPoint x64 backend")
+    message(STATUS "BlipBridge backend           : accelerated - validated PowerPoint x64 internals")
 else()
-    message(STATUS "BlipBridge native backend    : none - the library will load and "
-                   "refuse every texture call with a specific reason")
+    message(STATUS "BlipBridge backend           : portable - documented Office Automation")
     message(STATUS "BlipBridge x86 status        : see docs/windows_x86.md")
 endif()
 
@@ -97,56 +127,110 @@ set(BB_SOURCES
     src/dllmain.cpp
 )
 
-# The reverse-engineered backend, reached only through backend.hpp.
-set(BB_BACKEND_SOURCES
+#[[
+    Documented Office Automation, shared by both backends.
+
+    Nothing here reads an Office internal. These three decide which Shape classes
+    may be filled, which Shapes may be cached, and when an apply may be skipped -
+    and both backends ask the *same* code, so the two architectures cannot
+    disagree about a Shape. A second implementation for x86 would have been a
+    second set of answers, and the difference would have surfaced to a caller as
+    "it behaves differently on 32-bit" with nothing to point at.
+]]
+set(BB_OFFICE_PORTABLE_SOURCES
+    src/backend/windows_office/shape_policy.cpp
+    src/backend/windows_office/shape_identity.cpp
+    src/backend/windows_office/apply_skip_cache.cpp
+)
+
+# The reverse-engineered internals. x64 only - see the note at the top.
+set(BB_OFFICE_NATIVE_SOURCES
     src/backend/windows_office_backend.cpp
     src/backend/windows_office/oart_layout.cpp
     src/backend/windows_office/native_apply.cpp
     src/backend/windows_office/native_texture.cpp
-    src/backend/windows_office/shape_policy.cpp
-    src/backend/windows_office/shape_identity.cpp
-    src/backend/windows_office/apply_skip_cache.cpp
     src/backend/windows_office/range_texture.cpp
     src/backend/windows_office/picture_cache.cpp
 )
 
-# The COM Automation surface and the probes it exposes. Research only: this is
-# how the Office harnesses drive the same texture store the C ABI drives, which
-# is what lets them assert shipping behaviour without shipping themselves.
+# The portable backend: the same public API over Fill.UserPicture.
+set(BB_OFFICE_PORTABLE_BACKEND_SOURCES
+    src/backend/portable_office_backend.cpp
+    src/backend/portable_office/portable_texture.cpp
+    # PNG encoding exists only for this backend: Fill.UserPicture takes a path,
+    # so a texture built from raw pixels has to become a file.
+    src/image/encode.cpp
+)
+
+#[[
+    The COM Automation surface and the probes it exposes. Research only: this is
+    how the Office harnesses drive the same library the C ABI drives, which is
+    what lets them assert shipping behaviour without shipping themselves.
+
+    It is split the same way the backends are, and for the same reason. The
+    portable set drives the public C ABI and nothing else, so it builds over
+    either backend - which is what lets the Office harnesses run against the
+    portable backend in a real PowerPoint. The native set instruments Office
+    internals: receiver layouts, transaction splitting, GFX image lifetimes.
+    There is nothing for those to instrument without the accelerated backend, so
+    they are not built there, and their Automation ids answer with that reason.
+]]
 set(BB_RESEARCH_SOURCES
     src/com/class_factory.cpp
     src/com/engine.cpp
-    src/com/engine_textures.cpp
     experiments/automation_bridge.cpp
     experiments/main.cpp
     experiments/exp_userpicture/trace.cpp
     experiments/exp_pickup_apply/focused.cpp
     experiments/exp_pickup_apply/stress.cpp
+    experiments/exp_internal_blip/batch_benchmark.cpp
+    experiments/exp_internal_blip/skip_benchmark.cpp
+    experiments/exp_internal_blip/apply_cost_factors.cpp
+    experiments/exp_internal_blip/range_apply.cpp
+    experiments/exp_internal_blip/image_api_driver.cpp
+    experiments/exp_internal_blip/picture_cache_driver.cpp
+)
+
+set(BB_RESEARCH_NATIVE_SOURCES
+    src/com/engine_textures.cpp
     experiments/exp_internal_blip/receiver_inspect.cpp
     experiments/exp_internal_blip/native_apply_probe.cpp
     experiments/exp_internal_blip/cached_image_load.cpp
     experiments/exp_internal_blip/texture_benchmark.cpp
-    experiments/exp_internal_blip/batch_benchmark.cpp
-    experiments/exp_internal_blip/skip_benchmark.cpp
-    experiments/exp_internal_blip/apply_cost_factors.cpp
     experiments/exp_internal_blip/resolve_profiler.cpp
     experiments/exp_internal_blip/transaction_split.cpp
-    experiments/exp_internal_blip/range_apply.cpp
     experiments/exp_internal_blip/quad_apply.cpp
     experiments/exp_internal_blip/dynamic_probe.cpp
-    experiments/exp_internal_blip/image_api_driver.cpp
     experiments/exp_internal_blip/pixel_texture.cpp
     experiments/exp_internal_blip/stage_profiler.cpp
     experiments/exp_internal_blip/shape_compatibility.cpp
     experiments/exp_internal_blip/apply_profiler.cpp
-    experiments/exp_internal_blip/picture_cache_driver.cpp
 )
 
 if(BB_NATIVE_BACKEND)
-    list(APPEND BB_SOURCES ${BB_BACKEND_SOURCES})
+    list(APPEND BB_RESEARCH_SOURCES ${BB_RESEARCH_NATIVE_SOURCES})
 else()
-    list(APPEND BB_SOURCES src/backend/unsupported_backend.cpp)
+    list(APPEND BB_RESEARCH_SOURCES src/com/engine_textures_portable.cpp)
 endif()
+
+#[[
+    Exactly one backend is compiled, and the choice is made here rather than
+    inside the sources. WIN32 is required above, so the only question left is
+    which Windows backend - and both of them fill Shapes. The difference is
+    whether Office internals or Office's own API does it.
+
+    src/backend/unsupported_backend.cpp is therefore not built by any
+    configuration today. It is kept because it is the shape a macOS backend
+    would start from and docs/macos.md points at it; the fatal error above is
+    what actually enforces the platform, not that file.
+]]
+list(APPEND BB_SOURCES ${BB_OFFICE_PORTABLE_SOURCES})
+if(BB_NATIVE_BACKEND)
+    set(BB_BACKEND_SOURCES ${BB_OFFICE_NATIVE_SOURCES})
+else()
+    set(BB_BACKEND_SOURCES ${BB_OFFICE_PORTABLE_BACKEND_SOURCES})
+endif()
+list(APPEND BB_SOURCES ${BB_BACKEND_SOURCES})
 
 add_library(BlipBridge SHARED ${BB_SOURCES})
 target_compile_definitions(BlipBridge PRIVATE BB_DLL BLIPBRIDGE_BUILD)
@@ -177,22 +261,42 @@ else()
     target_link_libraries(BlipBridge PRIVATE ole32 oleaut32 windowscodecs)
 endif()
 
-# --- the research library ----------------------------------------------------
-#
-# Never packaged, never released. It compiles the same production sources plus
-# the COM surface, so the Office harnesses exercise the shipping code paths
-# through an Automation object - and the DLL a user installs stays free of them.
-#
-# It exists only where there is a validated backend to investigate.
+#[[
+    The research library.
+
+    Never packaged, never released. It compiles the same production sources plus
+    the COM surface, so the Office harnesses exercise the shipping code paths
+    through an Automation object - and the DLL a user installs stays free of them.
+
+    It is built for whichever backend this configuration has, which is the whole
+    reason the portable backend can be validated at all: with
+    BB_FORCE_PORTABLE_BACKEND the harnesses drive the portable backend inside a
+    real PowerPoint, rather than only proving that it compiles.
+]]
+add_library(BlipBridgeResearch SHARED ${BB_SOURCES} ${BB_RESEARCH_SOURCES})
+target_compile_definitions(BlipBridgeResearch PRIVATE BB_DLL BLIPBRIDGE_BUILD)
 if(BB_NATIVE_BACKEND)
-    add_library(BlipBridgeResearch SHARED ${BB_SOURCES} ${BB_RESEARCH_SOURCES})
-    target_compile_definitions(BlipBridgeResearch PRIVATE BB_DLL BLIPBRIDGE_BUILD)
-    target_link_options(BlipBridgeResearch PRIVATE -static -static-libgcc -static-libstdc++)
-    set_target_properties(BlipBridgeResearch PROPERTIES
-        PREFIX ""
-        OUTPUT_NAME "BlipBridgeResearch-${BB_ARCH}")
-    target_link_libraries(BlipBridgeResearch
-                          PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
+    # Gates the probes that read Office internals. The Automation ids stay put
+    # either way - they are a stable ABI - but without this they answer with the
+    # reason they are missing instead of running.
+    target_compile_definitions(BlipBridgeResearch PRIVATE BB_HAS_NATIVE_BACKEND)
+endif()
+target_link_options(BlipBridgeResearch PRIVATE -static -static-libgcc -static-libstdc++)
+set_target_properties(BlipBridgeResearch PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "BlipBridgeResearch-${BB_ARCH}")
+target_link_libraries(BlipBridgeResearch
+                      PRIVATE ole32 oleaut32 uuid psapi version windowscodecs)
+if(BB_ARCH STREQUAL "x86")
+    #[[
+        The same reason the shipped DLL needs it, for a different caller.
+        DllGetClassObject and DllCanUnloadNow are stdcall, so on x86 they would
+        export as `DllGetClassObject@12` - and COM looks them up undecorated. A
+        research DLL without this loads and then cannot be registered as a COM
+        server at all, which is how it would be discovered: not at build time,
+        but by a harness that could never reach it.
+    ]]
+    target_link_options(BlipBridgeResearch PRIVATE -Wl,--kill-at)
 endif()
 
 # --- tests -------------------------------------------------------------------
@@ -221,6 +325,20 @@ if(BUILD_TESTING)
     target_link_libraries(bb_decode_contract PRIVATE ole32 oleaut32 windowscodecs)
     target_link_options(bb_decode_contract PRIVATE -static -static-libgcc -static-libstdc++)
     add_test(NAME decode_contract COMMAND bb_decode_contract)
+
+    #[[
+        PNG encoding, and the round trip through it.
+
+        Encoding exists only for the portable backend, and the portable backend
+        is what makes 32-bit PowerPoint work - so this runs on both
+        architectures, and on x86 it is testing the code that actually ships
+        there.
+    ]]
+    add_executable(bb_encode_contract tests/encode_contract.cpp
+                   src/image/encode.cpp src/image/decode.cpp src/image/resample.cpp)
+    target_link_libraries(bb_encode_contract PRIVATE ole32 oleaut32 windowscodecs)
+    target_link_options(bb_encode_contract PRIVATE -static -static-libgcc -static-libstdc++)
+    add_test(NAME encode_contract COMMAND bb_encode_contract)
 
     # Crop, orient and resize, against numbered-grid fixtures so every assertion
     # says which source pixel arrived where.
@@ -262,14 +380,17 @@ if(BUILD_TESTING)
     target_link_options(bb_abi_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
     add_test(NAME abi_contract COMMAND bb_abi_contract $<TARGET_FILE:BlipBridge>)
 
-    # The COM contract asks the Automation surface for its DISPIDs, so it only
-    # exists where that surface is compiled in.
-    if(BB_NATIVE_BACKEND)
-        add_executable(bb_com_contract tests/com_contract.cpp)
-        target_link_libraries(bb_com_contract PRIVATE ole32 oleaut32 uuid)
-        target_link_options(bb_com_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
-        add_test(NAME com_contract COMMAND bb_com_contract $<TARGET_FILE:BlipBridgeResearch>)
-    endif()
+    #[[
+        The COM contract asks the Automation surface for its DISPIDs. That
+        surface is now built for whichever backend this configuration has, so
+        this runs everywhere too - and on x86 it is the one test that exercises
+        the dispatch table in a 32-bit process, where the ids are the same
+        numbers but the marshalling is not.
+    ]]
+    add_executable(bb_com_contract tests/com_contract.cpp)
+    target_link_libraries(bb_com_contract PRIVATE ole32 oleaut32 uuid)
+    target_link_options(bb_com_contract PRIVATE -municode -static -static-libgcc -static-libstdc++)
+    add_test(NAME com_contract COMMAND bb_com_contract $<TARGET_FILE:BlipBridgeResearch>)
 endif()
 
 # --- research tools ----------------------------------------------------------

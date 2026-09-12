@@ -86,9 +86,15 @@ function Get-Field([string]$report, [string]$name) {
 function Get-ApplyEntries($engine, $shape) {
     return [int](Get-Field ($engine.ProbeShapePolicy($shape)) 'applyEntries')
 }
+# Counts the named Shapes that carry a picture fill. A name that is not on the
+# slide counts as not filled rather than throwing: Undo can take a Shape away,
+# and a COM exception here would hide the assertion that was about to fail.
 function Count-Filled($slide, $names) {
-    return ($names | ForEach-Object { $slide.Shapes.Item($_).Fill.Type } |
-        Where-Object { $_ -eq 6 }).Count
+    $filled = 0
+    foreach ($name in $names) {
+        try { if ($slide.Shapes.Item($name).Fill.Type -eq 6) { $filled++ } } catch { }
+    }
+    return $filled
 }
 
 $saved = Join-Path ([IO.Path]::GetTempPath()) ("bb_range_" + [Guid]::NewGuid().ToString('N') + '.pptx')
@@ -111,10 +117,19 @@ try {
     # BB_GetCapabilities reports nothing outside PowerPoint by design, so the
     # bits can only be checked from in here. A caller who tests the flag and
     # then finds the call missing has no way to work out which of us is wrong.
-    $mask = [uint32](Get-Field ($engine.AbiCapabilities()) 'mask')
+    $report = $engine.AbiCapabilities()
+    $mask = [uint32](Get-Field $report 'mask')
+    $backend = Get-Field $report 'backend'
     Assert (($mask -band 0x100) -ne 0) `
-        ("BB_CAP_RANGE_APPLY is set in host (mask 0x{0:X4})" -f $mask)
-    Assert (($mask -band 0x1) -ne 0) 'alongside BB_CAP_NATIVE_BACKEND'
+        ("BB_CAP_RANGE_APPLY is set in host (mask 0x{0:X4}, backend {1})" -f $mask, $backend)
+    # The accelerated bit has to agree with the backend that is actually loaded.
+    # Asserting it unconditionally would only be asserting which build this is;
+    # asserting the agreement catches a mask that claims a backend the library
+    # does not have, which is the failure worth catching and works on both.
+    $claimsNative = ($mask -band 0x1) -ne 0
+    $isNative = $backend -eq 'windows-office-native'
+    Assert ($claimsNative -eq $isNative) `
+        "BB_CAP_NATIVE_BACKEND agrees with the loaded backend ($backend)"
 
     # --- filling --------------------------------------------------------------
     $names = @()
@@ -172,6 +187,12 @@ try {
     }
     $undoRange = $slide.Shapes.Range($undoNames)
     Assert ((Count-Filled $slide $undoNames) -eq 0) 'four fresh Shapes, none filled'
+    # Close the AddShape entry before filling, so the Undo below has one thing
+    # to revert and it is the fill. Without this the fill can be grouped with
+    # the Shape creation - the portable backend joins whatever entry Office has
+    # open - and Undo would take the four Shapes away instead of their fills.
+    $presentation.Windows.Item(1).Activate()
+    $app.StartNewUndoEntry()
     $null = $engine.ApplyTextureRange($undoRange, $handleA)
     Assert ((Count-Filled $slide $undoNames) -eq 4) 'the range apply fills all four'
 

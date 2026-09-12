@@ -34,7 +34,6 @@
 #include "../../src/backend/windows_office/oart_layout.hpp"
 #include "../../src/backend/windows_office/shape_policy.hpp"
 #include "../experiment_api.hpp"
-
 #include <blipbridge/dispatch.hpp>
 #include <blipbridge/errors.hpp>
 #include <sstream>
@@ -284,37 +283,5 @@ std::wstring applyTextureUnrestricted(IDispatch* shape, long handle) {
 
     std::wostringstream out;
     out << L"applied=1;allowlistBypassed=1;";
-    return out.str();
-}
-
-/**
- * Reports the semantic verdict for @p shape and the private-apply entry count.
- *
- * Both in one call so a harness can read the count, attempt an apply, and read
- * it again without a third round trip changing anything in between.
- */
-std::wstring probeShapePolicy(IDispatch* shape) {
-    const bb::office::ShapeClassification classification =
-        bb::office::ClassifyShapeForNativePictureFill(shape);
-    const wchar_t* name = L"Invalid";
-    switch (classification.eligibility) {
-    case bb::office::ShapeEligibility::NativeSupported:
-        name = L"NativeSupported";
-        break;
-    case bb::office::ShapeEligibility::FallbackSupported:
-        name = L"FallbackSupported";
-        break;
-    case bb::office::ShapeEligibility::Unsupported:
-        name = L"Unsupported";
-        break;
-    case bb::office::ShapeEligibility::Invalid:
-        name = L"Invalid";
-        break;
-    }
-    std::wostringstream out;
-    out << L"eligibility=" << name << L";shapeType=" << classification.shapeType << L";connector="
-        << (classification.connector ? 1 : 0) << L";applyEntries="
-        << bb::oart::NativeApplyEntryCount() << L";reason=" << Sanitise(classification.reason)
-        << L';';
     return out.str();
 }

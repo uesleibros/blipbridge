@@ -2,17 +2,13 @@
  * @file unsupported_backend.cpp
  * The backend used where no accelerated implementation exists yet.
  *
- * Compiled instead of an accelerated backend wherever one has not been validated.
- * Two cases reach it today, and each gets its own reason rather than a shared
- * vague one:
+ * Compiled where no backend can fill a Shape at all. **No configuration builds
+ * it today**: Windows requires one of the two real backends, and Windows is the
+ * only platform CMake will configure for.
  *
- *  - **Windows 32-bit.** The library builds, but the 32-bit PowerPoint backend
- *    has not been reverse-engineered or validated. The x64 implementation is not
- *    portable to it by recompilation: it depends on the x64 calling convention,
- *    on per-build module RVAs, and on object layouts that 32-bit Office does not
- *    share. Its sources are excluded from an x86 build entirely, so there is no
- *    possibility of a half-working backend reaching a document.
- *  - **Every other platform**, macOS being the case that matters.
+ * It is kept for macOS, which is the case that will need it, and it is the shape
+ * that answer should take - see docs/macos.md. Windows 32-bit used to reach it
+ * and no longer does: it has the portable backend, which actually works.
  *
  * It deliberately does nothing except answer honestly: no capabilities, and a
  * specific reason on every texture call. The library still loads, still reports

@@ -116,7 +116,11 @@ $required = @(
     'GetImageSize', 'ReleaseImage', 'ClearImages', 'GetImageCount',
     'CreateTextureFromImage', 'WarpImageQuad', 'ApplyImageQuad',
     'LoadTextureScaled', 'LoadTextureScaledFromFile', 'ImageRequest', 'QuadPoints',
-    'ApplyTexture', 'ApplyTextureRange', 'ApplyTextureIfChanged', 'ReleaseTexture'
+    'ApplyTexture', 'ApplyTextureRange', 'ApplyTextureIfChanged', 'ReleaseTexture',
+    # Both questions a caller asks about the backend. IsAvailable means "can I use it",
+    # IsAccelerated means "is it the fast one" - conflating them would report a working
+    # 32-bit install as unavailable.
+    'IsAvailable', 'IsAccelerated'
 )
 foreach ($name in $required) {
     if ($joined -notmatch "(?m)^\s*Public\s+(Function|Sub)\s+$name\s*\(") {

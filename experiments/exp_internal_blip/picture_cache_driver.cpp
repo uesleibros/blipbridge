@@ -14,7 +14,13 @@
  * Research only. Nothing in the shipping path calls these.
  */
 
+#include "../../src/backend/windows_office/shape_policy.hpp"
 #include "../experiment_api.hpp"
+#if defined(BB_HAS_NATIVE_BACKEND)
+#include "../../src/backend/windows_office/native_apply.hpp"
+#else
+#include "../../src/backend/portable_office/portable_texture.hpp"
+#endif
 
 #include <blipbridge/blipbridge.h>
 #include <blipbridge/dispatch.hpp>
@@ -97,8 +103,29 @@ std::wstring capabilitiesThroughAbi() {
     // The real BB_GetCapabilities, called from inside PowerPoint. Off-host it
     // reports nothing by design, so the bits can only be seen from here.
     const std::uint32_t mask = BB_GetCapabilities();
+
+    // The backend's own name, from the version string, so a harness can check
+    // the mask against which backend is actually running. The two are reported
+    // by different code, so agreeing between them is worth asserting: a mask
+    // that claimed an accelerated backend the library does not have would be
+    // exactly the kind of thing nothing else would notice.
+    std::wstring backend = L"unknown";
+    const std::uint32_t needed = BB_GetVersionString(nullptr, 0);
+    if (needed > 1) {
+        std::vector<char> text(needed);
+        BB_GetVersionString(text.data(), needed);
+        const std::string version(text.data());
+        const std::size_t comma = version.rfind(", ");
+        const std::size_t close = version.rfind(')');
+        if (comma != std::string::npos && close != std::string::npos && close > comma + 2) {
+            const std::string name = version.substr(comma + 2, close - comma - 2);
+            backend.assign(name.begin(), name.end());
+        }
+    }
+
     std::wostringstream out;
-    out << L"mask=" << mask << L";hex=0x" << std::hex << mask << std::dec << L';';
+    out << L"mask=" << mask << L";hex=0x" << std::hex << mask << std::dec << L";backend=" << backend
+        << L';';
     return out.str();
 }
 
@@ -132,5 +159,66 @@ std::wstring pictureCacheStatsThroughAbi() {
     RequireOk(BB_GetPictureCacheStats(&textures, &shapes, &skipped), "BB_GetPictureCacheStats");
     std::wostringstream out;
     out << L"textures=" << textures << L";shapes=" << shapes << L";skipped=" << skipped << L';';
+    return out.str();
+}
+
+namespace {
+/// Keeps a reason on one `key=value;` line, which is all the harnesses parse.
+std::wstring SanitisePolicyReason(const std::string& text) {
+    std::wstring out;
+    out.reserve(text.size());
+    for (const char character : text) {
+        const bool breaksTheLine = character == ';' || character == '\r' || character == '\n';
+        out.push_back(breaksTheLine ? L' ' : static_cast<wchar_t>(character));
+    }
+    return out;
+}
+} // namespace
+
+/**
+ * Reports the semantic verdict for @p shape, and how many Office edits this
+ * process has made.
+ *
+ * Both in one call so a harness can read the count, attempt an apply, and read
+ * it again without a third round trip changing anything in between.
+ *
+ * `applyEntries` is the number that proves a skip *did not happen*, which is the
+ * only thing that makes a skip worth having. The two backends count different
+ * events to answer the same question: the accelerated one counts entries into
+ * the private OART apply, the portable one counts fills actually performed
+ * through Office. Either way an unchanged count means the document was not
+ * touched, so a harness can assert the same thing on both.
+ *
+ * This lives here, with the portable forwarders, because the classification it
+ * reports is ordinary Automation and every backend has it. Only the counter
+ * differs.
+ */
+std::wstring probeShapePolicy(IDispatch* shape) {
+    const bb::office::ShapeClassification classification =
+        bb::office::ClassifyShapeForNativePictureFill(shape);
+    const wchar_t* name = L"Invalid";
+    switch (classification.eligibility) {
+    case bb::office::ShapeEligibility::NativeSupported:
+        name = L"NativeSupported";
+        break;
+    case bb::office::ShapeEligibility::FallbackSupported:
+        name = L"FallbackSupported";
+        break;
+    case bb::office::ShapeEligibility::Unsupported:
+        name = L"Unsupported";
+        break;
+    case bb::office::ShapeEligibility::Invalid:
+        name = L"Invalid";
+        break;
+    }
+    std::wostringstream out;
+    out << L"eligibility=" << name << L";shapeType=" << classification.shapeType << L";connector="
+        << (classification.connector ? 1 : 0) << L";applyEntries="
+#if defined(BB_HAS_NATIVE_BACKEND)
+        << bb::oart::NativeApplyEntryCount()
+#else
+        << bb::portable::OfficeFillCount()
+#endif
+        << L";reason=" << SanitisePolicyReason(classification.reason) << L';';
     return out.str();
 }

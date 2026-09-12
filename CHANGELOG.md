@@ -22,7 +22,78 @@ Callers written against 0.4.0 need the changes shown in the release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **BlipBridge works on 32-bit PowerPoint.** x86 previously loaded, reported its
+  version, and refused every texture call, because the accelerated backend is a
+  reconstruction of one 64-bit Office build's internals and none of it transfers.
+  There is now a second backend - `src/backend/portable_office_backend.cpp` -
+  implementing the same `Backend` interface over documented Office Automation,
+  and x86 gets it.
+
+  Everything the public API promises works there: textures from bytes or pixels,
+  `BB_ApplyTexture`, `BB_ApplyTextureRange`, `BB_ApplyTextureIfChanged` and its
+  skip cache, `BB_ApplyPicture`, and the whole image pipeline including the quad
+  warp. The image pipeline was always portable maths; only its last step needed a
+  backend.
+
+  It is **not** accelerated, and says so: `BB_CAP_NATIVE_BACKEND` is clear, so the
+  mask inside PowerPoint is `0x03FE` rather than `0x03FF`. Every fill goes through
+  `Fill.UserPicture`, which takes a path, so a texture holds its decoded pixels
+  and writes one temporary PNG the first time it is applied - once per texture,
+  not once per apply.
+
+  The Shape class policy, the Shape identity key and the skip cache are the *same
+  code* on both backends rather than a second implementation, so the two cannot
+  disagree about which Shapes may be filled, which may be cached, or when an
+  apply may be skipped. `BB_ApplyTextureRange` refuses a range containing a Table
+  on both, even though the portable backend could fill one, because a range that
+  filled on 32-bit and was refused on 64-bit would be a difference discovered in
+  production from a document that came out wrong.
+
+  Validated two ways, neither sufficient alone: the backend's behaviour is
+  exercised in a real PowerPoint by eight of the Office harnesses
+  (`-DBB_FORCE_PORTABLE_BACKEND=ON` builds it in place of the accelerated one,
+  including into the research COM surface), and its x86 build is exercised by the
+  full contract suite in CI. **No build has been run inside a real 32-bit
+  PowerPoint** - Office does not install both architectures side by side - so the
+  composition of the two is still not claimed. See
+  [docs/windows_x86.md](docs/windows_x86.md).
+
+- `BlipBridge.IsAccelerated()` in the VBA module, and `BlipBridge.IsAvailable()`
+  now answers the question its name asks. `IsAvailable` tested
+  `BB_CAP_NATIVE_BACKEND`, which was the same thing while only one backend
+  existed; keeping it would have reported a fully working 32-bit install as
+  unavailable. It now means "BlipBridge can fill Shapes here" and is true on both
+  architectures. `IsAccelerated` is the performance question, and is the one to
+  ask before quoting a benchmark.
+
+- PNG encoding (`src/image/encode.cpp`), with a contract test that round-trips
+  pixel-exact through decode on both architectures, including straight alpha and
+  padded strides. It exists only for the portable backend, which needs a file to
+  hand to Office.
+
+### Changed
+
+- The x64 accelerated backend and the portable backend now share their Shape
+  validation, error translation and exception boundary through
+  `src/backend/backend_guard.hpp`, so "what is a usable Shape" has one definition
+  rather than one per backend.
+
+- The research COM surface builds over either backend. Probes that instrument
+  Office internals keep their Automation ids - those are a stable ABI - and
+  answer with the reason they are unavailable instead of "unknown member".
+
 ### Fixed
+
+- Three assertions in the Office harnesses passed without measuring what they
+  claimed, found by running them against the portable backend:
+  `test_apply_if_changed` asserted `Fill.Type -ne 6` after an Undo that had
+  removed the Shape entirely (a deleted Shape reports no `Fill.Type` at all, which
+  is also "not a picture fill"); `test_range_apply` and
+  `test_shape_lifecycle_cache` let PowerPoint choose the undo grouping and then
+  assumed a boundary that only the accelerated backend guarantees. All three now
+  set the boundary explicitly and assert the positive condition.
 
 - **The VBA module did not compile.** `LoadImage`, `LoadImageFromFile`,
   `LoadTextureScaled` and `LoadTextureScaledFromFile` each declared the image

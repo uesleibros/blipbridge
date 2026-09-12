@@ -177,6 +177,14 @@ try {
     # A fresh Shape with a solid fill, so "reverted" is unambiguous.
     $undoShape = $slide.Shapes.AddShape(1, 200, 20, 120, 120)
     Assert ($undoShape.Fill.Type -ne 6) 'a new Shape starts without a picture fill'
+    # Close the AddShape entry before applying, so Undo has one thing to revert
+    # and it is the fill. Without this the apply can be grouped with the Shape
+    # creation - the portable backend joins whatever entry Office has open -
+    # and Undo would delete the Shape instead. The assertions below would still
+    # pass, for entirely the wrong reason: a deleted Shape reports no Fill.Type
+    # at all, which is also "not a picture fill".
+    $app.StartNewUndoEntry()
+    $presentation.Windows.Item(1).Activate()
     $null = $engine.ApplyTextureIfChanged($undoShape, $handleA)
     Assert ($undoShape.Fill.Type -eq 6) 'IfChanged applies to it'
     # Three skips: if any of them made an undo entry, one Undo would not be
@@ -185,9 +193,10 @@ try {
     $null = $engine.ApplyTextureIfChanged($undoShape, $handleA)
     $null = $engine.ApplyTextureIfChanged($undoShape, $handleA)
     $app.StartNewUndoEntry()
-    $presentation.Windows.Item(1).Activate()
     $app.CommandBars.ExecuteMso('Undo')
-    Assert ($undoShape.Fill.Type -ne 6) 'one Undo reverts the one real apply - skips added no entries'
+    # -eq 1 rather than -ne 6: a Shape that Undo removed answers nothing at all,
+    # which would satisfy -ne 6 without the fill having been reverted.
+    Assert ($undoShape.Fill.Type -eq 1) 'one Undo reverts the one real apply - skips added no entries'
     $app.CommandBars.ExecuteMso('Redo')
     Assert ($undoShape.Fill.Type -eq 6) 'and Redo puts the picture back'
     $undoShape.Delete()

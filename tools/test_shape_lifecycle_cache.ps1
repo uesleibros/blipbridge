@@ -171,7 +171,18 @@ try {
     $null = $engine.ApplyPicture($doomed, $textureA)
     $null = $engine.ApplyPicture($doomed, $textureA)      # cached
     $doomedId = $doomed.Id
+    <#
+     Close the entry holding the Shape and its fill, so the delete below is an
+     entry of its own and the three Undo/Redo steps that follow act on exactly
+     the delete. Without this the grouping is PowerPoint's to choose - it may
+     put the creation, the fill and the delete in one entry - and an Undo would
+     unwind past the slide, leaving the rest of this suite operating on a dead
+     object for a reason that has nothing to do with the cache it is testing.
+    #>
+    $presentation.Windows.Item(1).Activate()
+    $app.StartNewUndoEntry()
     $doomed.Delete()
+    $app.StartNewUndoEntry()
 
     <#
      Undo comes first, with nothing in between. An apply performed after the

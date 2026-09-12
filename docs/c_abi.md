@@ -203,20 +203,32 @@ PowerPoint precisely to hold that behaviour in place.
     src/abi/blipbridge_abi.cpp        thread affinity, error text, translation
          |
     src/backend/backend.hpp           the platform seam
+    src/backend/backend_guard.hpp     Shape validation both backends share
          |
-   +-----+-----------------------------+
-   |                                   |
-windows_office_backend.cpp      unsupported_backend.cpp
-   |                              (macOS and everything else)
-src/backend/windows_office/
-   oart_layout       module and layout guards, the validation cache
-   native_apply      the property record, the transaction, the receiver call
-   native_texture    the texture store: handles, ownership, lifetime
+   +-----+--------------------+---------------------------+
+   |                          |                           |
+windows_office_backend.cpp  portable_office_backend.cpp  unsupported_backend.cpp
+   x64: Office internals      x86: Fill.UserPicture        (macOS; built by
+   |                          |                            no configuration)
+src/backend/windows_office/  src/backend/portable_office/
+   oart_layout    guards        portable_texture   pixels + one temporary PNG
+   native_apply   the record  src/image/encode.cpp
+   native_texture the store
+                               and shared by both, in windows_office/:
+                                 shape_policy      which classes may be filled
+                                 shape_identity    how a Shape is keyed
+                                 apply_skip_cache  what each Shape carries
 ```
 
 Nothing above `backend.hpp` knows Office exists. The reverse-engineered code is
 reached only through `bb::Backend`, and its exceptions are converted to
 `BackendResult` there so none can reach the C ABI.
+
+The three shared modules are shared deliberately rather than duplicated: they
+decide which Shapes may be filled, which may be cached, and when an apply may be
+skipped, and two implementations would be two sets of answers. A caller would
+experience the difference as "it behaves differently on 32-bit", with nothing in
+the API to point at. Only the apply underneath them differs.
 
 `experiments/` holds only research now: the probes that produced the layouts, the
 benchmarks, and the stage profiler. The dependency runs one way - a probe
